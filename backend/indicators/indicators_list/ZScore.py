@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from src.indicators.indicators import get_indicators
+from backend.indicators.indicators import get_indicators
 
 def calculate_zscore_probability(df, 
                                  centreline="peaks_valleys_avg", 

@@ -12,6 +12,7 @@ const API = window.location.origin;
 let chart    = null;
 let ws       = null;
 let bars     = [];        // full preloaded bar array
+let styles   = {};        // col → {color,width,lineStyle} from server
 let N        = 0;
 let current  = 0;
 let playing  = false;
@@ -37,6 +38,7 @@ export function initReplay(ticker, timeframe, indConf) {
   if (ws)    { ws.close(); ws = null; }
   if (chart) { chart.destroy(); }
   bars    = [];
+  styles  = {};
   N       = 0;
   current = 0;
   setPlaying(false);
@@ -61,15 +63,18 @@ function _connectWS(ticker, timeframe, indConf) {
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'meta') {
-      N = msg.total;
-      _requestRange(0, N - 1);   // pre-request all bars
+      N      = msg.total;
+      styles = msg.styles || {};
       return;
     }
-    if (msg.type === 'bar') {
-      bars[msg.index] = msg.data;
-      if (bars.filter(Boolean).length === N) {
-        _onAllLoaded();
-      }
+    if (msg.type === 'bars') {
+      bars = msg.data;
+      _onAllLoaded();
+      return;
+    }
+    if (msg.type === 'replay_events') {
+      chart.loadEvents(msg);
+      return;
     }
     if (msg.type === 'error') {
       _setStatus(msg.detail);
@@ -79,15 +84,9 @@ function _connectWS(ticker, timeframe, indConf) {
   ws.onerror = () => _setStatus('connection error');
 }
 
-function _requestRange(from, to) {
-  for (let i = from; i <= to; i++) {
-    ws.send(JSON.stringify({ bar: i }));
-  }
-}
-
 function _onAllLoaded() {
   _setStatus('');
-  chart.load(bars);
+  chart.load(bars, styles);
   chart.fitContent();
   jump(N - 1);  // start at last bar (most recent)
   _updateBarInfo();

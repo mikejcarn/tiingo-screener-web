@@ -1,114 +1,164 @@
 /**
  * chart.js — lightweight-charts wrapper
  *
- * Exposes a single ChartManager class that owns one LightweightCharts
- * instance and knows how to render OHLCV + arbitrary indicator columns.
+ * Two rendering paths:
+ *   Static  — server-sent pre-computed values (SMA, Supertrend, etc.)
+ *             styled by col_styles and rendered via LineSeries.setData per reveal.
+ *   Dynamic — aVWAP lines computed bar-by-bar by DynamicVWAPEngine
+ *             (peaks, valleys, QQEMOD anchors).
  */
 
-const OHLCV_COLS = new Set(['Date', 'Open', 'High', 'Low', 'Close', 'Volume',
-                             'date', 'open', 'high', 'low', 'close', 'volume']);
+import { DynamicVWAPEngine } from './avwap_replay.js';
 
-// Colour palette for indicator lines (cycles if more than 8)
-const LINE_COLORS = [
-  '#2196f3', '#4caf50', '#ff9800', '#e91e63',
-  '#9c27b0', '#00bcd4', '#cddc39', '#ff5722',
-];
+const C_UP   = 'rgba(38,166,154,1)';
+const C_DOWN = 'rgba(239,83,80,1)';
 
 export class ChartManager {
   constructor(container) {
     this._container = container;
-    this._chart = null;
-    this._candleSeries = null;
-    this._lines = {};      // column name → line series
-    this._colorIdx = 0;
-    this._bars = [];       // full bar array (for replay slicing)
-    this._N = 0;
+    this._chart     = null;
+    this._candles   = null;
+    this._lines     = {};   // col → static LineSeries
+    this._engine    = null; // DynamicVWAPEngine
+    this._bars      = [];
+    this._N         = 0;
+    this._curN      = -1;   // last bar rendered
     this._init();
   }
 
   _init() {
     this._chart = LightweightCharts.createChart(this._container, {
-      layout:     { background: { color: '#000000' }, textColor: '#555555' },
-      grid:       { vertLines: { color: '#111111' }, horzLines: { color: '#111111' } },
-      crosshair:  { mode: LightweightCharts.CrosshairMode.Normal },
+      layout:          { background: { color: '#000000' }, textColor: '#555555' },
+      grid:            { vertLines: { color: '#111111' }, horzLines: { color: '#111111' } },
+      crosshair:       { mode: LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: { borderColor: '#222222' },
-      timeScale:  { borderColor: '#222222', timeVisible: true },
+      timeScale:       { borderColor: '#222222', timeVisible: true },
     });
 
-    this._candleSeries = this._chart.addCandlestickSeries({
-      upColor:   '#26a69a', downColor: '#ef5350',
-      borderUpColor: '#26a69a', borderDownColor: '#ef5350',
-      wickUpColor:   '#26a69a', wickDownColor:   '#ef5350',
+    this._candles = this._chart.addCandlestickSeries({
+      upColor:        C_UP,   downColor:       C_DOWN,
+      borderUpColor:  C_UP,   borderDownColor: C_DOWN,
+      wickUpColor:    C_UP,   wickDownColor:   C_DOWN,
     });
 
     window.addEventListener('resize', () => {
-      this._chart.resize(this._container.clientWidth, this._container.clientHeight);
+      if (this._chart) {
+        this._chart.resize(this._container.clientWidth, this._container.clientHeight);
+      }
     });
   }
 
-  /** Load a full array of bar objects (each has Date/Open/High/Low/Close/Volume + indicators). */
-  load(bars) {
+  // ── Static series setup ────────────────────��─────────────────────��────────
+
+  /**
+   * Load bars and create static indicator series from server-sent styles.
+   * @param {object[]} bars
+   * @param {object}   styles  — {col: {color, width, lineStyle}} from server
+   */
+  load(bars, styles = {}) {
     this._bars = bars;
-    this._N = bars.length;
-    this._render(this._N - 1);
+    this._N    = bars.length;
+
+    // Remove old static series
+    for (const s of Object.values(this._lines)) {
+      this._chart.removeSeries(s);
+    }
+    this._lines = {};
+
+    // Create one LineSeries per styled column
+    for (const [col, st] of Object.entries(styles)) {
+      this._lines[col] = this._chart.addLineSeries({
+        color:                  st.color,
+        lineWidth:              st.width,
+        lineStyle:              st.lineStyle,
+        priceLineVisible:       false,
+        lastValueVisible:       false,
+        crosshairMarkerVisible: false,
+      });
+    }
+
+    // (Re)create dynamic VWAP engine — attached to raw LW chart
+    if (this._engine) this._engine.destroy();
+    this._engine = new DynamicVWAPEngine(this._chart);
+
+    this._curN = -1;
+    this.reveal(this._N - 1);
   }
 
-  /** Replay: reveal only bars 0..n */
+  // ── Dynamic events setup ─────────────────────────────────────────────────
+
+  /**
+   * Called once after bars are loaded, when the server sends replay_events.
+   * @param {object} events  — {peaks, valleys, max_peaks, max_valleys, qqemod_events, max_qqemod}
+   */
+  loadEvents(events) {
+    if (!this._engine) return;
+    this._engine.load(this._bars, events);
+    // Re-render at current position so dynamic lines appear immediately
+    if (this._curN >= 0) this._engine.reveal(this._curN);
+  }
+
+  // ── Reveal ───────────────────────────────────────────────────────────────
+
   reveal(n) {
-    this._render(Math.max(0, Math.min(this._N - 1, n)));
-  }
-
-  _render(upToIdx) {
-    const slice = this._bars.slice(0, upToIdx + 1);
+    n = Math.max(0, Math.min(this._N - 1, n));
+    const slice = this._bars.slice(0, n + 1);
     if (!slice.length) return;
+    this._curN = n;
 
-    // OHLCV
-    const candles = slice.map(b => ({
-      time:  (b.Date || b.date).slice(0, 10),
-      open:  b.Open  ?? b.open,
-      high:  b.High  ?? b.high,
-      low:   b.Low   ?? b.low,
-      close: b.Close ?? b.close,
-    }));
-    this._candleSeries.setData(candles);
-
-    // Indicator lines — all non-OHLCV numeric columns
-    const sample = slice[slice.length - 1];
-    const indCols = Object.keys(sample).filter(k => !OHLCV_COLS.has(k) && typeof sample[k] === 'number');
-
-    for (const col of indCols) {
-      if (!this._lines[col]) {
-        this._lines[col] = this._chart.addLineSeries({
-          color:       LINE_COLORS[this._colorIdx++ % LINE_COLORS.length],
-          lineWidth:   1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
+    // ── Candles with per-bar color overrides from the `color` column ────────
+    const candles = slice.map(b => {
+      const time  = (b.Date || b.date || '').slice(0, 10);
+      const entry = {
+        time,
+        open:  b.Open  ?? b.open,
+        high:  b.High  ?? b.high,
+        low:   b.Low   ?? b.low,
+        close: b.Close ?? b.close,
+      };
+      const clr = b.color;
+      if (clr && clr !== '#000000') {
+        const opaque = clr.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),[^)]+\)/, 'rgba($1,$2,$3,1.0)');
+        entry.color       = clr;
+        entry.borderColor = opaque;
+        entry.wickColor   = opaque;
+      } else if (clr === '#000000') {
+        const ud = entry.close >= entry.open;
+        entry.color       = 'rgba(0,0,0,0)';
+        entry.borderColor = ud ? C_UP : C_DOWN;
+        entry.wickColor   = ud ? C_UP : C_DOWN;
       }
-      const lineData = slice
-        .filter(b => b[col] != null && !isNaN(b[col]))
-        .map(b => ({ time: (b.Date || b.date).slice(0, 10), value: b[col] }));
-      this._lines[col].setData(lineData);
+      return entry;
+    });
+    this._candles.setData(candles);
+
+    // ── Static indicator lines (null-safe) ────────────���─────────────────────
+    for (const [col, series] of Object.entries(this._lines)) {
+      const data = [];
+      for (const b of slice) {
+        const v = b[col];
+        if (v != null && !Number.isNaN(v)) {
+          data.push({ time: (b.Date || b.date || '').slice(0, 10), value: v });
+        }
+      }
+      series.setData(data);
     }
 
-    // Remove series for columns no longer present
-    for (const col of Object.keys(this._lines)) {
-      if (!indCols.includes(col)) {
-        this._chart.removeSeries(this._lines[col]);
-        delete this._lines[col];
-      }
-    }
+    // ── Dynamic VWAP lines ────────────��────────────────────────────────────���─
+    if (this._engine) this._engine.reveal(n);
   }
 
   fitContent() {
-    this._chart.timeScale().fitContent();
+    if (this._chart) this._chart.timeScale().fitContent();
   }
 
   destroy() {
-    this._chart.remove();
+    if (this._engine) { this._engine.destroy(); this._engine = null; }
+    if (this._chart)  { this._chart.remove(); this._chart = null; this._candles = null; }
     this._lines = {};
-    this._colorIdx = 0;
+    this._bars  = [];
+    this._N     = 0;
+    this._curN  = -1;
   }
 
   get total() { return this._N; }

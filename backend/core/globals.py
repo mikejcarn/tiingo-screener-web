@@ -7,9 +7,6 @@ PROJECT_ROOT   = Path(__file__).parent.parent.parent
 BACKEND_ROOT   = Path(__file__).parent.parent
 
 DATA_DIR        = PROJECT_ROOT / "data"
-TICKERS_DIR     = DATA_DIR / "tickers"
-INDICATORS_DIR  = DATA_DIR / "indicators"
-SCANNER_DIR     = DATA_DIR / "scans"
 
 IND_CONF_DIR    = BACKEND_ROOT / "indicators" / "ind_configs"
 SCAN_CONF_DIR   = BACKEND_ROOT / "scans" / "scan_configs"

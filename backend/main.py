@@ -2,16 +2,36 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import json
 
 from backend.routers.data import router as data_router
+from backend.routers.fetch import router as fetch_router
+from backend.routers.indicators_router import router as indicators_router
 from backend.core import data_manager as dm
+from backend.core import database as _db
 from backend.core.globals import TIMEFRAME_ALIASES
+from backend.core.col_styles import col_styles_for_columns
+from backend.core.replay_events import extract_events
+from backend.indicators.indicators import load_indicator_config
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 app = FastAPI(title="Tiingo Screener")
+
+@app.on_event("startup")
+def startup():
+    _db.init_db()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(data_router)
+app.include_router(fetch_router)
+app.include_router(indicators_router)
 
 
 # ---------------------------------------------------------------------------
@@ -47,8 +67,11 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         return
 
     df['Date'] = df['Date'].astype(str)
-    records = df.to_dict(orient='records')
+    # pandas to_json so NaN → null (json.dumps would produce invalid bare NaN)
+    import json as _json
+    records = _json.loads(df.to_json(orient='records'))
     columns = list(df.columns)
+    styles  = col_styles_for_columns(columns)
 
     await websocket.send_text(json.dumps({
         "type": "meta",
@@ -57,7 +80,24 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         "ind_conf": ind_conf,
         "total": len(records),
         "columns": columns,
+        "styles": styles,
     }))
+
+    # Send all bars up-front so the client can load them in one shot
+    await websocket.send_text(json.dumps({
+        "type": "bars",
+        "data": records,
+    }))
+
+    # Send dynamic replay events (peak/valley bars, QQEMOD anchor commitments)
+    try:
+        result = load_indicator_config(ind_conf, tf)
+        # load_indicator_config(ind_conf, tf) returns (ind_list, params_for_tf) directly
+        params = result[1] if result else {}
+        events = extract_events(df, params or {})
+        await websocket.send_text(json.dumps(events))
+    except Exception:
+        pass   # replay events are optional; chart still works without them
 
     try:
         while True:
@@ -65,16 +105,6 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
             msg = json.loads(raw)
             if msg.get("action") == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
-                continue
-            n = msg.get("bar")
-            if n is None:
-                continue
-            n = max(0, min(len(records) - 1, int(n)))
-            await websocket.send_text(json.dumps({
-                "type": "bar",
-                "index": n,
-                "data": records[n],
-            }))
     except WebSocketDisconnect:
         pass
 

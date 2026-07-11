@@ -1,6 +1,6 @@
 # import pandas as pd
-# from src.indicators.indicators import get_indicators
-# from src.visualization.src.color_palette import get_color_palette
+# from backend.indicators.indicators import get_indicators
+# from backend.core.color_palette import get_color_palette
 #
 #
 # def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
@@ -189,8 +189,8 @@
 
 
 import pandas as pd
-from src.indicators.indicators import get_indicators
-from src.visualization.src.color_palette import get_color_palette
+from backend.indicators.indicators import get_indicators
+from backend.core.color_palette import get_color_palette
 
 
 def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):

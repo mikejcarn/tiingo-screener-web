@@ -62,7 +62,7 @@ function _loadTicker(idx) {
   tickerIdx = ((idx % tickers.length) + tickers.length) % tickers.length;
   const ticker = tickers[tickerIdx];
   const tf     = tfSelect.value;
-  const conf   = parseInt(confSelect.value);
+  const conf   = parseInt(confSelect.value) || 0;
 
   tickerInput.value = ticker;
   location.hash     = ticker;

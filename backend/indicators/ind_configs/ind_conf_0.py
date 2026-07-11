@@ -31,13 +31,13 @@ indicators = {  # List of available indicator configurations
     ],
 
     'daily': [
-        'aVWAP',
+        # 'aVWAP',
         'candle_colors',
         # 'BoS_CHoCH',
         # 'QQEMOD',
         # 'aVWAP_anchor_score',
         # 'banker_RSI',
-        # 'SMA',
+        'SMA',
         # 'liquidity',
         # 'FVG',
         # 'OB',
@@ -157,14 +157,14 @@ params = {
 
         'daily': {
             'aVWAP': {
-                'peaks': False,
-                'valleys': False,
+                'peaks': True,
+                'valleys': True,
                 'peaks_avg': False,
                 'valleys_avg': False,
                 'peaks_valleys': False,
                 'peaks_valleys_avg': False,
                 'price_maxima_minima': False,
-                'QQEMOD': True,
+                'QQEMOD': False,
                 'QQEMOD_avg': False,
                 'OB': False,
                 'OB_avg': False,
@@ -175,18 +175,10 @@ params = {
                 'All_avg': False,
                 'aVWAP_channel': False,
                 'peaks_params': [
-                    { 'periods': 50, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 100, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 150, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 200, 'max_aVWAPs': 1, 'avg_lookback': 20, },
+                    { 'periods': 100, 'max_aVWAPs': None, 'avg_lookback': 20, },
                 ],
                 'valleys_params': [
-                    { 'periods': 50, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 100, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 150, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 200, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 250, 'max_aVWAPs': 1, 'avg_lookback': 20, },
-                    { 'periods': 300, 'max_aVWAPs': 1, 'avg_lookback': 20, },
+                    { 'periods': 100, 'max_aVWAPs': None, 'avg_lookback': 20, },
                 ],
                 'peaks_valleys_params': [
                     { 'periods': 20, 'max_aVWAPs': None, 'avg_lookback': 20, },

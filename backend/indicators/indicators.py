@@ -3,7 +3,9 @@ import pandas as pd
 from pathlib import Path
 import importlib.util
 import importlib
-from src.core.globals import TICKERS_DIR, INDICATORS_DIR, IND_CONF_DIR
+from backend.core.globals import IND_CONF_DIR
+TICKERS_DIR = None   # not used in web context — data comes from DB
+INDICATORS_DIR = None
 
 # ===== BATCH PROCESSING FUNCTIONS =====
 
@@ -120,7 +122,7 @@ def get_indicators(df, indicator_list, indicator_params=None):
     all_indicators = {}
     
     for indicator in indicator_list:
-        module = importlib.import_module(f"src.indicators.indicators_list.{indicator}")
+        module = importlib.import_module(f"backend.indicators.indicators_list.{indicator}")
         params = indicator_params.get(indicator, {})
         indicator_values = module.calculate_indicator(result_df, **params)
         

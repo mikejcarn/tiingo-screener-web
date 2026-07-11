@@ -6,7 +6,7 @@ from typing import Optional
 from tiingo import TiingoClient
 import os
 from pathlib import Path
-from src.core.globals import TICKERS_DIR, TICKERS_LIST, DATE_STAMP
+from backend.core.globals import TICKERS_LIST, DATE_STAMP; TICKERS_DIR = None
 
 
 '''
