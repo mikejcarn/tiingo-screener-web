@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tiingo Screener</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+<!-- ── Nav bar ──────────────────────────────────────────────── -->
+<div id="nav">
+  <span id="meta-hint"></span>
+  <div class="nav-sep"></div>
+  <button id="btn-prev-ticker" title="Previous ticker">&#9664;</button>
+  <div id="ticker-wrap">
+    <input id="ticker-input" type="text" autocomplete="off" spellcheck="false" placeholder="ticker">
+    <div id="dropdown"></div>
+  </div>
+  <button id="btn-next-ticker" title="Next ticker">&#9654;</button>
+  <div class="nav-sep"></div>
+  <select id="tf-select"></select>
+  <select id="conf-select"></select>
+  <button id="btn-help" title="Help (?)">?</button>
+</div>
+
+<!-- ── Replay controls ──────────────────────────────────────── -->
+<div id="controls">
+  <button id="btn-first"     title="First bar">&#x23EE;</button>
+  <button id="btn-step-back" title="Step back (←)">&#9664;</button>
+  <button id="btn-play"      title="Play/pause (Space)">&#9654;</button>
+  <button id="btn-step-fwd"  title="Step forward (→)">&#9654;&#9654;</button>
+  <button id="btn-last"      title="Last bar">&#x23ED;</button>
+  <div class="nav-sep"></div>
+  <span id="bar-info"></span>
+  <div class="nav-sep"></div>
+  <label>bar <input id="bar-input"  type="text" class="ctrl-inp" autocomplete="off"></label>
+  <label>date <input id="date-input" type="text" class="ctrl-inp" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false"></label>
+  <div class="nav-sep"></div>
+  <label>fps <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"></label>
+</div>
+
+<!-- ── Chart ────────────────────────────────────────────────── -->
+<div id="chart-container">
+  <div id="chart"></div>
+  <div id="status"></div>
+</div>
+
+<script type="module">
+  import { initBrowse } from '/static/js/browse.js';
+  initBrowse();
+</script>
+</body>
+</html>
