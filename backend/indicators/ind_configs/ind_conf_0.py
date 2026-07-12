@@ -164,11 +164,11 @@ params = {
                 'price_maxima_minima': False,
                 'QQEMOD': False,
                 'QQEMOD_avg': False,
-                'OB': True,
+                'OB': False,
                 'OB_avg': False,
                 'gaps': False,
                 'gaps_avg': False,
-                'BoS_CHoCH': False,
+                'BoS_CHoCH': True,
                 'BoS_CHoCH_avg': False,
                 'All_avg': False,
                 'aVWAP_channel': False,
@@ -205,13 +205,13 @@ params = {
                 'BoS_CHoCH_params': [
                     {
                         'swing_length':     15,  # fallback for both when specific keys absent
-                        'BoS_swing_length':   10, # shorter = more frequent BoS signals
+                        'BoS_swing_length':   20, # shorter = more frequent BoS signals
                         'CHoCH_swing_length': 20, # longer  = only significant structure shifts
                         'mode': 'both',
                         'include_BoS':   True,
                         'include_CHoCH': True,
-                        'max_BoS_aVWAPs':   0,
-                        'max_CHoCH_aVWAPs': 0,
+                        'max_BoS_aVWAPs':   3,
+                        'max_CHoCH_aVWAPs': 3,
                         'avg_lookback': 7,
                     },
                 ],

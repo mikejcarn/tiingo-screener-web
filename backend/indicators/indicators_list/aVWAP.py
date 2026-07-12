@@ -295,7 +295,8 @@ def calculate_avwap_channel(
         for _sl in _bc_swings:
             if f'BoS_{_sl}' not in df.columns:
                 _tmp = get_indicators(_bc_clean.copy(), ['BoS_CHoCH'], {'BoS_CHoCH': {'swing_length': _sl}})
-                for _col in [f'BoS_{_sl}', f'CHoCH_{_sl}', f'BoS_CHoCH_Break_Index_{_sl}']:
+                for _col in [f'BoS_{_sl}', f'CHoCH_{_sl}',
+                             f'BoS_CHoCH_Price_{_sl}', f'BoS_CHoCH_Break_Index_{_sl}']:
                     if _col in _tmp.columns:
                         df[_col] = _tmp[_col]
 
@@ -498,8 +499,13 @@ def calculate_avwap_channel(
     # Process GAPS - WITH DEDUP
     # =====================
     if 'gaps' in aVWAP_anchors:
-        base_gap_up_indices = df[df['Gap_Up'] == 1].index.tolist() if 'Gap_Up' in df.columns else []
-        base_gap_down_indices = df[df['Gap_Down'] == 1].index.tolist() if 'Gap_Down' in df.columns else []
+        if 'Gap_Up' not in df.columns or 'Gap_Down' not in df.columns:
+            prev_high = df['High'].shift(1)
+            prev_low  = df['Low'].shift(1)
+            df['Gap_Up']   = (df['Low']  > prev_high).astype(int)
+            df['Gap_Down'] = (df['High'] < prev_low).astype(int)
+        base_gap_up_indices = df[df['Gap_Up'] == 1].index.tolist()
+        base_gap_down_indices = df[df['Gap_Down'] == 1].index.tolist()
        
         # Track unique gap indices to prevent duplicates across configs
         seen_gap_up_indices = set()
