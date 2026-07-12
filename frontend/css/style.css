@@ -33,8 +33,6 @@ button {
 }
 button:hover { background: #1a1a1a; }
 
-#meta-hint { font-size: 11px; color: #2a2a2a; white-space: nowrap; }
-
 .nav-sep { width: 1px; height: 24px; background: #222; flex-shrink: 0; }
 
 #ticker-wrap { position: relative; }
@@ -61,6 +59,7 @@ button:hover { background: #1a1a1a; }
 .dd-item:hover, .dd-item.hi { background: #1a1a1a; color: #fff; }
 
 #btn-prev-ticker, #btn-next-ticker { font-size: 11px; padding: 4px 8px; }
+#ticker-count { font-size: 11px; color: #444; white-space: nowrap; }
 
 #btn-help { margin-left: auto; background: #111; color: #444; border: 1px solid #222; padding: 3px 9px; font-size: 13px; cursor: pointer; border-radius: 3px; }
 #btn-help:hover { color: #aaa; }

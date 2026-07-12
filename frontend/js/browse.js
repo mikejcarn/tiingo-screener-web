@@ -14,11 +14,11 @@ let confs      = [];
 let dropIdx    = -1;
 let tickerIdx  = 0;
 
-const tickerInput = document.getElementById('ticker-input');
-const dropdown    = document.getElementById('dropdown');
-const tfSelect    = document.getElementById('tf-select');
-const confSelect  = document.getElementById('conf-select');
-const metaHint    = document.getElementById('meta-hint');
+const tickerInput  = document.getElementById('ticker-input');
+const tickerCount  = document.getElementById('ticker-count');
+const dropdown     = document.getElementById('dropdown');
+const tfSelect     = document.getElementById('tf-select');
+const confSelect   = document.getElementById('conf-select');
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -46,7 +46,6 @@ export async function initBrowse() {
     confSelect.appendChild(opt);
   }
 
-  _updateHint();
   _wireNav();
 
   // Load from URL hash or first ticker
@@ -64,9 +63,9 @@ function _loadTicker(idx) {
   const tf     = tfSelect.value;
   const conf   = parseInt(confSelect.value) || 0;
 
-  tickerInput.value = ticker;
-  location.hash     = ticker;
-  _updateHint();
+  tickerInput.value        = ticker;
+  tickerCount.textContent  = `${tickerIdx + 1} / ${tickers.length}`;
+  location.hash            = ticker;
 
   // Re-initialise replay for the new ticker
   initReplay(ticker, tf, conf);
@@ -157,8 +156,3 @@ function _moveDrop(delta) {
   items[dropIdx].scrollIntoView({ block: 'nearest' });
 }
 
-function _updateHint() {
-  const tf   = tfSelect.value   || '—';
-  const conf = confSelect.value != null ? confSelect.value : '—';
-  metaHint.textContent = `${tf} · conf ${conf}`;
-}

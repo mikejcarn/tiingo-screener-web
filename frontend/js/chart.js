@@ -296,6 +296,11 @@ export class ChartManager {
     if (this._chart) this._chart.timeScale().fitContent();
   }
 
+  logicalAtX(x) {
+    if (!this._chart) return null;
+    return this._chart.timeScale().coordinateToLogical(x);
+  }
+
   destroy() {
     this._destroySegments();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }

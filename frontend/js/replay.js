@@ -146,6 +146,15 @@ function _wireControls() {
   scrubber.addEventListener('input',  () => { setPlaying(false); jump(parseInt(scrubber.value)); });
   scrubber.addEventListener('change', () => { setPlaying(false); jump(parseInt(scrubber.value)); });
 
+  document.getElementById('chart').addEventListener('dblclick', (e) => {
+    if (!chart || !N) return;
+    const rect    = e.currentTarget.getBoundingClientRect();
+    const logical = chart.logicalAtX(e.clientX - rect.left);
+    if (logical == null) return;
+    setPlaying(false);
+    jump(Math.round(logical));
+  });
+
   fpsInput.addEventListener('change', () => {
     fps = Math.max(1, Math.min(60, parseInt(fpsInput.value) || 8));
     fpsInput.value = fps;
