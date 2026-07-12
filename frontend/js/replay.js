@@ -21,10 +21,11 @@ let playTimer = null;
 let autoFit  = true;
 
 // DOM refs
+const scrubber  = document.getElementById('scrubber');
 const barInput  = document.getElementById('bar-input');
+const barTotal  = document.getElementById('bar-total');
 const dateInput = document.getElementById('date-input');
 const fpsInput  = document.getElementById('fps-input');
-const barInfo   = document.getElementById('bar-info');
 const btnPlay   = document.getElementById('btn-play');
 const status    = document.getElementById('status');
 
@@ -86,10 +87,11 @@ function _connectWS(ticker, timeframe, indConf) {
 
 function _onAllLoaded() {
   _setStatus('');
+  scrubber.max = N - 1;
+  barTotal.textContent = N - 1;
   chart.load(bars, styles);
   chart.fitContent();
   jump(N - 1);  // start at last bar (most recent)
-  _updateBarInfo();
 }
 
 // ── Playback ──────────────────────────────────────────────────
@@ -102,6 +104,8 @@ export function jump(n) {
 }
 
 function setPlaying(val) {
+  // If starting play from the last bar, rewind to 0 first
+  if (val && N > 0 && current >= N - 1) jump(0);
   playing = val;
   btnPlay.textContent = playing ? '⏸' : '▶';
   if (playing) {
@@ -121,8 +125,8 @@ function _tick() {
 function _updateBarInfo() {
   const b = bars[current];
   const date = b ? (b.Date || b.date || '').slice(0, 10) : '';
-  barInfo.textContent = `${date}  ${current} / ${N - 1}`;
-  barInput.value  = current;
+  barInput.value = current;
+  scrubber.value = current;
   if (date) dateInput.value = date;
 }
 
@@ -131,12 +135,16 @@ function _updateBarInfo() {
 function _wireControls() {
   fpsInput.value = fps;
 
-  btnPlay.addEventListener('click', () => setPlaying(!playing));
+  // Blur after click so spacebar doesn't also fire the keydown handler (double-toggle)
+  btnPlay.addEventListener('click', () => { btnPlay.blur(); setPlaying(!playing); });
 
   document.getElementById('btn-step-back').addEventListener('click',  () => { setPlaying(false); jump(current - 1); });
   document.getElementById('btn-step-fwd').addEventListener('click',   () => { setPlaying(false); jump(current + 1); });
   document.getElementById('btn-first').addEventListener('click', () => { setPlaying(false); jump(0); });
   document.getElementById('btn-last').addEventListener('click',  () => { setPlaying(false); jump(N - 1); });
+
+  scrubber.addEventListener('input',  () => { setPlaying(false); jump(parseInt(scrubber.value)); });
+  scrubber.addEventListener('change', () => { setPlaying(false); jump(parseInt(scrubber.value)); });
 
   fpsInput.addEventListener('change', () => {
     fps = Math.max(1, Math.min(60, parseInt(fpsInput.value) || 8));

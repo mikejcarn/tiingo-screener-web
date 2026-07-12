@@ -25,26 +25,26 @@
   <button id="btn-help" title="Help (?)">?</button>
 </div>
 
-<!-- ── Replay controls ──────────────────────────────────────── -->
-<div id="controls">
-  <button id="btn-first"     title="First bar">&#x23EE;</button>
-  <button id="btn-step-back" title="Step back (←)">&#9664;</button>
-  <button id="btn-play"      title="Play/pause (Space)">&#9654;</button>
-  <button id="btn-step-fwd"  title="Step forward (→)">&#9654;&#9654;</button>
-  <button id="btn-last"      title="Last bar">&#x23ED;</button>
-  <div class="nav-sep"></div>
-  <span id="bar-info"></span>
-  <div class="nav-sep"></div>
-  <label>bar <input id="bar-input"  type="text" class="ctrl-inp" autocomplete="off"></label>
-  <label>date <input id="date-input" type="text" class="ctrl-inp" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false"></label>
-  <div class="nav-sep"></div>
-  <label>fps <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"></label>
-</div>
-
 <!-- ── Chart ────────────────────────────────────────────────── -->
 <div id="chart-container">
   <div id="chart"></div>
   <div id="status"></div>
+</div>
+
+<!-- ── Replay controls ──────────────────────────────────────── -->
+<div id="controls">
+  <button id="btn-first"     title="First bar (Home)">&#x23EE;</button>
+  <button id="btn-step-back" title="Step back (←)">&#9664;</button>
+  <button id="btn-play"      title="Play/pause (Space)">&#9654;</button>
+  <button id="btn-step-fwd"  title="Step forward (→)">&#9654;&#9654;</button>
+  <button id="btn-last"      title="Last bar (End)">&#x23ED;</button>
+  <div class="nav-sep"></div>
+  <input id="scrubber" type="range" min="0" max="1000" value="0" step="1">
+  <div class="nav-sep"></div>
+  <label>bar <input id="bar-input" type="text" class="ctrl-inp" autocomplete="off"> / <span id="bar-total">—</span></label>
+  <label>date <input id="date-input" type="text" class="ctrl-inp" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false"></label>
+  <div class="nav-sep"></div>
+  <label>fps <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"></label>
 </div>
 
 <script type="module">

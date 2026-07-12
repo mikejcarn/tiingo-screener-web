@@ -66,24 +66,39 @@ button:hover { background: #1a1a1a; }
 #btn-help:hover { color: #aaa; }
 #btn-help.active { color: #ccc; border-color: #555; }
 
-/* ── Replay controls bar ──────────────────────────────────── */
+/* ── Chart area ───────────────────────────────────────────── */
+#chart-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+#chart { width: 100%; height: 100%; }
+
+/* ── Replay controls bar (bottom) ────────────────────────── */
 #controls {
-  height: 38px;
+  height: 48px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 0 14px;
   background: #000;
-  border-bottom: 1px solid #1a1a1a;
+  border-top: 1px solid #1a1a1a;
   flex-shrink: 0;
   font-size: 12px;
   color: #555;
 }
 
 #controls button { padding: 3px 10px; font-size: 12px; }
-#controls label { display: flex; align-items: center; gap: 5px; }
+#controls label  { display: flex; align-items: center; gap: 5px; }
 
-#bar-info { min-width: 210px; color: #444; }
+#scrubber {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  accent-color: rgba(38,166,154,0.9);
+}
+
+#bar-total { color: #444; }
 
 input[type="text"].ctrl-inp, input[type="number"].ctrl-inp {
   background: #111; color: #ccc; border: 1px solid #2a2a2a;
@@ -93,14 +108,6 @@ input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline
 #bar-input  { width: 70px; }
 #date-input { width: 100px; }
 #fps-input  { width: 46px; }
-
-/* ── Chart area ───────────────────────────────────────────── */
-#chart-container {
-  flex: 1;
-  position: relative;
-  overflow: hidden;
-}
-#chart { width: 100%; height: 100%; }
 
 /* ── Status overlay ───────────────────────────────────────── */
 #status {
