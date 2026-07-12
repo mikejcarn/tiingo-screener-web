@@ -304,26 +304,52 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
     peaks_half   = {i: (c or {}).get('periods', 25) // 2 for i, c in enumerate(peaks_cfgs)}
     valleys_half = {i: (c or {}).get('periods', 25) // 2 for i, c in enumerate(valleys_cfgs)}
 
+    # OB aVWAP anchors — prefer the raw OB column when available (replay-accurate:
+    # all OBs are extracted and caps applied via displaced_at so early replay shows
+    # the correct OB rather than the full-dataset cap survivor).  When the standalone
+    # OB indicator is not enabled, fall back to the pre-stored aVWAP_OB_* columns.
+    ob_bull_evts: list = []
+    ob_bear_evts: list = []
+    _use_raw_ob = 'OB' in df.columns
+    if _use_raw_ob:
+        ob_cfg0         = ob_cfgs[0] if ob_cfgs else {}
+        ob_periods      = int(ob_cfg0.get('periods',               25))
+        max_unmitigated = ob_cfg0.get('max_unmitigated_aVWAPs',    None)
+        max_mitigated   = ob_cfg0.get('max_mitigated_aVWAPs',      None)
+        for idx in df[df['OB'] != 0].index:
+            v   = df.at[idx, 'OB']
+            mit = df.at[idx, 'OB_Mitigated_Index'] if 'OB_Mitigated_Index' in df.columns else 0
+            is_mit = bool(not (pd.isna(mit) or mit == 0))
+            ev = {'anchor_bar': int(idx), 'vf': int(idx) + ob_periods, 'm': is_mit}
+            (ob_bull_evts if v > 0 else ob_bear_evts).append(ev)
+        ob_bull_evts = _add_displaced_at(ob_bull_evts, max_unmitigated, max_mitigated)
+        ob_bear_evts = _add_displaced_at(ob_bear_evts, max_unmitigated, max_mitigated)
+
     pools: dict[str, list] = {
-        'ob_bull': [], 'ob_bear': [],
+        'ob_bull': ob_bull_evts,
+        'ob_bear': ob_bear_evts,
         'bos_bull': [], 'bos_bear': [],
         'choch_bull': [], 'choch_bear': [],
         'gap_up': [], 'gap_dn': [],
     }
 
     for col in df.columns:
-        # OB aVWAPs — anchor_bar from column suffix, vf delayed by swing periods
+        # OB aVWAP columns: skip if raw OB already handled above; otherwise use
+        # the pre-stored columns as the fallback (full-dataset anchors, but at
+        # least the confirmation delay is applied via vf).
         m = _OB_BULL_RE.match(col)
         if m:
-            ci, anchor_bar = int(m.group(1)), int(m.group(2))
-            periods = ob_cfgs[ci].get('periods', 25) if ci < len(ob_cfgs) else 25
-            pools['ob_bull'].append({'anchor_bar': anchor_bar, 'vf': anchor_bar + periods})
+            if not _use_raw_ob:
+                ci, anchor_bar = int(m.group(1)), int(m.group(2))
+                periods = ob_cfgs[ci].get('periods', 25) if ci < len(ob_cfgs) else 25
+                pools['ob_bull'].append({'anchor_bar': anchor_bar, 'vf': anchor_bar + periods, 'm': False})
             continue
         m = _OB_BEAR_RE.match(col)
         if m:
-            ci, anchor_bar = int(m.group(1)), int(m.group(2))
-            periods = ob_cfgs[ci].get('periods', 25) if ci < len(ob_cfgs) else 25
-            pools['ob_bear'].append({'anchor_bar': anchor_bar, 'vf': anchor_bar + periods})
+            if not _use_raw_ob:
+                ci, anchor_bar = int(m.group(1)), int(m.group(2))
+                periods = ob_cfgs[ci].get('periods', 25) if ci < len(ob_cfgs) else 25
+                pools['ob_bear'].append({'anchor_bar': anchor_bar, 'vf': anchor_bar + periods, 'm': False})
             continue
 
         # BoS aVWAPs — suffix is signal_bar; actual anchor is the extremum in the

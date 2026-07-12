@@ -161,10 +161,10 @@ params = {
                 'valleys_avg': False,
                 'peaks_valleys': False,
                 'peaks_valleys_avg': False,
-                'price_maxima_minima': True,
+                'price_maxima_minima': False,
                 'QQEMOD': False,
                 'QQEMOD_avg': False,
-                'OB': False,
+                'OB': True,
                 'OB_avg': False,
                 'gaps': False,
                 'gaps_avg': False,
@@ -221,8 +221,8 @@ params = {
                         'periods': 5,            # swing lookback for OB detection
                         'max_aVWAPs': None,       # cap on aVWAPs per side (None = no cap)
                         'max_mitigated_aVWAPs': None,    # keep last N mitigated OB aVWAPs (None = no cap)
-                        'max_unmitigated_aVWAPs': 1,  # keep last N unmitigated OB aVWAPs (None = no cap)
-                        'extend_to_end': False,    # extend mitigated aVWAPs to current bar
+                        'max_unmitigated_aVWAPs': 3,  # keep last N unmitigated OB aVWAPs (None = no cap)
+                        'extend_to_end': True,    # extend mitigated aVWAPs to current bar
                         'faded': True,            # render the post-mitigation extension at low opacity
                         'show_OB': False,               # also render horizontal OB boxes
                         'OB_max_mitigated': None, # cap OB boxes independently (None = no cap)
