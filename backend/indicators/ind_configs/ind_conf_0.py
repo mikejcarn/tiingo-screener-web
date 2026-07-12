@@ -37,8 +37,8 @@ indicators = {  # List of available indicator configurations
         # 'supertrend',
         # 'BoS_CHoCH',
         'FVG',
-        'OB',
-        'liquidity',
+        # 'OB',
+        # 'liquidity',
     ],
 
     '1hour': [
@@ -288,7 +288,7 @@ params = {
                 'max_unmitigated': 1,
             },
             'FVG': {
-                'max_mitigated': 20,
+                'max_mitigated': 10,
                 'max_unmitigated': 10,
                 'join_consecutive': False,
             },

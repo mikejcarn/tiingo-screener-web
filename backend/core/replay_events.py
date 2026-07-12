@@ -128,7 +128,10 @@ def _extract_fvg_segments(df: pd.DataFrame, params: dict = None) -> list:
         low  = df.at[idx, 'FVG_Low']  if 'FVG_Low'  in df.columns else None
         if high is None or low is None or pd.isna(high) or pd.isna(low):
             continue
-        price = float((high + low) / 2)
+        # Bull FVG: line at Top (= low of bar i+1, upper gap edge) — the first
+        # level price tests when retracing into the gap.
+        # Bear FVG: line at Bottom (= high of bar i+1, lower gap edge).
+        price = float(high) if v > 0 else float(low)
         mit   = df.at[idx, 'FVG_Mitigated_Index'] if 'FVG_Mitigated_Index' in df.columns else 0
         if pd.isna(mit) or mit == 0:
             end, is_mit = n - 1, False
