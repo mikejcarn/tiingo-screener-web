@@ -41,23 +41,27 @@ export class DynamicVWAPEngine {
   constructor(lwChart) {
     this._chart   = lwChart;
     this._bars    = [];
+    this._highs   = null;   // Float64Array — bar highs for PMM peak detection
+    this._lows    = null;   // Float64Array — bar lows  for PMM valley detection
     this._cumPV   = null;   // Float64Array — cumulative (typical_price × volume)
     this._cumVol  = null;   // Float64Array — cumulative volume
-    this._peaks   = [];     // sorted ascending integer bar indices
+    this._peaks   = [];
     this._valleys = [];
     this._qqEvts  = [];     // [{committed_bar, anchor_bar, direction}] sorted by committed_bar
-    this._maxP    = 1;
-    this._maxV    = 1;
+    this._maxP    = 0;
+    this._maxV    = 0;
     this._maxQQ   = 0;
-    this._peaksHalf   = 0;  // bars to wait before a peak is "confirmed" (periods // 2)
+    this._peaksHalf   = 0;
     this._valleysHalf = 0;
-    this._pPool   = [];     // LineSeries pool — peaks
-    this._vPool   = [];     // LineSeries pool — valleys
+    this._pPool   = [];
+    this._vPool   = [];
     this._qbPool  = [];     // LineSeries pool — QQEMOD bear anchors (teal)
     this._qlPool  = [];     // LineSeries pool — QQEMOD bull anchors (red)
-    // Generic anchor pools for OB / BoS / CHoCH / gap / price_maxima_minima aVWAPs
-    // Map of pool_key -> { events: [{anchor_bar, vf, da?}], series: LineSeries[] }
+    // Generic anchor pools for OB / BoS / CHoCH / gap / peaks / valleys aVWAPs
     this._anchorPools = {};
+    // PMM — recomputed via greedyExtrema at every reveal(n)
+    // Array of {valleys, peaks, maxAnchors, spacing, vSeries[], pSeries[]}
+    this._pmmPools = [];
   }
 
   // ── Setup ──────────────────────────────────────────────────────────────────
@@ -90,12 +94,71 @@ export class DynamicVWAPEngine {
       for (const s of pool.series) { try { this._chart.removeSeries(s); } catch (_) {} }
     }
     this._anchorPools = {};
+    for (const p of this._pmmPools) {
+      for (const s of [...p.vSeries, ...p.pSeries]) { try { this._chart.removeSeries(s); } catch (_) {} }
+    }
+    this._pmmPools = [];
+  }
+
+  // ── PMM greedy extrema ────────────────────────────────────────────────────
+
+  /**
+   * Greedy backward-looking extrema selection. Picks the global max/min, masks
+   * out a spacing window around it, and repeats until nAnchors are found.
+   * Returns an array of bar indices (ascending), length ≤ nAnchors.
+   */
+  _greedyExtrema(values, n, mode, nAnchors, spacing) {
+    const mask = new Uint8Array(n + 1).fill(1);
+    const selected = [];
+    for (let iter = 0; iter < nAnchors; iter++) {
+      let bestIdx = -1;
+      let bestVal = mode === 'valley' ? Infinity : -Infinity;
+      for (let i = 0; i <= n; i++) {
+        if (!mask[i]) continue;
+        const v = values[i];
+        if (mode === 'valley' ? v < bestVal : v > bestVal) { bestVal = v; bestIdx = i; }
+      }
+      if (bestIdx === -1) break;
+      selected.push(bestIdx);
+      const lo = Math.max(0, bestIdx - spacing);
+      const hi = Math.min(n + 1, bestIdx + spacing + 1);
+      for (let j = lo; j < hi; j++) mask[j] = 0;
+    }
+    return selected.sort((a, b) => a - b);
+  }
+
+  _buildPmmPools(configs) {
+    for (const cfg of (configs || [])) {
+      const vSeries = cfg.valleys
+        ? Array.from({ length: cfg.max_anchors }, () => this._series('rgba(38,166,154,0.75)', 2))
+        : [];
+      const pSeries = cfg.peaks
+        ? Array.from({ length: cfg.max_anchors }, () => this._series('rgba(239,83,80,0.75)',  2))
+        : [];
+      this._pmmPools.push({ ...cfg, vSeries, pSeries });
+    }
+  }
+
+  _anchorPoolStyle(key) {
+    if (ANCHOR_POOL_STYLE[key]) return ANCHOR_POOL_STYLE[key];
+    // Dynamic per-config peaks/valleys: peak_c0, peak_c1, valley_c0, valley_c1, ...
+    let m = key.match(/^peak_c(\d+)$/);
+    if (m) {
+      const ci = parseInt(m[1]);
+      return [`rgba(239,83,80,${ci === 0 ? '0.75' : '0.5'})`, ci === 0 ? 2 : 1, ci === 0 ? 0 : 1];
+    }
+    m = key.match(/^valley_c(\d+)$/);
+    if (m) {
+      const ci = parseInt(m[1]);
+      return [`rgba(38,166,154,${ci === 0 ? '0.75' : '0.5'})`, ci === 0 ? 2 : 1, ci === 0 ? 0 : 1];
+    }
+    return null;
   }
 
   _buildAnchorPools(anchors) {
     for (const [key, events] of Object.entries(anchors || {})) {
       if (!events.length) continue;
-      const style = ANCHOR_POOL_STYLE[key];
+      const style = this._anchorPoolStyle(key);
       if (!style) continue;
       const [color, lineWidth, lineStyle] = style;
       const series = events.map(() => this._series(color, lineWidth, lineStyle));
@@ -112,24 +175,28 @@ export class DynamicVWAPEngine {
    */
   load(bars, events) {
     this._bars    = bars;
-    this._peaks       = [...(events.peaks   || [])].sort((a, b) => a - b);
-    this._valleys     = [...(events.valleys || [])].sort((a, b) => a - b);
+    this._peaks       = [];   // retired — peaks/valleys now handled via _anchorPools
+    this._valleys     = [];
     this._qqEvts      = [...(events.qqemod_events || [])].sort((a, b) => a.committed_bar - b.committed_bar);
-    this._maxP        = events.max_peaks    || 1;
-    this._maxV        = events.max_valleys  || 1;
+    this._maxP        = 0;
+    this._maxV        = 0;
     this._maxQQ       = events.max_qqemod   || 0;
-    this._peaksHalf   = events.peaks_half   || 0;
-    this._valleysHalf = events.valleys_half || 0;
+    this._peaksHalf   = 0;
+    this._valleysHalf = 0;
 
-    // Build O(1) VWAP lookup tables
+    // Build O(1) VWAP lookup tables + price arrays for PMM
     const N = bars.length;
     this._cumPV  = new Float64Array(N);
     this._cumVol = new Float64Array(N);
+    this._highs  = new Float64Array(N);
+    this._lows   = new Float64Array(N);
     let pv = 0, vol = 0;
     for (let i = 0; i < N; i++) {
       const b = bars[i];
       const h = b.High ?? b.high, l = b.Low ?? b.low, c = b.Close ?? b.close;
       const v = b.Volume ?? b.volume;
+      this._highs[i] = h;
+      this._lows[i]  = l;
       pv  += ((h + l + c) / 3) * v;
       vol += v;
       this._cumPV[i]  = pv;
@@ -138,6 +205,7 @@ export class DynamicVWAPEngine {
 
     this._buildPools();
     this._buildAnchorPools(events.avwap_anchors);
+    this._buildPmmPools(events.pmm_configs);
   }
 
   // ── VWAP computation ──────────────────────────────────────────────────���───
@@ -209,7 +277,7 @@ export class DynamicVWAPEngine {
       }
     }
 
-    // ── Generic anchor pools (OB / BoS / CHoCH / gap / PMM aVWAPs) ───────
+    // ── Generic anchor pools (OB / BoS / CHoCH / gap / peaks / valleys) ───
     for (const pool of Object.values(this._anchorPools)) {
       const active = [];
       for (let i = pool.events.length - 1; i >= 0; i--) {
@@ -222,6 +290,22 @@ export class DynamicVWAPEngine {
         pool.series[i].setData(active[i] !== undefined ? this._vwapLine(active[i], n) : []);
       }
     }
+
+    // ── PMM — recompute greedy anchors on bars[0..n] at every step ───────
+    for (const p of this._pmmPools) {
+      if (p.valleys && p.vSeries.length) {
+        const anchors = this._greedyExtrema(this._lows, n, 'valley', p.max_anchors, p.spacing);
+        for (let i = 0; i < p.vSeries.length; i++) {
+          p.vSeries[i].setData(anchors[i] !== undefined ? this._vwapLine(anchors[i], n) : []);
+        }
+      }
+      if (p.peaks && p.pSeries.length) {
+        const anchors = this._greedyExtrema(this._highs, n, 'peak', p.max_anchors, p.spacing);
+        for (let i = 0; i < p.pSeries.length; i++) {
+          p.pSeries[i].setData(anchors[i] !== undefined ? this._vwapLine(anchors[i], n) : []);
+        }
+      }
+    }
   }
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
@@ -229,5 +313,6 @@ export class DynamicVWAPEngine {
   destroy() {
     this._destroyPools();
     this._bars = []; this._cumPV = null; this._cumVol = null;
+    this._highs = null; this._lows = null;
   }
 }

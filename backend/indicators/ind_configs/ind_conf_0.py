@@ -31,12 +31,12 @@ indicators = {  # List of available indicator configurations
     ],
 
     'daily': [
-        # 'aVWAP',
-        # 'candle_colors',
+        'aVWAP',
+        'candle_colors',
         # 'SMA',
         # 'supertrend',
         # 'BoS_CHoCH',
-        'FVG',
+        # 'FVG',
         # 'OB',
         # 'liquidity',
     ],
@@ -155,13 +155,13 @@ params = {
 
         'daily': {
             'aVWAP': {
-                'peaks': True,
-                'valleys': True,
+                'peaks': False,
+                'valleys': False,
                 'peaks_avg': False,
                 'valleys_avg': False,
                 'peaks_valleys': False,
                 'peaks_valleys_avg': False,
-                'price_maxima_minima': False,
+                'price_maxima_minima': True,
                 'QQEMOD': False,
                 'QQEMOD_avg': False,
                 'OB': False,
@@ -173,10 +173,12 @@ params = {
                 'All_avg': False,
                 'aVWAP_channel': False,
                 'peaks_params': [
-                    { 'periods': 100, 'max_aVWAPs': None, 'avg_lookback': 20, },
+                    { 'periods': 20, 'max_aVWAPs': 3, 'avg_lookback': 20, },
+                    { 'periods': 100, 'max_aVWAPs': 1, 'avg_lookback': 20, },
                 ],
                 'valleys_params': [
-                    { 'periods': 100, 'max_aVWAPs': None, 'avg_lookback': 20, },
+                    { 'periods': 20, 'max_aVWAPs': 3, 'avg_lookback': 20, },
+                    { 'periods': 100, 'max_aVWAPs': 1, 'avg_lookback': 20, },
                 ],
                 'peaks_valleys_params': [
                     { 'periods': 20, 'max_aVWAPs': None, 'avg_lookback': 20, },

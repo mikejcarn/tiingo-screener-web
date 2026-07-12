@@ -273,32 +273,42 @@ _GAP_UP_RE     = re.compile(r'^Gap_Up_aVWAP_c(\d+)_(\d+)$')
 _GAP_DN_RE     = re.compile(r'^Gap_Down_aVWAP_c(\d+)_(\d+)$')
 _PMM_VALLEY_RE = re.compile(r'^aVWAP_price_maxima_minima_valley_c(\d+)_(\d+)$')
 _PMM_PEAK_RE   = re.compile(r'^aVWAP_price_maxima_minima_peak_c(\d+)_(\d+)$')
+_PEAK_RE       = re.compile(r'^aVWAP_peak_c(\d+)_(\d+)$')
+_VALLEY_RE     = re.compile(r'^aVWAP_valley_c(\d+)_(\d+)$')
 
 
 def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
     """
     Extract anchor events for aVWAP types rendered dynamically in the JS engine:
-    OB, BoS/CHoCH, gaps, and price_maxima_minima.
+    peaks/valleys, OB, BoS/CHoCH, gaps, and price_maxima_minima.
 
     Returns a dict of {pool_key: [{anchor_bar, vf}]}, one list per rendered pool.
     The JS engine builds one LineSeries per event and reveals anchors when vf <= n.
 
     vf rules:
-      OB        — anchor_bar + periods  (OB confirmation delay; same as standalone OB)
-      BoS/CHoCH — anchor_bar            (first_valid_index = extreme bar inside the range)
-      gaps      — anchor_bar            (gap is visible the moment it forms)
-      PMM       — anchor_bar            (greedy extrema is backward-looking; no delay)
+      peaks/valleys — anchor_bar + periods//2  (centered rolling window confirmation delay)
+      OB            — anchor_bar + periods  (OB swing confirmation delay)
+      BoS/CHoCH     — anchor_bar            (first_valid_index = extreme bar inside the range)
+      gaps          — anchor_bar            (gap is visible the moment it forms)
+      PMM           — anchor_bar            (greedy extrema is backward-looking; no delay)
     """
     avwap_p   = ind_params.get('aVWAP', {})
     ob_cfgs   = avwap_p.get('OB_params', [])
     ob_cfgs   = ob_cfgs if isinstance(ob_cfgs, list) else [ob_cfgs]
+
+    # Per-config confirmation half-windows for peaks/valleys
+    peaks_cfgs   = avwap_p.get('peaks_params',   [])
+    valleys_cfgs = avwap_p.get('valleys_params',  [])
+    peaks_cfgs   = peaks_cfgs   if isinstance(peaks_cfgs,   list) else [peaks_cfgs]
+    valleys_cfgs = valleys_cfgs if isinstance(valleys_cfgs, list) else [valleys_cfgs]
+    peaks_half   = {i: (c or {}).get('periods', 25) // 2 for i, c in enumerate(peaks_cfgs)}
+    valleys_half = {i: (c or {}).get('periods', 25) // 2 for i, c in enumerate(valleys_cfgs)}
 
     pools: dict[str, list] = {
         'ob_bull': [], 'ob_bear': [],
         'bos_bull': [], 'bos_bear': [],
         'choch_bull': [], 'choch_bear': [],
         'gap_up': [], 'gap_dn': [],
-        'pmm_valley': [], 'pmm_peak': [],
     }
 
     for col in df.columns:
@@ -357,18 +367,28 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
             pools['gap_dn'].append({'anchor_bar': anchor_bar, 'vf': anchor_bar})
             continue
 
-        # Price maxima/minima — suffix is rank; anchor from first_valid_index
-        m = _PMM_VALLEY_RE.match(col)
+        # PMM aVWAP columns are intentionally skipped here — PMM anchors are
+        # recomputed dynamically in JS at each replay bar via greedyExtrema,
+        # so pre-extracting full-dataset anchors would leak future information.
+
+        # Peaks/valleys — anchor_bar from column suffix, vf delayed by periods//2
+        m = _PEAK_RE.match(col)
         if m:
-            fvi = df[col].first_valid_index()
-            if fvi is not None:
-                pools['pmm_valley'].append({'anchor_bar': int(fvi), 'vf': int(fvi)})
+            ci, anchor_bar = int(m.group(1)), int(m.group(2))
+            half = peaks_half.get(ci, 12)
+            key = f'peak_c{ci}'
+            if key not in pools:
+                pools[key] = []
+            pools[key].append({'anchor_bar': anchor_bar, 'vf': anchor_bar + half})
             continue
-        m = _PMM_PEAK_RE.match(col)
+        m = _VALLEY_RE.match(col)
         if m:
-            fvi = df[col].first_valid_index()
-            if fvi is not None:
-                pools['pmm_peak'].append({'anchor_bar': int(fvi), 'vf': int(fvi)})
+            ci, anchor_bar = int(m.group(1)), int(m.group(2))
+            half = valleys_half.get(ci, 12)
+            key = f'valley_c{ci}'
+            if key not in pools:
+                pools[key] = []
+            pools[key].append({'anchor_bar': anchor_bar, 'vf': anchor_bar + half})
             continue
 
     # Sort each pool ascending by anchor_bar (JS iterates in reverse for "most recent first")
@@ -389,30 +409,30 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     """
     avwap_p = ind_params.get('aVWAP', {})
 
-    # Number of simultaneous anchors per type
+    # Peaks/valleys are now handled entirely via _anchorPools (peak_c{N}/valley_c{N}),
+    # so the old _pPool/_vPool JS path is disabled by zeroing these counts.
     peaks_cfgs   = avwap_p.get('peaks_params',   [])
     valleys_cfgs = avwap_p.get('valleys_params',  [])
-    n_peak_cfgs   = len(peaks_cfgs)   if isinstance(peaks_cfgs,   list) else (1 if peaks_cfgs   else 0)
-    n_valley_cfgs = len(valleys_cfgs) if isinstance(valleys_cfgs, list) else (1 if valleys_cfgs else 0)
 
     qqemod_cfg = avwap_p.get('QQEMOD_params', {})
     max_qqemod = qqemod_cfg.get('max_anchors', 5) if avwap_p.get('QQEMOD', False) else 0
 
-    # Confirmation half-window for centered-rolling peak/valley detection.
-    # A peak at bar N can only be confirmed at bar N + periods//2 because the
-    # centered rolling(periods, center=True) window requires that many future bars.
-    def _half(cfgs, default=25):
-        if not cfgs:
-            return default // 2
-        first = cfgs[0] if isinstance(cfgs, list) else cfgs
-        return first.get('periods', default) // 2
-
-    peaks_half   = _half(peaks_cfgs)
-    valleys_half = _half(valleys_cfgs)
-
-    # Peak/valley bar indices from pre-computed flag columns
-    peaks   = [int(i) for i in df[df['Peaks']   == 1].index.tolist()] if 'Peaks'   in df.columns else []
-    valleys = [int(i) for i in df[df['Valleys'] == 1].index.tolist()] if 'Valleys' in df.columns else []
+    # PMM configs — sent to JS so greedyExtrema can rerun at each replay bar
+    pmm_enabled = avwap_p.get('price_maxima_minima', False)
+    pmm_raw = avwap_p.get('price_maxima_minima_params', {}) if pmm_enabled else None
+    if pmm_raw is None:
+        pmm_configs = []
+    else:
+        cfgs = pmm_raw if isinstance(pmm_raw, list) else [pmm_raw]
+        pmm_configs = [
+            {
+                'valleys':     bool(c.get('valleys',           True)),
+                'peaks':       bool(c.get('peaks',             False)),
+                'max_anchors': int(c.get('max_anchors',        5)),
+                'spacing':     int(c.get('min_swing_spacing',  30)),
+            }
+            for c in cfgs
+        ]
 
     # QQEMOD anchor commitment events from color column
     # (color is produced by candle_colors with indicator_color='QQEMOD')
@@ -420,14 +440,11 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
 
     return {
         'type':          'replay_events',
-        'peaks':         peaks,
-        'valleys':       valleys,
-        'peaks_half':    peaks_half,
-        'valleys_half':  valleys_half,
-        'max_peaks':     max(1, n_peak_cfgs),
-        'max_valleys':   max(1, n_valley_cfgs),
+        'max_peaks':     0,
+        'max_valleys':   0,
         'qqemod_events': qqemod_events,
         'max_qqemod':    max_qqemod,
+        'pmm_configs':   pmm_configs,
         # Segment indicators — horizontal line events with start/end bar + price
         'fvg': _extract_fvg_segments(df, ind_params.get('FVG',        {})),
         'ob':  _extract_ob_segments(df,  ind_params.get('OB',         {})),
