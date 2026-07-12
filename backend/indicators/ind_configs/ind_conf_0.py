@@ -32,15 +32,13 @@ indicators = {  # List of available indicator configurations
 
     'daily': [
         # 'aVWAP',
-        'candle_colors',
+        # 'candle_colors',
+        # 'SMA',
+        # 'supertrend',
         # 'BoS_CHoCH',
-        # 'QQEMOD',
-        # 'aVWAP_anchor_score',
-        # 'banker_RSI',
-        'SMA',
-        # 'liquidity',
-        # 'FVG',
-        # 'OB',
+        'FVG',
+        'OB',
+        'liquidity',
     ],
 
     '1hour': [
@@ -286,8 +284,8 @@ params = {
             },
             'OB': {
                 'periods': 10,
-                'max_mitigated': None,
-                'max_unmitigated': None,
+                'max_mitigated': 1,
+                'max_unmitigated': 1,
             },
             'FVG': {
                 'max_mitigated': 20,
@@ -306,6 +304,14 @@ params = {
                 'bb_length': 50, 'bb_multi': 0.35
             },
             'SMA': {'periods': [50, 200]},
+            'supertrend': {'periods': 20, 'multiplier': 3},
+            'liquidity': {
+                'swing_length': 10,
+                'range_percent': 0.1,
+                'max_swept': 0,
+                'max_unswept': None,
+                'extend_lines': True,
+            },
             'TTM_squeeze': {
                 'bb_length': 18, 'bb_std_dev': 1.9,
                 'kc_length': 18, 'kc_mult': 1.7, 'use_true_range': True

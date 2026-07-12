@@ -25,23 +25,6 @@ def calculate_ob(df, periods=25, max_mitigated=None, max_unmitigated=None):
     df = df.rename(columns={'MitigatedIndex': 'OB_Mitigated_Index'}, errors='ignore')
     df = df.fillna(0)
 
-    if max_mitigated is not None or max_unmitigated is not None:
-        ob_indices = df[df['OB'] != 0].index[::-1]
-        mitigated, unmitigated = [], []
-        for idx in ob_indices:
-            mit_idx = int(df.loc[idx, 'OB_Mitigated_Index'])
-            if 0 < mit_idx < len(df):
-                mitigated.append(idx)
-            else:
-                unmitigated.append(idx)
-
-        show = set()
-        show.update(mitigated[:max_mitigated] if max_mitigated is not None else mitigated)
-        show.update(unmitigated[:max_unmitigated] if max_unmitigated is not None else unmitigated)
-
-        mask = df.index.isin(show)
-        df.loc[~mask, ['OB', 'OB_High', 'OB_Low', 'OB_Mitigated_Index']] = 0
-
     return {
         'OB': df['OB'],
         'OB_High': df['OB_High'],

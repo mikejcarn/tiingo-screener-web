@@ -34,11 +34,17 @@ def col_styles_for_columns(columns: list) -> dict:
     for col in columns:
         cfg = _cfg_idx(col)
 
-        # aVWAP_QQEMOD_*, aVWAP_peak_*, aVWAP_valley_* are handled by the
-        # client-side DynamicVWAPEngine (replay_events).  Skip static rendering.
+        # These column types are all handled by the client-side DynamicVWAPEngine
+        # via replay_events — skip static rendering entirely.
         if (col.startswith('aVWAP_QQEMOD_')
                 or col.startswith('aVWAP_peak_')
-                or col.startswith('aVWAP_valley_')):
+                or col.startswith('aVWAP_valley_')
+                or col.startswith('aVWAP_OB_')          # OB aVWAPs (incl. ghost)
+                or col.startswith('aVWAP_BoS_')         # BoS aVWAPs
+                or col.startswith('aVWAP_CHoCH_')       # CHoCH aVWAPs
+                or col.startswith('Gap_Up_aVWAP_')      # Gap aVWAPs
+                or col.startswith('Gap_Down_aVWAP_')
+                or col.startswith('aVWAP_price_maxima_minima_')):  # PMM aVWAPs
             continue
 
         # ── aVWAP pinch ──────────────────────────────────────────────────────
@@ -118,8 +124,10 @@ def col_styles_for_columns(columns: list) -> dict:
             w = 1 if period <= 10 else 2 if period <= 50 else 3 if period <= 100 else 4 if period <= 200 else 5
             _add(col, colors['blue_SMA'], w)
 
-        # ── Supertrend ───────────────────────────────────────────────────────
-        elif col in ('Supertrend_Upper', 'Supertrend_Lower'):
-            _add(col, colors['orange'], 1)
+        # Supertrend_Upper/Lower/Direction are rendered as a synthetic active
+        # line in chart.js (teal below price in uptrend, red above in downtrend).
+        # Skip static rendering here.
+        elif col in ('Supertrend_Upper', 'Supertrend_Lower', 'Supertrend_Direction'):
+            continue
 
     return styles

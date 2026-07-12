@@ -18,6 +18,21 @@ const C_VALLEY = 'rgba(38, 166, 154, 0.75)';   // teal  — valleys
 const C_QQ_BEAR = 'rgba(38, 166, 154, 0.75)';
 const C_QQ_BULL = 'rgba(239, 83, 80, 0.75)';
 
+// Generic anchor pool colour / style config
+// Each entry: [color, lineWidth, lineStyle]  (lineStyle: 0=solid, 1=dotted, 2=dashed)
+const ANCHOR_POOL_STYLE = {
+  ob_bull:    ['rgba(38,166,154,0.5)',  1, 0],
+  ob_bear:    ['rgba(239,83,80,0.5)',   1, 0],
+  bos_bull:   ['rgba(38,166,154,0.75)', 1, 0],
+  bos_bear:   ['rgba(239,83,80,0.75)',  1, 0],
+  choch_bull: ['rgba(38,166,154,0.5)',  1, 0],
+  choch_bear: ['rgba(239,83,80,0.5)',   1, 0],
+  gap_up:     ['rgba(38,166,154,0.5)',  1, 2],
+  gap_dn:     ['rgba(239,83,80,0.5)',   1, 2],
+  pmm_valley: ['rgba(38,166,154,0.75)', 2, 0],
+  pmm_peak:   ['rgba(239,83,80,0.75)',  2, 0],
+};
+
 
 export class DynamicVWAPEngine {
   /**
@@ -40,6 +55,9 @@ export class DynamicVWAPEngine {
     this._vPool   = [];     // LineSeries pool — valleys
     this._qbPool  = [];     // LineSeries pool — QQEMOD bear anchors (teal)
     this._qlPool  = [];     // LineSeries pool — QQEMOD bull anchors (red)
+    // Generic anchor pools for OB / BoS / CHoCH / gap / price_maxima_minima aVWAPs
+    // Map of pool_key -> { events: [{anchor_bar, vf, da?}], series: LineSeries[] }
+    this._anchorPools = {};
   }
 
   // ── Setup ──────────────────────────────────────────────────────────────────
@@ -68,6 +86,24 @@ export class DynamicVWAPEngine {
       try { this._chart.removeSeries(s); } catch (_) {}
     }
     this._pPool = []; this._vPool = []; this._qbPool = []; this._qlPool = [];
+    for (const pool of Object.values(this._anchorPools)) {
+      for (const s of pool.series) { try { this._chart.removeSeries(s); } catch (_) {} }
+    }
+    this._anchorPools = {};
+  }
+
+  _buildAnchorPools(anchors) {
+    for (const [key, events] of Object.entries(anchors || {})) {
+      if (!events.length) continue;
+      const style = ANCHOR_POOL_STYLE[key];
+      if (!style) continue;
+      const [color, lineWidth, lineStyle] = style;
+      const series = events.map(() => this._series(color, lineWidth, lineStyle));
+      this._anchorPools[key] = {
+        events: [...events].sort((a, b) => a.anchor_bar - b.anchor_bar),
+        series,
+      };
+    }
   }
 
   /**
@@ -101,6 +137,7 @@ export class DynamicVWAPEngine {
     }
 
     this._buildPools();
+    this._buildAnchorPools(events.avwap_anchors);
   }
 
   // ── VWAP computation ──────────────────────────────────────────────────���───
@@ -152,7 +189,7 @@ export class DynamicVWAPEngine {
       this._vPool[i].setData(a !== undefined ? this._vwapLine(a, n) : []);
     }
 
-    // ── QQEMOD ───────────────────────────��────────────────────────────────
+    // ── QQEMOD ───────────────────────────────────────────────────────────
     if (this._maxQQ > 0) {
       const bearAnchors = [];
       const bullAnchors = [];
@@ -169,6 +206,20 @@ export class DynamicVWAPEngine {
       for (let i = 0; i < this._maxQQ; i++) {
         this._qbPool[i].setData(bearAnchors[i] !== undefined ? this._vwapLine(bearAnchors[i], n) : []);
         this._qlPool[i].setData(bullAnchors[i] !== undefined ? this._vwapLine(bullAnchors[i], n) : []);
+      }
+    }
+
+    // ── Generic anchor pools (OB / BoS / CHoCH / gap / PMM aVWAPs) ───────
+    for (const pool of Object.values(this._anchorPools)) {
+      const active = [];
+      for (let i = pool.events.length - 1; i >= 0; i--) {
+        const ev = pool.events[i];
+        if (ev.vf > n) continue;
+        if (ev.da !== undefined && n >= ev.da) continue;
+        active.push(ev.anchor_bar);
+      }
+      for (let i = 0; i < pool.series.length; i++) {
+        pool.series[i].setData(active[i] !== undefined ? this._vwapLine(active[i], n) : []);
       }
     }
   }
