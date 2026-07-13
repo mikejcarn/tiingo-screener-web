@@ -1,4 +1,5 @@
 import os
+import json
 import pandas as pd
 from pathlib import Path
 import importlib.util
@@ -226,6 +227,19 @@ def load_indicator_config(ind_conf, timeframe=None):
     except Exception as e:
         print(f"Error loading config {ind_conf}: {str(e)}")
         return None
+
+
+def load_config_from_db(config_id: int, timeframe: str):
+    """Load indicator config from DB. Returns (indicator_list, params) same shape as load_indicator_config."""
+    from backend.core import database as _db
+    with _db._conn() as con:
+        rows = con.execute(
+            "SELECT indicator, params FROM ind_config_indicators WHERE config_id=? AND timeframe=?",
+            (config_id, timeframe)
+        ).fetchall()
+    if not rows:
+        return [], {}
+    return [r[0] for r in rows], {r[0]: json.loads(r[1]) for r in rows}
 
 
 def list_available_configs():

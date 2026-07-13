@@ -39,6 +39,20 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 
 CREATE INDEX IF NOT EXISTS idx_ohlcv_ticker_tf   ON ohlcv      (ticker, timeframe);
 CREATE INDEX IF NOT EXISTS idx_ind_ticker_tf_conf ON indicators (ticker, timeframe, ind_conf);
+
+CREATE TABLE IF NOT EXISTS ind_configs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ind_config_indicators (
+    config_id  INTEGER NOT NULL,
+    timeframe  TEXT NOT NULL,
+    indicator  TEXT NOT NULL,
+    params     TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (config_id, timeframe, indicator)
+);
 """
 
 
@@ -168,6 +182,18 @@ def list_ind_confs() -> list[int]:
         return [r[0] for r in con.execute(
             "SELECT DISTINCT ind_conf FROM indicators ORDER BY ind_conf"
         ).fetchall()]
+
+
+def list_ind_confs_named() -> list[dict]:
+    """Return distinct ind_conf values that have data, joined with their name from ind_configs."""
+    with _conn() as con:
+        rows = con.execute("""
+            SELECT DISTINCT i.ind_conf, c.name
+            FROM indicators i
+            LEFT JOIN ind_configs c ON c.id = i.ind_conf
+            ORDER BY i.ind_conf
+        """).fetchall()
+    return [{"id": r[0], "name": r[1] or f"conf {r[0]}"} for r in rows]
 
 
 # ── Fetch log ────────────────────────────────────────────────

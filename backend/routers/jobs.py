@@ -8,7 +8,6 @@ from backend.core import database as db
 router = APIRouter(prefix="/api")
 
 TICKER_LISTS_DIR = Path(__file__).parent.parent / "tickers" / "ticker_lists"
-IND_CONF_DIR     = Path(__file__).parent.parent / "indicators" / "ind_configs"
 
 
 @router.get("/jobs/status")
@@ -36,16 +35,6 @@ def ticker_lists():
         except Exception:
             lists.append({"name": f.stem, "count": 0})
     return {"lists": lists}
-
-
-@router.get("/ind-configs")
-def ind_configs():
-    confs = sorted(
-        int(f.stem.split('_')[-1])
-        for f in IND_CONF_DIR.glob("ind_conf_*.py")
-        if f.stem.split('_')[-1].isdigit()
-    )
-    return {"ind_confs": confs}
 
 
 @router.get("/stats")

@@ -21,3 +21,7 @@ def list_timeframes(ticker: Optional[str] = None) -> list[str]:
 
 def list_ind_confs() -> list[int]:
     return db.list_ind_confs()
+
+
+def list_ind_confs_named() -> list[dict]:
+    return db.list_ind_confs_named()

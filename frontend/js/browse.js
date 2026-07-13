@@ -41,10 +41,10 @@ export async function initBrowse() {
   // Prefer 'daily' as default
   if (timeframes.includes('daily')) tfSelect.value = 'daily';
 
-  // Populate conf select
+  // Populate conf select — confs is [{id, name}]
   for (const c of confs) {
     const opt = document.createElement('option');
-    opt.value = c; opt.textContent = `conf ${c}`;
+    opt.value = c.id; opt.textContent = c.name;
     confSelect.appendChild(opt);
   }
 

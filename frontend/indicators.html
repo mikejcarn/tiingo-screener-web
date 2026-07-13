@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indicators — Tiingo Screener</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="ind-page">
+
+<div id="ind-header">
+  <span>Tiingo Screener</span>
+  <div class="page-nav">
+    <a class="page-nav-item" href="/">chart</a>
+    <a class="page-nav-item" href="/fetch">fetch</a>
+    <span class="page-nav-item active">indicators</span>
+  </div>
+</div>
+
+<div class="ind-layout">
+
+  <!-- ── Left: config list ──────────────────────────────── -->
+  <div class="ind-sidebar">
+    <div class="ind-sidebar-head">
+      Configs
+      <button id="btn-new-config" title="Create new config">+ New</button>
+    </div>
+    <div id="config-list">
+      <div class="ind-loading">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Right: editor ──────────────────────────────────── -->
+  <div class="ind-main">
+
+    <!-- Empty state -->
+    <div id="ind-empty" class="ind-empty">
+      <div>
+        <p>No indicator configs yet.</p>
+        <p>Click <strong>+ New</strong> to create one.</p>
+      </div>
+    </div>
+
+    <!-- Editor (shown when config selected) -->
+    <div id="ind-editor" style="display:none; flex-direction:column; height:100%;">
+
+      <div class="ind-editor-top">
+        <input type="text" id="config-name" class="config-name-input" placeholder="Config name">
+        <button id="btn-delete-config" class="btn-destructive" title="Delete this config">Delete</button>
+      </div>
+
+      <!-- Timeframe tabs -->
+      <div class="tf-tabs" id="tf-tabs">
+        <button class="tf-tab active" data-tf="daily">daily</button>
+        <button class="tf-tab" data-tf="weekly">weekly</button>
+        <button class="tf-tab" data-tf="1hour">1hour</button>
+        <button class="tf-tab" data-tf="4hour">4hour</button>
+        <button class="tf-tab" data-tf="5min">5min</button>
+      </div>
+
+      <!-- Indicator list -->
+      <div id="ind-list" class="ind-list"></div>
+
+      <!-- Bottom bar: save + compute -->
+      <div class="ind-editor-bottom">
+        <div class="ind-bottom-row">
+          <button id="btn-save" class="ind-btn-save" title="Save config to database">Save</button>
+          <span class="ind-bottom-sep"></span>
+          <span class="ind-bottom-label">Compute:</span>
+          <div id="compute-tfs" class="dash-checks"></div>
+          <button id="btn-compute" class="dash-btn" title="Run indicators for this config">Run</button>
+          <button id="btn-compute-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
+        </div>
+        <div class="dash-progress" style="margin-top:8px;">
+          <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
+          <div id="comp-meta" class="progress-meta">
+            <span id="comp-count" class="dash-count-text"></span>
+            <span id="comp-pct"   class="dash-pct"></span>
+            <span id="comp-current" class="dash-current"></span>
+            <span id="comp-errors"  class="dash-errors"></span>
+          </div>
+        </div>
+        <div id="comp-report" class="dash-report"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/static/js/indicators.js"></script>
+</body>
+</html>

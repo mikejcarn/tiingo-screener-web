@@ -19,7 +19,7 @@ def get_tickers(timeframe: Optional[str] = None):
     tf = _resolve_tf(timeframe) if timeframe else None
     tickers = dm.list_tickers(tf)
     timeframes = dm.list_timeframes()
-    confs = dm.list_ind_confs()
+    confs = dm.list_ind_confs_named()
     return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs}
 
 

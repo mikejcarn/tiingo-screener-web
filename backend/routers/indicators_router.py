@@ -6,7 +6,7 @@ import pandas as pd
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core import database as db
 from backend.core import job_state
-from backend.indicators.indicators import get_indicators, load_indicator_config
+from backend.indicators.indicators import get_indicators, load_indicator_config, load_config_from_db
 
 router = APIRouter(prefix="/api")
 
@@ -35,6 +35,22 @@ def _run_and_store(ticker: str, timeframe: str, ind_conf: int) -> int:
     return db.upsert_indicators(ticker, timeframe, ind_conf, df_with_ind)
 
 
+def _run_and_store_db(ticker: str, timeframe: str, config_id: int) -> int:
+    """Same as _run_and_store but loads config from DB. Uses config_id as ind_conf key."""
+    df = db.load_ohlcv(ticker, timeframe)
+    if df is None:
+        raise ValueError(f"{ticker} {timeframe} not in database — fetch it first")
+    df_indexed = df.rename(columns={'Date': 'date'}).set_index('date')
+    indicator_list, params = load_config_from_db(config_id, timeframe)
+    if not indicator_list:
+        return 0
+    df_with_ind = get_indicators(df_indexed, indicator_list, params)
+    df_with_ind = df_with_ind.reset_index().rename(columns={'date': 'Date', 'index': 'Date'})
+    if 'Date' not in df_with_ind.columns and df_with_ind.index.name == 'Date':
+        df_with_ind = df_with_ind.reset_index()
+    return db.upsert_indicators(ticker, timeframe, config_id, df_with_ind)
+
+
 # ── Endpoints ────────────────────────────────────────────────
 
 @router.post("/indicators/{ticker}/{timeframe}/{ind_conf}")
@@ -54,7 +70,8 @@ def compute_indicators(ticker: str, timeframe: str, ind_conf: int):
 
 class BatchIndicatorsRequest(BaseModel):
     timeframes: Optional[List[str]] = None
-    ind_conf: int = 0
+    ind_conf: Optional[int] = None      # legacy: use Python file config
+    config_id: Optional[int] = None     # new: use DB config
 
 
 @router.post("/indicators/batch")
@@ -62,6 +79,8 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
     """Run indicator pipeline for all available tickers in the DB."""
     if job_state.get_all()['indicators']['status'] == 'running':
         raise HTTPException(status_code=409, detail="Indicators job already running")
+    if req.config_id is None and req.ind_conf is None:
+        raise HTTPException(status_code=400, detail="Provide config_id or ind_conf")
 
     def _run():
         tfs = [TIMEFRAME_ALIASES.get(tf.lower(), tf.lower())
@@ -75,7 +94,10 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
                 return
             job_state.update('indicators', current=f"{ticker} {tf}")
             try:
-                _run_and_store(ticker, tf, req.ind_conf)
+                if req.config_id is not None:
+                    _run_and_store_db(ticker, tf, req.config_id)
+                else:
+                    _run_and_store(ticker, tf, req.ind_conf)
             except Exception as e:
                 print(f"indicators error {ticker} {tf}: {e}")
                 job_state.add_failure('indicators', f"{ticker}/{tf}", str(e))
@@ -83,4 +105,4 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
         job_state.update('indicators', status='done', current='')
 
     background_tasks.add_task(_run)
-    return {"status": "started", "ind_conf": req.ind_conf}
+    return {"status": "started"}

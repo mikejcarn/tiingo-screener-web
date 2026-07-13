@@ -20,9 +20,15 @@
   <button id="btn-next-ticker">&#9654;</button>
   <span id="ticker-count" title="Position in ticker list"></span>
   <div class="nav-sep"></div>
+  <span class="nav-label">timeframe</span>
   <select id="tf-select" title="Timeframe"></select>
+  <span class="nav-label">indicators</span>
   <select id="conf-select" title="Indicator configuration"></select>
-  <a id="btn-dashboard" href="/dashboard" title="Batch Dashboard">&#x2699;</a>
+  <div class="page-nav">
+    <span class="page-nav-item active">chart</span>
+    <a class="page-nav-item" href="/fetch">fetch</a>
+    <a class="page-nav-item" href="/indicators">indicators</a>
+  </div>
 </div>
 
 <!-- ── Chart ────────────────────────────────────────────────── -->
@@ -60,7 +66,7 @@
   <input id="lock-value" type="text" class="nav-inp" placeholder="YYYY-MM-DD" spellcheck="false" autocomplete="off"
     title="Target bar or date for load position (Enter to confirm)">
   <button id="btn-autofit"    title="Fit all candles across the chart width (Backspace)">&#x2194;</button>
-  <button id="btn-fullscreen" title="Toggle fullscreen — hides nav &amp; controls bars (F or `)">&#x26F6;</button>
+  <button id="btn-fullscreen" title="Toggle fullscreen — hides nav &amp; controls bars (F or `)">&#x26F6;&#xFE0E;</button>
   <div class="nav-sep"></div>
   <label title="Playback speed in frames per second (↑ ↓ to adjust)">fps
     <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"
