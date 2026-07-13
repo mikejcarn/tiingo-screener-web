@@ -21,6 +21,14 @@
   <div class="nav-sep"></div>
   <select id="tf-select"></select>
   <select id="conf-select"></select>
+  <div class="nav-sep"></div>
+  <select id="lock-mode">
+    <option value="start">start</option>
+    <option value="end">end</option>
+    <option value="bar">bar</option>
+    <option value="date">date</option>
+  </select>
+  <input id="lock-value" type="text" class="nav-inp" placeholder="YYYY-MM-DD" spellcheck="false" autocomplete="off">
   <button id="btn-help" title="Help (?)">?</button>
 </div>
 
@@ -41,9 +49,56 @@
   <input id="scrubber" type="range" min="0" max="1000" value="0" step="1">
   <div class="nav-sep"></div>
   <label>bar <input id="bar-input" type="text" class="ctrl-inp" autocomplete="off"> / <span id="bar-total">—</span></label>
+  <div class="nav-sep"></div>
   <label>date <input id="date-input" type="text" class="ctrl-inp" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false"></label>
   <div class="nav-sep"></div>
   <label>fps <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"></label>
+</div>
+
+<!-- ── Help overlay ──────────────────────────────────────────── -->
+<div id="help-overlay">
+  <div id="help-panel">
+    <div id="help-header">
+      <span>Keyboard Shortcuts &amp; Controls</span>
+      <button id="help-close">&#x2715;</button>
+    </div>
+    <div id="help-body">
+      <table class="help-table">
+        <tbody>
+          <tr class="help-section"><td colspan="2">Playback</td></tr>
+          <tr><td><kbd>Space</kbd></td><td>Play / pause (rewinds to start if at last bar)</td></tr>
+          <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step one bar backward / forward</td></tr>
+          <tr><td><kbd>Shift+←</kbd> <kbd>Shift+→</kbd></td><td>Jump 20 bars</td></tr>
+          <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>First bar / last bar</td></tr>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Increase / decrease FPS</td></tr>
+          <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (free-zoom mode)</td></tr>
+          <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
+
+          <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
+          <tr><td><kbd>[</kbd> or <kbd>=</kbd></td><td>Previous ticker</td></tr>
+          <tr><td><kbd>]</kbd> or <kbd>-</kbd></td><td>Next ticker</td></tr>
+          <tr><td>Any letter key</td><td>Focus ticker search</td></tr>
+
+          <tr class="help-section"><td colspan="2">Jump Inputs (press Enter)</td></tr>
+          <tr><td>Bar # input</td><td>Jump to bar number</td></tr>
+          <tr><td>Date input</td><td>Jump to date (YYYY-MM-DD)</td></tr>
+          <tr><td>FPS input</td><td>Set playback speed (1–60)</td></tr>
+
+          <tr class="help-section"><td colspan="2">Load Position (nav bar dropdown)</td></tr>
+          <tr><td><kbd>\</kbd></td><td>Cycle load mode: start → end → bar → date</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Enter the value field (when bar or date mode is active)</td></tr>
+          <tr><td>start</td><td>Each ticker loads at bar 0, ready for playback</td></tr>
+          <tr><td>end</td><td>Each ticker loads at the last bar (full chart)</td></tr>
+          <tr><td>bar</td><td>Each ticker loads at the given bar index</td></tr>
+          <tr><td>date</td><td>Each ticker loads at the bar closest to the given date</td></tr>
+
+          <tr class="help-section"><td colspan="2">This Panel</td></tr>
+          <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
+          <tr><td><kbd>Escape</kbd></td><td>Return to chart context (blurs any focused input/dropdown)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script type="module">

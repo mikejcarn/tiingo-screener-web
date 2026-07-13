@@ -18,7 +18,9 @@ let current  = 0;
 let playing  = false;
 let fps      = 8;
 let playTimer = null;
-let autoFit  = true;
+let autoFit    = true;
+let lockMode   = null;   // 'start' | 'end' | 'bar' | 'date'
+let lockValue  = null;   // string
 
 // DOM refs
 const scrubber  = document.getElementById('scrubber');
@@ -91,10 +93,49 @@ function _onAllLoaded() {
   barTotal.textContent = N - 1;
   chart.load(bars, styles);
   chart.fitContent();
-  jump(N - 1);  // start at last bar (most recent)
+  jump(N - 1);
+  _applyLock();
 }
 
 // ── Playback ──────────────────────────────────────────────────
+
+export function getChartRange() {
+  return chart ? chart.getVisibleRange() : null;
+}
+
+export function getCurrentBarInfo() {
+  if (!bars.length) return null;
+  const b = bars[current];
+  return { bar: current, date: (b?.Date || b?.date || '').slice(0, 10) };
+}
+
+export function applyRangeLock(mode, value) {
+  lockMode  = mode  || null;
+  lockValue = value || null;
+  _applyLock();
+}
+
+export function clearRangeLock() {
+  lockMode = null;
+  lockValue = null;
+}
+
+function _applyLock() {
+  if (!chart || !lockMode || !bars.length) return;
+  if (lockMode === 'start') {
+    jump(0);
+  } else if (lockMode === 'end') {
+    jump(N - 1);
+  } else if (lockMode === 'bar' && lockValue) {
+    jump(parseInt(lockValue));
+  } else if (lockMode === 'date' && lockValue) {
+    let idx = N - 1;
+    for (let i = 0; i < N; i++) {
+      if ((bars[i]?.Date || bars[i]?.date || '').slice(0, 10) >= lockValue) { idx = i; break; }
+    }
+    jump(idx);
+  }
+}
 
 export function jump(n) {
   current = Math.max(0, Math.min(N - 1, n));
@@ -193,6 +234,7 @@ function _wireControls() {
 
 function _wireKeys() {
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT') return;
     if (e.key === ' ')          { e.preventDefault(); setPlaying(!playing); }
     if (e.key === 'ArrowRight') { e.preventDefault(); setPlaying(false); jump(current + 1); }

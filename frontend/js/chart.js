@@ -301,6 +301,16 @@ export class ChartManager {
     return this._chart.timeScale().coordinateToLogical(x);
   }
 
+  getVisibleRange() {
+    if (!this._chart) return null;
+    return this._chart.timeScale().getVisibleRange();
+  }
+
+  setVisibleRange(from, to) {
+    if (!this._chart) return;
+    try { this._chart.timeScale().setVisibleRange({ from, to }); } catch (_) {}
+  }
+
   destroy() {
     this._destroySegments();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }

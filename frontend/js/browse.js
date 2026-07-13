@@ -6,7 +6,7 @@
  * replay.js whenever the user loads a new ticker.
  */
 
-import { initReplay, jump } from './replay.js';
+import { initReplay, jump, getCurrentBarInfo, applyRangeLock } from './replay.js';
 
 let tickers    = [];
 let timeframes = [];
@@ -109,9 +109,73 @@ function _wireNav() {
     if (e.key === 'Escape') tickerInput.blur();
   });
 
+  // Load position lock — always active, no button needed
+  const lockModeEl  = document.getElementById('lock-mode');
+  const lockValueEl = document.getElementById('lock-value');
+
+  function _needsValue() {
+    return lockModeEl.value === 'bar' || lockModeEl.value === 'date';
+  }
+
+  function _updateLockUI() {
+    lockValueEl.style.display = _needsValue() ? '' : 'none';
+    lockValueEl.placeholder   = lockModeEl.value === 'bar' ? 'bar #' : 'YYYY-MM-DD';
+  }
+
+  function _commitLock() {
+    applyRangeLock(lockModeEl.value, _needsValue() ? (lockValueEl.value.trim() || null) : null);
+  }
+
+  lockModeEl.addEventListener('change', () => {
+    _updateLockUI();
+    _commitLock();
+  });
+
+  // Digits only for bar mode; commit on Enter or blur
+  lockValueEl.addEventListener('input', () => {
+    if (lockModeEl.value === 'bar') lockValueEl.value = lockValueEl.value.replace(/\D/g, '');
+  });
+  lockValueEl.addEventListener('change', _commitLock);
+  lockValueEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { lockValueEl.blur(); } });
+
+  _updateLockUI();
+  _commitLock(); // apply start mode immediately on page load
+
+  // Help overlay
+  const helpOverlay = document.getElementById('help-overlay');
+  const btnHelp     = document.getElementById('btn-help');
+
+  function _toggleHelp(force) {
+    const show = force !== undefined ? force : !helpOverlay.classList.contains('visible');
+    helpOverlay.classList.toggle('visible', show);
+    btnHelp.classList.toggle('active', show);
+  }
+
+  btnHelp.addEventListener('click', () => _toggleHelp());
+  document.getElementById('help-close').addEventListener('click', () => _toggleHelp(false));
+  helpOverlay.addEventListener('click', (e) => { if (e.target === helpOverlay) _toggleHelp(false); });
+
   // Global keyboard shortcuts
+  const _lockModes = ['start', 'end', 'bar', 'date'];
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { _toggleHelp(false); document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
+    if (e.key === '?') { e.preventDefault(); _toggleHelp(); return; }
+    if (helpOverlay.classList.contains('visible')) return;
+    if (e.key === '\\') {
+      e.preventDefault();
+      const next = (_lockModes.indexOf(lockModeEl.value) + 1) % _lockModes.length;
+      lockModeEl.value = _lockModes[next];
+      _updateLockUI();
+      _commitLock();
+      return;
+    }
+    if (e.key === 'Enter' && _needsValue()) {
+      e.preventDefault();
+      lockValueEl.focus();
+      lockValueEl.select();
+      return;
+    }
     if (e.key === '[' || e.key === '=') { e.preventDefault(); _loadTicker(tickerIdx - 1); }
     if (e.key === ']' || e.key === '-') { e.preventDefault(); _loadTicker(tickerIdx + 1); }
     if (e.key === '/' ) { e.preventDefault(); tickerInput.focus(); }

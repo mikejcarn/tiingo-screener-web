@@ -61,6 +61,20 @@ button:hover { background: #1a1a1a; }
 #btn-prev-ticker, #btn-next-ticker { font-size: 11px; padding: 4px 8px; }
 #ticker-count { font-size: 11px; color: #444; white-space: nowrap; }
 
+#lock-mode {
+  background: #111; color: #555; border: 1px solid #222;
+  padding: 4px 6px; border-radius: 3px; font-size: 11px; cursor: pointer;
+}
+#lock-mode:focus { outline: none; }
+
+.nav-inp {
+  background: #111; color: #666; border: 1px solid #222;
+  padding: 3px 6px; border-radius: 3px; font-size: 11px; width: 88px;
+}
+.nav-inp:focus  { outline: none; border-color: #444; color: #ccc; }
+.nav-inp::placeholder { color: #2a2a2a; }
+
+
 #btn-help { margin-left: auto; background: #111; color: #444; border: 1px solid #222; padding: 3px 9px; font-size: 13px; cursor: pointer; border-radius: 3px; }
 #btn-help:hover { color: #aaa; }
 #btn-help.active { color: #ccc; border-color: #555; }
@@ -107,6 +121,81 @@ input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline
 #bar-input  { width: 70px; }
 #date-input { width: 100px; }
 #fps-input  { width: 46px; }
+
+/* ── Help overlay ─────────────────────────────────────────── */
+#help-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,0.6);
+  align-items: center;
+  justify-content: center;
+}
+#help-overlay.visible { display: flex; }
+
+#help-panel {
+  background: #0d0d0d;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+}
+
+#help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid #1a1a1a;
+  font-size: 13px;
+  color: #888;
+  flex-shrink: 0;
+}
+#help-close {
+  background: none;
+  border: none;
+  color: #444;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+#help-close:hover { color: #aaa; background: none; }
+
+#help-body {
+  padding: 8px 18px 18px;
+  overflow-y: auto;
+}
+
+.help-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.help-table td { padding: 5px 8px; color: #666; vertical-align: top; }
+.help-table td:first-child { color: #888; white-space: nowrap; width: 180px; }
+.help-table tr.help-section td {
+  padding-top: 16px;
+  padding-bottom: 4px;
+  color: #333;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1a1a1a;
+}
+.help-table tr.help-section:first-child td { padding-top: 8px; }
+
+kbd {
+  display: inline-block;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: inherit;
+  color: #aaa;
+  line-height: 1.5;
+}
 
 /* ── Status overlay ───────────────────────────────────────── */
 #status {
