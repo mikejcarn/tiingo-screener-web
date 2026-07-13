@@ -33,7 +33,7 @@ button {
 }
 button:hover { background: #1a1a1a; }
 
-.nav-sep { width: 1px; height: 24px; background: #222; flex-shrink: 0; }
+.nav-sep { width: 1px; height: 24px; background: #2a2a2a; flex-shrink: 0; }
 
 #ticker-wrap { position: relative; }
 #ticker-input {
@@ -44,8 +44,8 @@ button:hover { background: #1a1a1a; }
 #ticker-input:focus { outline: none; border-color: #555; cursor: text; }
 
 #tf-select, #conf-select {
-  background: #111; color: #888; border: 1px solid #2a2a2a;
-  padding: 4px 8px; border-radius: 3px; font-size: 12px; cursor: pointer;
+  background: #111; color: #bbb; border: 1px solid #333;
+  padding: 4px 8px; border-radius: 3px; font-size: 13px; cursor: pointer;
 }
 #tf-select:focus, #conf-select:focus { outline: none; }
 
@@ -55,28 +55,34 @@ button:hover { background: #1a1a1a; }
   max-height: 260px; overflow-y: auto; z-index: 100; min-width: 100%;
   box-shadow: 0 4px 12px rgba(0,0,0,0.6);
 }
-.dd-item { padding: 6px 12px; font-size: 12px; cursor: pointer; color: #888; white-space: nowrap; }
+.dd-item { padding: 6px 12px; font-size: 13px; cursor: pointer; color: #bbb; white-space: nowrap; }
 .dd-item:hover, .dd-item.hi { background: #1a1a1a; color: #fff; }
 
-#btn-prev-ticker, #btn-next-ticker { font-size: 11px; padding: 4px 8px; }
-#ticker-count { font-size: 11px; color: #444; white-space: nowrap; }
+#btn-prev-ticker, #btn-next-ticker { font-size: 12px; padding: 4px 8px; }
+#ticker-count { font-size: 12px; color: #888; white-space: nowrap; }
 
 #lock-mode {
-  background: #111; color: #555; border: 1px solid #222;
-  padding: 4px 6px; border-radius: 3px; font-size: 11px; cursor: pointer;
+  background: #111; color: #aaa; border: 1px solid #2a2a2a;
+  padding: 4px 6px; border-radius: 3px; font-size: 12px; cursor: pointer;
 }
 #lock-mode:focus { outline: none; }
 
 .nav-inp {
-  background: #111; color: #666; border: 1px solid #222;
-  padding: 3px 6px; border-radius: 3px; font-size: 11px; width: 88px;
+  background: #111; color: #bbb; border: 1px solid #2a2a2a;
+  padding: 3px 6px; border-radius: 3px; font-size: 12px; width: 88px;
 }
-.nav-inp:focus  { outline: none; border-color: #444; color: #ccc; }
-.nav-inp::placeholder { color: #2a2a2a; }
+.nav-inp:focus  { outline: none; border-color: #555; color: #eee; }
+.nav-inp::placeholder { color: #555; }
 
 
-#btn-help { margin-left: auto; background: #111; color: #444; border: 1px solid #222; padding: 3px 9px; font-size: 13px; cursor: pointer; border-radius: 3px; }
-#btn-help:hover { color: #aaa; }
+#btn-autofit { color: #888; border-color: #2a2a2a; font-size: 15px; padding: 5px 9px; line-height: 1; }
+#btn-autofit.active { color: #26a69a; border-color: rgba(38,166,154,0.4); }
+
+#btn-fullscreen { color: #888; border-color: #2a2a2a; font-size: 15px; padding: 5px 9px; line-height: 1; }
+#btn-fullscreen.active { color: #26a69a; border-color: rgba(38,166,154,0.4); }
+
+#btn-help { margin-left: auto; background: #111; color: #888; border: 1px solid #2a2a2a; padding: 3px 9px; font-size: 13px; cursor: pointer; border-radius: 3px; }
+#btn-help:hover { color: #bbb; }
 #btn-help.active { color: #ccc; border-color: #555; }
 
 /* ── Chart area ───────────────────────────────────────────── */
@@ -97,11 +103,11 @@ button:hover { background: #1a1a1a; }
   background: #000;
   border-top: 1px solid #1a1a1a;
   flex-shrink: 0;
-  font-size: 12px;
-  color: #555;
+  font-size: 13px;
+  color: #aaa;
 }
 
-#controls button { padding: 3px 10px; font-size: 12px; }
+#controls button { padding: 3px 10px; font-size: 13px; }
 #controls label  { display: flex; align-items: center; gap: 5px; }
 
 #scrubber {
@@ -111,16 +117,16 @@ button:hover { background: #1a1a1a; }
   accent-color: rgba(38,166,154,0.9);
 }
 
-#bar-total { color: #444; }
+#bar-total { color: #888; }
 
 input[type="text"].ctrl-inp, input[type="number"].ctrl-inp {
-  background: #111; color: #ccc; border: 1px solid #2a2a2a;
-  padding: 3px 7px; border-radius: 3px; font-size: 12px;
+  background: #111; color: #ccc; border: 1px solid #333;
+  padding: 3px 7px; border-radius: 3px; font-size: 13px;
 }
-input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline: none; }
+input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline: none; border-color: #555; }
 #bar-input  { width: 70px; }
-#date-input { width: 100px; }
-#fps-input  { width: 46px; }
+#date-input { width: 108px; }
+#fps-input  { width: 50px; }
 
 /* ── Help overlay ─────────────────────────────────────────── */
 #help-overlay {
@@ -152,13 +158,13 @@ input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline
   padding: 14px 18px 12px;
   border-bottom: 1px solid #1a1a1a;
   font-size: 13px;
-  color: #888;
+  color: #aaa;
   flex-shrink: 0;
 }
 #help-close {
   background: none;
   border: none;
-  color: #444;
+  color: #666;
   font-size: 14px;
   cursor: pointer;
   padding: 0 2px;
@@ -171,13 +177,13 @@ input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline
   overflow-y: auto;
 }
 
-.help-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.help-table td { padding: 5px 8px; color: #666; vertical-align: top; }
-.help-table td:first-child { color: #888; white-space: nowrap; width: 180px; }
+.help-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.help-table td { padding: 5px 8px; color: #aaa; vertical-align: top; }
+.help-table td:first-child { color: #bbb; white-space: nowrap; width: 180px; }
 .help-table tr.help-section td {
   padding-top: 16px;
   padding-bottom: 4px;
-  color: #333;
+  color: #777;
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -193,9 +199,16 @@ kbd {
   padding: 1px 5px;
   font-size: 11px;
   font-family: inherit;
-  color: #aaa;
+  color: #bbb;
   line-height: 1.5;
 }
+
+/* ── Fullscreen mode ──────────────────────────────────────── */
+body:fullscreen {
+  height: 100%;
+}
+body:fullscreen #nav,
+body:fullscreen #controls { display: none; }
 
 /* ── Status overlay ───────────────────────────────────────── */
 #status {
@@ -203,7 +216,7 @@ kbd {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  color: #333;
+  color: #555;
   font-size: 13px;
   pointer-events: none;
 }

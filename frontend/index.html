@@ -11,12 +11,12 @@
 
 <!-- ── Nav bar ──────────────────────────────────────────────── -->
 <div id="nav">
-  <button id="btn-prev-ticker" title="Previous ticker">&#9664;</button>
+  <button id="btn-prev-ticker">&#9664;</button>
   <div id="ticker-wrap">
     <input id="ticker-input" type="text" autocomplete="off" spellcheck="false" placeholder="ticker">
     <div id="dropdown"></div>
   </div>
-  <button id="btn-next-ticker" title="Next ticker">&#9654;</button>
+  <button id="btn-next-ticker">&#9654;</button>
   <span id="ticker-count"></span>
   <div class="nav-sep"></div>
   <select id="tf-select"></select>
@@ -29,7 +29,9 @@
     <option value="date">date</option>
   </select>
   <input id="lock-value" type="text" class="nav-inp" placeholder="YYYY-MM-DD" spellcheck="false" autocomplete="off">
-  <button id="btn-help" title="Help (?)">?</button>
+  <button id="btn-autofit"    title="Auto-fit all candles (Backspace)">&#x2194;</button>
+  <button id="btn-fullscreen" title="Toggle fullscreen (F or `)">&#x26F6;</button>
+  <button id="btn-help"       title="Help (?)">?</button>
 </div>
 
 <!-- ── Chart ────────────────────────────────────────────────── -->
@@ -71,7 +73,7 @@
           <tr><td><kbd>Shift+←</kbd> <kbd>Shift+→</kbd></td><td>Jump 20 bars</td></tr>
           <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>First bar / last bar</td></tr>
           <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Increase / decrease FPS</td></tr>
-          <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (free-zoom mode)</td></tr>
+          <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles on screen during playback)</td></tr>
           <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
 
           <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
@@ -91,6 +93,9 @@
           <tr><td>end</td><td>Each ticker loads at the last bar (full chart)</td></tr>
           <tr><td>bar</td><td>Each ticker loads at the given bar index</td></tr>
           <tr><td>date</td><td>Each ticker loads at the bar closest to the given date</td></tr>
+
+          <tr class="help-section"><td colspan="2">View</td></tr>
+          <tr><td><kbd>F</kbd> <kbd>`</kbd></td><td>Toggle fullscreen (hides nav &amp; controls bars)</td></tr>
 
           <tr class="help-section"><td colspan="2">This Panel</td></tr>
           <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>

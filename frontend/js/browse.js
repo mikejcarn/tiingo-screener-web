@@ -19,6 +19,8 @@ const tickerCount  = document.getElementById('ticker-count');
 const dropdown     = document.getElementById('dropdown');
 const tfSelect     = document.getElementById('tf-select');
 const confSelect   = document.getElementById('conf-select');
+const btnPrev      = document.getElementById('btn-prev-ticker');
+const btnNext      = document.getElementById('btn-next-ticker');
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -66,9 +68,22 @@ function _loadTicker(idx) {
   tickerInput.value        = ticker;
   tickerCount.textContent  = `${tickerIdx + 1} / ${tickers.length}`;
   location.hash            = ticker;
+  _updateNavTitles();
 
   // Re-initialise replay for the new ticker
   initReplay(ticker, tf, conf);
+}
+
+function _updateNavTitles() {
+  if (tickers.length <= 1) {
+    btnPrev.title = 'Previous ticker';
+    btnNext.title = 'Next ticker';
+    return;
+  }
+  const prevIdx = ((tickerIdx - 1) + tickers.length) % tickers.length;
+  const nextIdx = (tickerIdx + 1) % tickers.length;
+  btnPrev.title = tickers[prevIdx];
+  btnNext.title = tickers[nextIdx];
 }
 
 // ── Nav wiring ────────────────────────────────────────────────
@@ -155,11 +170,26 @@ function _wireNav() {
   document.getElementById('help-close').addEventListener('click', () => _toggleHelp(false));
   helpOverlay.addEventListener('click', (e) => { if (e.target === helpOverlay) _toggleHelp(false); });
 
+  // Fullscreen
+  const btnFullscreen = document.getElementById('btn-fullscreen');
+  function _toggleFullscreen() {
+    const p = document.fullscreenElement
+      ? document.exitFullscreen()
+      : document.body.requestFullscreen();
+    p.catch(() => {});
+  }
+  btnFullscreen.addEventListener('click', _toggleFullscreen);
+  document.addEventListener('fullscreenchange', () => {
+    btnFullscreen.classList.toggle('active', !!document.fullscreenElement);
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+  });
+
   // Global keyboard shortcuts
   const _lockModes = ['start', 'end', 'bar', 'date'];
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { _toggleHelp(false); document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
+    if (e.key === 'f' || e.key === 'F' || e.key === '`') { e.preventDefault(); _toggleFullscreen(); return; }
     if (e.key === '?') { e.preventDefault(); _toggleHelp(); return; }
     if (helpOverlay.classList.contains('visible')) return;
     if (e.key === '\\') {

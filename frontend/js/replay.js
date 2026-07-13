@@ -18,18 +18,19 @@ let current  = 0;
 let playing  = false;
 let fps      = 8;
 let playTimer = null;
-let autoFit    = true;
+let autoFit    = false;
 let lockMode   = null;   // 'start' | 'end' | 'bar' | 'date'
 let lockValue  = null;   // string
 
 // DOM refs
-const scrubber  = document.getElementById('scrubber');
-const barInput  = document.getElementById('bar-input');
-const barTotal  = document.getElementById('bar-total');
-const dateInput = document.getElementById('date-input');
-const fpsInput  = document.getElementById('fps-input');
-const btnPlay   = document.getElementById('btn-play');
-const status    = document.getElementById('status');
+const scrubber    = document.getElementById('scrubber');
+const barInput    = document.getElementById('bar-input');
+const barTotal    = document.getElementById('bar-total');
+const dateInput   = document.getElementById('date-input');
+const fpsInput    = document.getElementById('fps-input');
+const btnPlay     = document.getElementById('btn-play');
+const btnAutoFit  = document.getElementById('btn-autofit');
+const status      = document.getElementById('status');
 
 // ── Init ─────────────────────────────────────────────────────
 
@@ -171,13 +172,23 @@ function _updateBarInfo() {
   if (date) dateInput.value = date;
 }
 
+// ── Auto-fit ─────────────────────────────────────────────────
+
+function _setAutoFit(val) {
+  autoFit = val;
+  btnAutoFit.classList.toggle('active', autoFit);
+  if (autoFit && chart) chart.fitContent();
+}
+
 // ── Controls wiring ───────────────────────────────────────────
 
 function _wireControls() {
   fpsInput.value = fps;
+  btnAutoFit.classList.toggle('active', autoFit);
 
   // Blur after click so spacebar doesn't also fire the keydown handler (double-toggle)
   btnPlay.addEventListener('click', () => { btnPlay.blur(); setPlaying(!playing); });
+  btnAutoFit.addEventListener('click', () => { btnAutoFit.blur(); _setAutoFit(!autoFit); });
 
   document.getElementById('btn-step-back').addEventListener('click',  () => { setPlaying(false); jump(current - 1); });
   document.getElementById('btn-step-fwd').addEventListener('click',   () => { setPlaying(false); jump(current + 1); });
@@ -245,7 +256,7 @@ function _wireKeys() {
     if (e.key === 'End')  { e.preventDefault(); setPlaying(false); jump(N - 1); }
     if (e.key === 'ArrowUp')   { e.preventDefault(); fps = Math.min(60, fps + 1); fpsInput.value = fps; }
     if (e.key === 'ArrowDown') { e.preventDefault(); fps = Math.max(1, fps - 1);  fpsInput.value = fps; }
-    if (e.key === 'Backspace') { e.preventDefault(); autoFit = !autoFit; }
+    if (e.key === 'Backspace') { e.preventDefault(); _setAutoFit(!autoFit); }
     if (/^[0-9]$/.test(e.key)) { e.preventDefault(); barInput.focus(); barInput.value = e.key; }
   });
 }

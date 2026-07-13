@@ -53,7 +53,7 @@ export class ChartManager {
 
   _init() {
     this._chart = LightweightCharts.createChart(this._container, {
-      layout:          { background: { color: '#000000' }, textColor: '#555555' },
+      layout:          { background: { color: '#000000' }, textColor: '#aaaaaa' },
       grid:            { vertLines: { color: '#111111' }, horzLines: { color: '#111111' } },
       crosshair:       { mode: LightweightCharts.CrosshairMode.Normal },
       rightPriceScale: { borderColor: '#222222' },
