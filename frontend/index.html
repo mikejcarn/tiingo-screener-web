@@ -13,25 +13,16 @@
 <div id="nav">
   <button id="btn-prev-ticker">&#9664;</button>
   <div id="ticker-wrap">
-    <input id="ticker-input" type="text" autocomplete="off" spellcheck="false" placeholder="ticker">
+    <input id="ticker-input" type="text" autocomplete="off" spellcheck="false" placeholder="ticker"
+      title="Search and select a ticker (type any letter, or press /)">
     <div id="dropdown"></div>
   </div>
   <button id="btn-next-ticker">&#9654;</button>
-  <span id="ticker-count"></span>
+  <span id="ticker-count" title="Position in ticker list"></span>
   <div class="nav-sep"></div>
-  <select id="tf-select"></select>
-  <select id="conf-select"></select>
-  <div class="nav-sep"></div>
-  <select id="lock-mode">
-    <option value="start">start</option>
-    <option value="end">end</option>
-    <option value="bar">bar</option>
-    <option value="date">date</option>
-  </select>
-  <input id="lock-value" type="text" class="nav-inp" placeholder="YYYY-MM-DD" spellcheck="false" autocomplete="off">
-  <button id="btn-autofit"    title="Auto-fit all candles (Backspace)">&#x2194;</button>
-  <button id="btn-fullscreen" title="Toggle fullscreen (F or `)">&#x26F6;</button>
-  <button id="btn-help"       title="Help (?)">?</button>
+  <select id="tf-select" title="Timeframe"></select>
+  <select id="conf-select" title="Indicator configuration"></select>
+  <button id="btn-help" title="Keyboard shortcuts &amp; controls (?)">?</button>
 </div>
 
 <!-- ── Chart ────────────────────────────────────────────────── -->
@@ -42,19 +33,38 @@
 
 <!-- ── Replay controls ──────────────────────────────────────── -->
 <div id="controls">
-  <button id="btn-first"     title="First bar (Home)">&#x23EE;</button>
-  <button id="btn-step-back" title="Step back (←)">&#9664;</button>
-  <button id="btn-play"      title="Play/pause (Space)">&#9654;</button>
-  <button id="btn-step-fwd"  title="Step forward (→)">&#9654;&#9654;</button>
-  <button id="btn-last"      title="Last bar (End)">&#x23ED;</button>
+  <button id="btn-first"     title="Jump to first bar (Home)">&#x23EE;</button>
+  <button id="btn-step-back" title="Step back one bar (← or Shift+← for 20)">&#9664;</button>
+  <button id="btn-play"      title="Play / pause (Space — rewinds if at last bar)">&#9654;</button>
+  <button id="btn-step-fwd"  title="Step forward one bar (→ or Shift+→ for 20)">&#9654;&#9654;</button>
+  <button id="btn-last"      title="Jump to last bar (End)">&#x23ED;</button>
   <div class="nav-sep"></div>
-  <input id="scrubber" type="range" min="0" max="1000" value="0" step="1">
+  <input id="scrubber" type="range" min="0" max="1000" value="0" step="1"
+    title="Drag to scrub to any bar">
   <div class="nav-sep"></div>
-  <label>bar <input id="bar-input" type="text" class="ctrl-inp" autocomplete="off"> / <span id="bar-total">—</span></label>
+  <label title="Current bar — type a number and press Enter to jump">bar
+    <input id="bar-input" type="text" class="ctrl-inp" autocomplete="off"
+      title="Type a bar number and press Enter to jump"> / <span id="bar-total" title="Total bars in dataset">—</span></label>
+  <span class="ctrl-dot">·</span>
+  <label title="Current date — type YYYY-MM-DD and press Enter to jump">date
+    <input id="date-input" type="text" class="ctrl-inp" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false"
+      title="Type a date (YYYY-MM-DD) and press Enter to jump"> / <span id="date-end" title="Last bar date">—</span></label>
   <div class="nav-sep"></div>
-  <label>date <input id="date-input" type="text" class="ctrl-inp" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false"></label>
+  <select id="lock-mode"
+    title="Load position — where each ticker starts when loaded (\ to cycle)">
+    <option value="start">start</option>
+    <option value="end">end</option>
+    <option value="bar">bar</option>
+    <option value="date">date</option>
+  </select>
+  <input id="lock-value" type="text" class="nav-inp" placeholder="YYYY-MM-DD" spellcheck="false" autocomplete="off"
+    title="Target bar or date for load position (Enter to confirm)">
+  <button id="btn-autofit"    title="Fit all candles across the chart width (Backspace)">&#x2194;</button>
+  <button id="btn-fullscreen" title="Toggle fullscreen — hides nav &amp; controls bars (F or `)">&#x26F6;</button>
   <div class="nav-sep"></div>
-  <label>fps <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"></label>
+  <label title="Playback speed in frames per second (↑ ↓ to adjust)">fps
+    <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"
+      title="Frames per second — 1 is slowest, 60 is fastest"></label>
 </div>
 
 <!-- ── Help overlay ──────────────────────────────────────────── -->

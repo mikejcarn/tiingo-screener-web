@@ -27,6 +27,7 @@ const scrubber    = document.getElementById('scrubber');
 const barInput    = document.getElementById('bar-input');
 const barTotal    = document.getElementById('bar-total');
 const dateInput   = document.getElementById('date-input');
+const dateEnd     = document.getElementById('date-end');
 const fpsInput    = document.getElementById('fps-input');
 const btnPlay     = document.getElementById('btn-play');
 const btnAutoFit  = document.getElementById('btn-autofit');
@@ -92,6 +93,8 @@ function _onAllLoaded() {
   _setStatus('');
   scrubber.max = N - 1;
   barTotal.textContent = N - 1;
+  const lastBar = bars[N - 1];
+  dateEnd.textContent = (lastBar?.Date || lastBar?.date || '').slice(0, 10) || '—';
   chart.load(bars, styles);
   chart.fitContent();
   jump(N - 1);

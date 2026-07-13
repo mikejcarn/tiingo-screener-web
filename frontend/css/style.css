@@ -75,10 +75,10 @@ button:hover { background: #1a1a1a; }
 .nav-inp::placeholder { color: #555; }
 
 
-#btn-autofit { color: #888; border-color: #2a2a2a; font-size: 15px; padding: 5px 9px; line-height: 1; }
+#btn-autofit { color: #888; border-color: #2a2a2a; font-size: 14px; padding: 3px 8px; line-height: 1; }
 #btn-autofit.active { color: #26a69a; border-color: rgba(38,166,154,0.4); }
 
-#btn-fullscreen { color: #888; border-color: #2a2a2a; font-size: 15px; padding: 5px 9px; line-height: 1; }
+#btn-fullscreen { color: #888; border-color: #2a2a2a; font-size: 14px; padding: 3px 8px; line-height: 1; }
 #btn-fullscreen.active { color: #26a69a; border-color: rgba(38,166,154,0.4); }
 
 #btn-help { margin-left: auto; background: #111; color: #888; border: 1px solid #2a2a2a; padding: 3px 9px; font-size: 13px; cursor: pointer; border-radius: 3px; }
@@ -117,7 +117,8 @@ button:hover { background: #1a1a1a; }
   accent-color: rgba(38,166,154,0.9);
 }
 
-#bar-total { color: #888; }
+#bar-total, #date-end { color: #888; }
+.ctrl-dot { color: #444; padding: 0 2px; }
 
 input[type="text"].ctrl-inp, input[type="number"].ctrl-inp {
   background: #111; color: #ccc; border: 1px solid #333;
