@@ -94,6 +94,14 @@ def clear_indicators():
     return {"cleared": "indicators"}
 
 
+@router.delete("/data/indicators/orphaned")
+def clear_orphaned_indicators():
+    """Delete indicator data whose config_id no longer exists in ind_configs."""
+    with db._conn() as con:
+        con.execute("DELETE FROM indicators WHERE ind_conf NOT IN (SELECT id FROM ind_configs)")
+    return {"cleared": "orphaned_indicators"}
+
+
 @router.delete("/data/all")
 def clear_all():
     """Delete all data (ohlcv, indicators, fetch log)."""

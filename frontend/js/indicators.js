@@ -524,4 +524,8 @@ function _esc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+document.addEventListener('keydown', e => {
+  if (e.key === '`') { e.preventDefault(); window.location.href = '/'; }
+});
+
 init();

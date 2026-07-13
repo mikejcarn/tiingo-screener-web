@@ -64,9 +64,10 @@ function _wireButtons() {
       _loadStats();
     });
   };
-  _clearBtn('btn-clear-ohlcv',      '/api/data/ohlcv',      'Delete all price data? This cannot be undone.');
-  _clearBtn('btn-clear-indicators', '/api/data/indicators', 'Delete all indicator data? This cannot be undone.');
-  _clearBtn('btn-clear-all',        '/api/data/all',        'Delete ALL data (prices + indicators)? This cannot be undone.');
+  _clearBtn('btn-clear-ohlcv',      '/api/data/ohlcv',                'Delete all price data? This cannot be undone.');
+  _clearBtn('btn-clear-indicators', '/api/data/indicators',           'Delete all indicator data? This cannot be undone.');
+  _clearBtn('btn-clear-orphaned',   '/api/data/indicators/orphaned',  'Delete indicator data with no matching config?');
+  _clearBtn('btn-clear-all',        '/api/data/all',                  'Delete ALL data (prices + indicators)? This cannot be undone.');
 }
 
 init();

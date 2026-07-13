@@ -185,15 +185,15 @@ def list_ind_confs() -> list[int]:
 
 
 def list_ind_confs_named() -> list[dict]:
-    """Return distinct ind_conf values that have data, joined with their name from ind_configs."""
+    """Return distinct ind_conf values that have data and a matching ind_configs entry."""
     with _conn() as con:
         rows = con.execute("""
             SELECT DISTINCT i.ind_conf, c.name
             FROM indicators i
-            LEFT JOIN ind_configs c ON c.id = i.ind_conf
+            JOIN ind_configs c ON c.id = i.ind_conf
             ORDER BY i.ind_conf
         """).fetchall()
-    return [{"id": r[0], "name": r[1] or f"conf {r[0]}"} for r in rows]
+    return [{"id": r[0], "name": r[1]} for r in rows]
 
 
 # ── Fetch log ────────────────────────────────────────────────

@@ -479,7 +479,7 @@ body.dash {
 }
 
 /* ── Page header shared styles ────────────────────────────────── */
-#dash-header span, #ind-header span {
+#dash-title, #ind-title {
   font-size: 13px;
   color: #555;
 }

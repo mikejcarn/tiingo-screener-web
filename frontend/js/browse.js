@@ -189,7 +189,8 @@ function _wireNav() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { _toggleHelp(false); document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
-    if (e.key === 'f' || e.key === 'F' || e.key === '`') { e.preventDefault(); _toggleFullscreen(); return; }
+    if (e.key === 'f' || e.key === 'F') { e.preventDefault(); _toggleFullscreen(); return; }
+    if (e.key === '`') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === '?') { e.preventDefault(); _toggleHelp(); return; }
     if (helpOverlay.classList.contains('visible')) return;
     if (e.key === '\\') {

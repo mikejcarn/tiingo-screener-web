@@ -174,4 +174,8 @@ function _buildReport(ok, failed) {
   return `<div class="dash-report-inner">${okLine} ${failLine}<div class="report-tickers">${tickers}</div></div>`;
 }
 
+document.addEventListener('keydown', e => {
+  if (e.key === '`') { e.preventDefault(); window.location.href = '/indicators'; }
+});
+
 init();
