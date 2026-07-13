@@ -22,7 +22,7 @@
   <div class="nav-sep"></div>
   <select id="tf-select" title="Timeframe"></select>
   <select id="conf-select" title="Indicator configuration"></select>
-  <button id="btn-help" title="Keyboard shortcuts &amp; controls (?)">?</button>
+  <a id="btn-dashboard" href="/dashboard" title="Batch Dashboard">&#x2699;</a>
 </div>
 
 <!-- ── Chart ────────────────────────────────────────────────── -->
@@ -65,6 +65,8 @@
   <label title="Playback speed in frames per second (↑ ↓ to adjust)">fps
     <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"
       title="Frames per second — 1 is slowest, 60 is fastest"></label>
+  <div class="nav-sep"></div>
+  <button id="btn-help" title="Keyboard shortcuts &amp; controls (?)">?</button>
 </div>
 
 <!-- ── Help overlay ──────────────────────────────────────────── -->

@@ -5,6 +5,7 @@ import pandas as pd
 
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core import database as db
+from backend.core import job_state
 from backend.indicators.indicators import get_indicators, load_indicator_config
 
 router = APIRouter(prefix="/api")
@@ -59,17 +60,27 @@ class BatchIndicatorsRequest(BaseModel):
 @router.post("/indicators/batch")
 def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: BackgroundTasks):
     """Run indicator pipeline for all available tickers in the DB."""
+    if job_state.get_all()['indicators']['status'] == 'running':
+        raise HTTPException(status_code=409, detail="Indicators job already running")
+
     def _run():
-        tfs = req.timeframes or db.list_timeframes()
-        for tf_alias in tfs:
-            tf = TIMEFRAME_ALIASES.get(tf_alias.lower(), tf_alias.lower())
-            tickers = db.list_tickers(tf)
-            for ticker in tickers:
-                try:
-                    _run_and_store(ticker, tf, req.ind_conf)
-                    print(f"indicators ok: {ticker} {tf} conf{req.ind_conf}")
-                except Exception as e:
-                    print(f"indicators error {ticker} {tf}: {e}")
+        tfs = [TIMEFRAME_ALIASES.get(tf.lower(), tf.lower())
+               for tf in (req.timeframes or db.list_timeframes())]
+        pairs = [(ticker, tf) for tf in tfs for ticker in db.list_tickers(tf)]
+        job_state.update('indicators', status='running', done=0, total=len(pairs),
+                         current='', errors=0)
+        for i, (ticker, tf) in enumerate(pairs):
+            if job_state.is_cancelled('indicators'):
+                job_state.update('indicators', status='cancelled', current='')
+                return
+            job_state.update('indicators', current=f"{ticker} {tf}")
+            try:
+                _run_and_store(ticker, tf, req.ind_conf)
+            except Exception as e:
+                print(f"indicators error {ticker} {tf}: {e}")
+                job_state.add_failure('indicators', f"{ticker}/{tf}", str(e))
+            job_state.update('indicators', done=i + 1)
+        job_state.update('indicators', status='done', current='')
 
     background_tasks.add_task(_run)
     return {"status": "started", "ind_conf": req.ind_conf}

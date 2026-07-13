@@ -81,7 +81,7 @@ button:hover { background: #1a1a1a; }
 #btn-fullscreen { color: #888; border-color: #2a2a2a; font-size: 14px; padding: 3px 8px; line-height: 1; }
 #btn-fullscreen.active { color: #26a69a; border-color: rgba(38,166,154,0.4); }
 
-#btn-help { margin-left: auto; background: #111; color: #888; border: 1px solid #2a2a2a; padding: 3px 9px; font-size: 13px; cursor: pointer; border-radius: 3px; }
+#btn-help { background: #111; color: #888; border: 1px solid #2a2a2a; padding: 3px 9px; font-size: 13px; cursor: pointer; border-radius: 3px; }
 #btn-help:hover { color: #bbb; }
 #btn-help.active { color: #ccc; border-color: #555; }
 
@@ -127,7 +127,10 @@ input[type="text"].ctrl-inp, input[type="number"].ctrl-inp {
 input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline: none; border-color: #555; }
 #bar-input  { width: 70px; }
 #date-input { width: 108px; }
-#fps-input  { width: 50px; }
+#fps-input  { width: 36px; }
+#fps-input::-webkit-outer-spin-button,
+#fps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#fps-input { -moz-appearance: textfield; }
 
 /* ── Help overlay ─────────────────────────────────────────── */
 #help-overlay {
@@ -210,6 +213,254 @@ body:fullscreen {
 }
 body:fullscreen #nav,
 body:fullscreen #controls { display: none; }
+
+/* ── Dashboard ────────────────────────────────────────────── */
+body.dash {
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
+  display: block;
+}
+
+#dash-header {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: #000;
+  border-bottom: 1px solid #222;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+#btn-back { color: #666; text-decoration: none; font-size: 13px; }
+#btn-back:hover { color: #bbb; }
+#dash-title { font-size: 13px; color: #555; }
+
+.dash-section {
+  margin: 20px 20px 0;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  background: #080808;
+}
+.dash-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 16px;
+  border-bottom: 1px solid #1a1a1a;
+  font-size: 10px;
+  color: #444;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.dash-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dash-section-actions button {
+  background: #111;
+  border: 1px solid #222;
+  color: #555;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 3px;
+  line-height: 1.4;
+}
+.dash-section-actions button:hover { color: #999; border-color: #444; }
+/* Destructive clear buttons get a subtle red tint on hover */
+#btn-clear-ohlcv:hover, #btn-clear-indicators:hover, #btn-clear-all:hover {
+  color: rgba(239,83,80,0.8);
+  border-color: rgba(239,83,80,0.3);
+}
+/* Refresh stays neutral */
+#btn-refresh-stats { font-size: 14px; padding: 2px 6px; }
+
+#stats-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid #111;
+}
+#stats-summary:empty { display: none; }
+.stats-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #0d0d0d;
+  border: 1px solid #1a1a1a;
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+.ss-tf  { color: #888; font-weight: 600; min-width: 48px; }
+.ss-val { color: #666; }
+.ss-sep { color: #2a2a2a; }
+
+#stats-wrap { max-height: 260px; overflow-y: auto; }
+#stats-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#stats-table th {
+  padding: 6px 16px;
+  text-align: left;
+  color: #444;
+  font-weight: normal;
+  font-size: 11px;
+  border-bottom: 1px solid #1a1a1a;
+  position: sticky;
+  top: 0;
+  background: #080808;
+}
+#stats-table td { padding: 5px 16px; color: #888; border-bottom: 1px solid #0f0f0f; }
+#stats-table tbody tr:hover td { background: #0d0d0d; }
+#stats-table td:first-child { color: #bbb; }
+.stats-empty { color: #444; font-style: italic; }
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px 20px 24px;
+}
+.dash-panel {
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  background: #080808;
+  padding: 16px;
+}
+.dash-panel-head {
+  font-size: 10px;
+  color: #444;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.dash-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.dash-field > label {
+  font-size: 12px;
+  color: #666;
+  width: 76px;
+  padding-top: 5px;
+  flex-shrink: 0;
+}
+.dash-field-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-field select {
+  background: #111;
+  color: #bbb;
+  border: 1px solid #333;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dash-field select:focus { outline: none; }
+.dash-count { font-size: 11px; color: #444; }
+
+.dash-checks { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 3px; }
+.dash-checks label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #888;
+  cursor: pointer;
+}
+.dash-checks input[type="checkbox"] {
+  accent-color: rgba(38,166,154,0.9);
+  cursor: pointer;
+}
+
+.dash-btn-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 14px; }
+.dash-btn { padding: 6px 20px; font-size: 13px; }
+.dash-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.dash-btn-cancel { padding: 6px 14px; font-size: 13px; color: rgba(239,83,80,0.7); border-color: rgba(239,83,80,0.25); }
+.dash-btn-cancel:hover { color: rgba(239,83,80,1); background: #111; }
+
+@keyframes progress-shimmer {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+.progress-track {
+  height: 4px;
+  background: #1a1a1a;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  transition: height 0.2s ease;
+}
+.progress-track.active { height: 6px; }
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: rgba(38,166,154,0.8);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.progress-fill.active {
+  animation: progress-shimmer 1.4s ease-in-out infinite;
+}
+
+.progress-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  color: #555;
+  min-height: 18px;
+}
+.progress-meta.active .dash-count-text { color: #999; }
+.progress-meta.active .dash-pct        { color: #555; }
+.dash-current { color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-meta.active .dash-current    { color: #888; }
+.dash-errors  { color: rgba(239,83,80,0.8); margin-left: auto; }
+
+.dash-report { margin-top: 10px; }
+.dash-report-inner { font-size: 11px; }
+.report-ok  { color: rgba(38,166,154,0.8); margin-right: 8px; }
+.report-err { color: rgba(239,83,80,0.7); }
+.report-tickers {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.report-ticker {
+  background: #0d0d0d;
+  border: 1px solid rgba(239,83,80,0.2);
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: rgba(239,83,80,0.6);
+  cursor: default;
+}
+
+#btn-dashboard {
+  margin-left: auto;
+  background: #111;
+  color: #666;
+  border: 1px solid #2a2a2a;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 3px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+#btn-dashboard:hover { color: #bbb; }
 
 /* ── Status overlay ───────────────────────────────────────── */
 #status {

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Batch Dashboard — Tiingo Screener</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dash">
+
+<!-- ── Header ───────────────────────────────────────────────── -->
+<div id="dash-header">
+  <a href="/" id="btn-back" title="Back to chart browser">&#8592; chart</a>
+  <span id="dash-title">Batch Dashboard</span>
+</div>
+
+<!-- ── Database Overview ────────────────────────────────────── -->
+<div class="dash-section">
+  <div class="dash-section-head">
+    <span>Database Overview</span>
+    <div class="dash-section-actions">
+      <button id="btn-clear-ohlcv"       title="Delete all price data (re-fetch required)">Clear prices</button>
+      <button id="btn-clear-indicators"  title="Delete all computed indicator data">Clear indicators</button>
+      <button id="btn-clear-all"         title="Delete everything">Clear all</button>
+      <button id="btn-refresh-stats"     title="Refresh table">&#x21BB;</button>
+    </div>
+  </div>
+  <div id="stats-summary"></div>
+  <div id="stats-wrap">
+    <table id="stats-table">
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Timeframe</th>
+          <th>List</th>
+          <th>Last Date</th>
+          <th>Rows</th>
+          <th>Fetched</th>
+        </tr>
+      </thead>
+      <tbody id="stats-body">
+        <tr><td colspan="6" class="stats-empty">No data yet — run a batch fetch to populate.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Batch panels ──────────────────────────────────────────── -->
+<div class="dash-grid">
+
+  <!-- Fetch -->
+  <div class="dash-panel">
+    <div class="dash-panel-head">Batch Fetch</div>
+
+    <div class="dash-field">
+      <label>Ticker list</label>
+      <div class="dash-field-right">
+        <select id="fetch-list" title="Ticker list to fetch"></select>
+        <span id="fetch-list-count" class="dash-count"></span>
+      </div>
+    </div>
+
+    <div class="dash-field">
+      <label>Timeframes</label>
+      <div id="fetch-tfs" class="dash-checks"></div>
+    </div>
+
+    <div class="dash-btn-row">
+      <button id="btn-fetch" class="dash-btn">Fetch</button>
+      <button id="btn-fetch-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
+    </div>
+
+    <div class="dash-progress">
+      <div id="fetch-track" class="progress-track"><div id="fetch-bar" class="progress-fill"></div></div>
+      <div id="fetch-meta" class="progress-meta">
+        <span id="fetch-count" class="dash-count-text"></span>
+        <span id="fetch-pct" class="dash-pct"></span>
+        <span id="fetch-current" class="dash-current"></span>
+        <span id="fetch-errors" class="dash-errors"></span>
+      </div>
+    </div>
+    <div id="fetch-report" class="dash-report"></div>
+  </div>
+
+  <!-- Indicators -->
+  <div class="dash-panel">
+    <div class="dash-panel-head">Batch Indicators</div>
+
+    <div class="dash-field">
+      <label>Conf</label>
+      <div class="dash-field-right">
+        <select id="ind-conf" title="Indicator configuration to compute"></select>
+      </div>
+    </div>
+
+    <div class="dash-field">
+      <label>Timeframes</label>
+      <div id="ind-tfs" class="dash-checks"></div>
+    </div>
+
+    <div class="dash-btn-row">
+      <button id="btn-indicators" class="dash-btn">Compute</button>
+      <button id="btn-ind-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
+    </div>
+
+    <div class="dash-progress">
+      <div id="ind-track" class="progress-track"><div id="ind-bar" class="progress-fill"></div></div>
+      <div id="ind-meta" class="progress-meta">
+        <span id="ind-count" class="dash-count-text"></span>
+        <span id="ind-pct" class="dash-pct"></span>
+        <span id="ind-current" class="dash-current"></span>
+        <span id="ind-errors" class="dash-errors"></span>
+      </div>
+    </div>
+    <div id="ind-report" class="dash-report"></div>
+  </div>
+
+</div>
+
+<script type="module" src="/static/js/dashboard.js"></script>
+</body>
+</html>

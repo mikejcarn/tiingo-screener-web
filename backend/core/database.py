@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     timeframe   TEXT NOT NULL,
     fetched_at  TEXT NOT NULL,
     last_date   TEXT,
+    ticker_list TEXT,
     PRIMARY KEY (ticker, timeframe)
 );
 
@@ -49,6 +50,11 @@ def _conn() -> sqlite3.Connection:
 def init_db() -> None:
     with _conn() as con:
         con.executescript(SCHEMA)
+        # Migrations: add columns introduced after initial schema
+        try:
+            con.execute("ALTER TABLE fetch_log ADD COLUMN ticker_list TEXT")
+        except Exception:
+            pass  # column already exists
 
 
 # ── OHLCV ────────────────────────────────────────────────────
@@ -166,12 +172,13 @@ def list_ind_confs() -> list[int]:
 
 # ── Fetch log ────────────────────────────────────────────────
 
-def log_fetch(ticker: str, timeframe: str, last_date: Optional[str]) -> None:
+def log_fetch(ticker: str, timeframe: str, last_date: Optional[str],
+              ticker_list: Optional[str] = None) -> None:
     from datetime import datetime
     with _conn() as con:
         con.execute(
-            "INSERT OR REPLACE INTO fetch_log VALUES (?,?,?,?)",
-            (ticker, timeframe, datetime.utcnow().isoformat(), last_date)
+            "INSERT OR REPLACE INTO fetch_log VALUES (?,?,?,?,?)",
+            (ticker, timeframe, datetime.utcnow().isoformat(), last_date, ticker_list)
         )
 
 

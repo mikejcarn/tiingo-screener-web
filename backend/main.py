@@ -9,6 +9,7 @@ import json
 from backend.routers.data import router as data_router
 from backend.routers.fetch import router as fetch_router
 from backend.routers.indicators_router import router as indicators_router
+from backend.routers.jobs import router as jobs_router
 from backend.core import data_manager as dm
 from backend.core import database as _db
 from backend.core.globals import TIMEFRAME_ALIASES
@@ -41,6 +42,7 @@ app.add_middleware(
 app.include_router(data_router)
 app.include_router(fetch_router)
 app.include_router(indicators_router)
+app.include_router(jobs_router)
 
 
 # ---------------------------------------------------------------------------
@@ -127,3 +129,7 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 @app.get("/")
 def index():
     return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+@app.get("/dashboard")
+def dashboard():
+    return FileResponse(str(FRONTEND_DIR / "dashboard.html"))

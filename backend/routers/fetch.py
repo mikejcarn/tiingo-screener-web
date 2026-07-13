@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, List
 import time
 import requests
@@ -9,6 +10,9 @@ from pydantic import BaseModel
 
 from backend.core.globals import API_KEY, TIMEFRAME_ALIASES
 from backend.core import database as db
+from backend.core import job_state
+
+TICKER_LISTS_DIR = Path(__file__).parent.parent / "tickers" / "ticker_lists"
 
 router = APIRouter(prefix="/api")
 
@@ -23,11 +27,27 @@ _TIMEFRAME_CONFIG = {
 }
 
 
+_QUOTA_PHRASE = 'look up for this month'
+
+class TiingoQuotaError(Exception):
+    """Raised when the Tiingo monthly unique-symbol limit is exceeded."""
+
+
+def _check_quota(text: str) -> None:
+    if _QUOTA_PHRASE in text:
+        raise TiingoQuotaError(
+            "Tiingo monthly symbol quota exceeded (500 symbols/month on free plan). "
+            "Wait for the calendar month to reset or upgrade at https://api.tiingo.com/pricing"
+        )
+
+
 def _robust_tiingo_call(client, ticker, start_date, end_date, frequency, max_retries=5):
     for attempt in range(max_retries):
         try:
             return client.get_ticker_price(ticker, startDate=start_date, endDate=end_date, frequency=frequency)
         except Exception as e:
+            # TiingoClient calls response.json() internally; the raw body is in e.doc on JSONDecodeError
+            _check_quota(getattr(e, 'doc', '') or str(e))
             if any(s in str(e).lower() for s in ('connection', 'network', 'timeout', 'unreachable')):
                 if attempt == max_retries - 1:
                     raise
@@ -41,9 +61,12 @@ def _robust_api_call(url, headers, params, max_retries=5):
     for attempt in range(max_retries):
         try:
             resp = requests.get(url, headers=headers, params=params, timeout=30)
+            _check_quota(resp.text)
             if resp.status_code >= 400:
                 resp.raise_for_status()
             return resp.json()
+        except TiingoQuotaError:
+            raise
         except requests.exceptions.HTTPError:
             raise
         except requests.exceptions.RequestException as e:
@@ -118,7 +141,8 @@ def fetch_ticker(ticker: str, timeframe: str,
 # ── Endpoints ────────────────────────────────────────────────
 
 class BatchFetchRequest(BaseModel):
-    tickers: List[str]
+    tickers: Optional[List[str]] = None
+    ticker_list: Optional[str] = None   # CSV filename stem, e.g. "TSX"
     timeframes: List[str]
     end_date: Optional[str] = None
 
@@ -136,27 +160,53 @@ def fetch_single(ticker: str, timeframe: str, end_date: Optional[str] = None):
 
     count = db.upsert_ohlcv(ticker.upper(), tf, df)
     last_date = str(df['Date'].max())[:10] if not df.empty else None
-    db.log_fetch(ticker.upper(), tf, last_date)
+    db.log_fetch(ticker.upper(), tf, last_date, ticker_list=None)
     return {"ticker": ticker.upper(), "timeframe": tf, "rows": count, "last_date": last_date}
 
 
 @router.post("/fetch/batch")
 def fetch_batch(req: BatchFetchRequest, background_tasks: BackgroundTasks):
     """Kick off a background fetch for a list of tickers × timeframes."""
+    if job_state.get_all()['fetch']['status'] == 'running':
+        raise HTTPException(status_code=409, detail="Fetch job already running")
+
+    # Resolve ticker list
+    if req.ticker_list:
+        csv_path = TICKER_LISTS_DIR / f"{req.ticker_list}.csv"
+        tickers = pd.read_csv(csv_path).iloc[:, 0].str.strip().tolist()
+    else:
+        tickers = req.tickers or []
+
+    timeframes = req.timeframes
+
     def _run():
-        for ticker in req.tickers:
-            for tf_alias in req.timeframes:
+        job_state.update('fetch', status='running', done=0, total=len(tickers),
+                         current='', errors=0)
+        for i, ticker in enumerate(tickers):
+            if job_state.is_cancelled('fetch'):
+                job_state.update('fetch', status='cancelled', current='')
+                return
+            job_state.update('fetch', current=ticker)
+            for tf_alias in timeframes:
                 tf = TIMEFRAME_ALIASES.get(tf_alias.lower(), tf_alias.lower())
                 try:
                     df = fetch_ticker(ticker.upper(), tf, end_date=req.end_date)
                     db.upsert_ohlcv(ticker.upper(), tf, df)
                     last_date = str(df['Date'].max())[:10] if not df.empty else None
-                    db.log_fetch(ticker.upper(), tf, last_date)
+                    db.log_fetch(ticker.upper(), tf, last_date, ticker_list=req.ticker_list)
+                except TiingoQuotaError as e:
+                    print(f"fetch_batch QUOTA EXCEEDED: {e}")
+                    job_state.update('fetch', status='error', current='quota exceeded')
+                    job_state.add_failure('fetch', ticker, str(e))
+                    return
                 except Exception as e:
                     print(f"fetch_batch error {ticker} {tf}: {e}")
+                    job_state.add_failure('fetch', ticker, str(e))
+            job_state.update('fetch', done=i + 1)
+        job_state.update('fetch', status='done', current='')
 
     background_tasks.add_task(_run)
-    return {"status": "started", "tickers": len(req.tickers), "timeframes": req.timeframes}
+    return {"status": "started", "tickers": len(tickers), "timeframes": timeframes}
 
 
 @router.get("/fetch/status/{ticker}/{timeframe}")
