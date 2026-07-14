@@ -439,7 +439,12 @@ body.dash {
   margin: 16px 20px;
 }
 
-#single-ticker-wrap { position: relative; }
+.fetch-add-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fetch-list-count-tag { font-size: 10px; color: #444; flex-shrink: 0; }
+.fetch-tf-line { display: block; }
+
+#single-ticker-wrap { position: relative; flex: 1; }
+#single-ticker-wrap .dash-ticker-input { width: 100%; }
 #single-ticker-dd {
   display: none;
   position: absolute;

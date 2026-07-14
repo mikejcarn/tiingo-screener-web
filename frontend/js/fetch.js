@@ -1,12 +1,29 @@
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
-let _tickerLists = [];
-let _pollTimer   = null;
+let _tickerLists   = [];
+let _pollTimer     = null;
+
+// Single ticker queue state
+let _singleQueue   = [];
+let _singleResults = {};
+let _singleRunning = false;
+
+// Batch list queue state
+let _batchQueue     = [];
+let _batchResults   = {};
+let _batchRunning   = false;
+let _batchCancelled = false;
+
+// ── Bootstrap ─────────────────────────────────────────────────
 
 async function init() {
   await _loadTickerLists();
-  _buildTimeframeChecks('fetch-tfs',   ['daily']);
-  _buildTimeframeChecks('single-tfs',  ['daily']);
+  _buildTimeframeChecks('fetch-tfs',  ['daily']);
+  _buildTimeframeChecks('single-tfs', ['daily']);
+  _loadSingleQueue();
+  _loadBatchQueue();
+  _renderSingleQueue();
+  _renderBatchQueue();
   _wireButtons();
   _initDropZone();
 
@@ -17,8 +34,295 @@ async function init() {
     _loadHistory(),
     _loadTiingoListInfo(),
   ]);
-  _updatePanel(status.fetch);
-  if (status.fetch.status === 'running') _startPolling();
+  if (status.fetch.status === 'running') {
+    _batchRunning = true;
+    _renderBatchQueue();
+    _startPolling();
+  }
+}
+
+// ── Utilities ─────────────────────────────────────────────────
+
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Queue persistence ─────────────────────────────────────────
+
+function _saveSingleQueue() {
+  try { localStorage.setItem('fetch_single_queue', JSON.stringify(_singleQueue)); } catch {}
+}
+
+function _loadSingleQueue() {
+  try { _singleQueue = JSON.parse(localStorage.getItem('fetch_single_queue') || '[]'); } catch { _singleQueue = []; }
+}
+
+function _saveBatchQueue() {
+  try { localStorage.setItem('fetch_batch_queue', JSON.stringify(_batchQueue)); } catch {}
+}
+
+function _loadBatchQueue() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('fetch_batch_queue') || '[]');
+    const valid = new Set(_tickerLists.map(l => l.name));
+    _batchQueue = saved.filter(n => valid.has(n));
+  } catch { _batchQueue = []; }
+}
+
+// ── Queue rendering ───────────────────────────────────────────
+
+function _renderSingleQueue() {
+  const el = document.getElementById('single-queue');
+  if (!el) return;
+  if (!_singleQueue.length) {
+    el.innerHTML = '<div class="run-queue-empty">No tickers queued — type below to add</div>';
+    return;
+  }
+  el.innerHTML = _singleQueue.map((ticker, i) => {
+    const r = _singleResults[ticker];
+    let statusHtml = '';
+    if (r) {
+      if (r.status === 'pending') {
+        statusHtml = '<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>';
+      } else if (r.status === 'running') {
+        statusHtml = '<div class="rq-info"><span class="rq-state rq-running">fetching</span></div>';
+      } else if (r.status === 'done') {
+        statusHtml = r.linesHtml || '';
+      } else if (r.status === 'error') {
+        statusHtml = `<div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(r.message || 'error')}</span></div>`;
+      }
+    }
+    return `<div class="run-queue-item">
+      <div class="run-queue-header">
+        <span class="run-queue-pos">${i + 1}</span>
+        <span class="run-queue-name">${_esc(ticker)}</span>
+        <button class="run-queue-remove" data-ticker="${_esc(ticker)}"${_singleRunning ? ' disabled' : ''}>×</button>
+      </div>
+      ${statusHtml ? `<div class="run-queue-detail">${statusHtml}</div>` : ''}
+    </div>`;
+  }).join('');
+  for (const btn of el.querySelectorAll('.run-queue-remove')) {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.ticker;
+      _singleQueue = _singleQueue.filter(x => x !== t);
+      delete _singleResults[t];
+      _saveSingleQueue();
+      _renderSingleQueue();
+    });
+  }
+}
+
+function _renderBatchQueue() {
+  const el = document.getElementById('batch-queue');
+  if (!el) return;
+  if (!_batchQueue.length) {
+    el.innerHTML = '<div class="run-queue-empty">No lists queued — select one below to add</div>';
+    return;
+  }
+  el.innerHTML = _batchQueue.map((listName, i) => {
+    const info = _tickerLists.find(l => l.name === listName);
+    const countStr = info ? `${info.count.toLocaleString()} tickers` : '';
+    return `<div class="run-queue-item">
+      <div class="run-queue-header">
+        <span class="run-queue-pos">${i + 1}</span>
+        <span class="run-queue-name">${_esc(listName)}</span>
+        ${countStr ? `<span class="fetch-list-count-tag">${countStr}</span>` : ''}
+        <button class="run-queue-remove" data-list="${_esc(listName)}"${_batchRunning ? ' disabled' : ''}>×</button>
+      </div>
+      <div class="rq-status" data-list="${_esc(listName)}"></div>
+    </div>`;
+  }).join('');
+  for (const btn of el.querySelectorAll('.run-queue-remove')) {
+    btn.addEventListener('click', () => {
+      const n = btn.dataset.list;
+      _batchQueue = _batchQueue.filter(l => l !== n);
+      delete _batchResults[n];
+      _saveBatchQueue();
+      _renderBatchQueue();
+    });
+  }
+  _renderBatchQueueStatus();
+}
+
+function _renderBatchQueueStatus() {
+  for (const [listName, result] of Object.entries(_batchResults)) {
+    const el = document.querySelector(`.rq-status[data-list="${listName}"]`);
+    if (!el) continue;
+    const { status, done = 0, total = 0, errors = 0, current = '' } = result;
+    if (status === 'pending') {
+      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
+    } else if (status === 'running') {
+      const pct = total > 0 ? (done / total * 100) : 0;
+      el.innerHTML =
+        `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:${pct}%"></div></div>
+         <div class="rq-info">
+           <span class="rq-state rq-running">running</span>
+           ${current ? `<span class="rq-current">→ ${_esc(current)}</span>` : ''}
+           <span class="rq-count">${done} / ${total || '?'}</span>
+         </div>`;
+    } else if (status === 'done') {
+      const hasErr = errors > 0;
+      el.innerHTML =
+        `<div class="rq-bar-track"><div class="rq-bar-fill ${hasErr ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
+         <div class="rq-info">
+           <span class="rq-state ${hasErr ? 'rq-errors' : 'rq-done'}">${hasErr ? `✗ ${errors} error${errors !== 1 ? 's' : ''}` : '✓ done'}</span>
+           <span class="rq-count">${done} / ${total}</span>
+         </div>`;
+    } else if (status === 'cancelled') {
+      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-cancelled">cancelled</span></div>`;
+    } else if (status === 'error') {
+      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(result.message || 'failed to start')}</span></div>`;
+    }
+  }
+}
+
+// ── Run sequences ─────────────────────────────────────────────
+
+async function _runSingleQueue() {
+  if (!_singleQueue.length || _singleRunning) return;
+  const timeframes = _getChecked('single-tfs');
+  if (!timeframes.length) return;
+
+  _singleRunning = true;
+  _singleResults = {};
+  const btn = document.getElementById('btn-single-fetch');
+  btn.disabled = true;
+  btn.textContent = 'Fetching…';
+
+  for (const ticker of _singleQueue) _singleResults[ticker] = { status: 'pending' };
+  _renderSingleQueue();
+
+  for (const ticker of _singleQueue) {
+    _singleResults[ticker] = { status: 'running' };
+    _renderSingleQueue();
+    try {
+      const res = await fetch('/api/fetch/ticker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, timeframes }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        _singleResults[ticker] = { status: 'error', message: data.detail || 'Error' };
+      } else {
+        const lines = [
+          ...(data.results || []).map(r =>
+            `<span class="rq-state rq-done fetch-tf-line">✓ ${r.timeframe} — ${r.rows.toLocaleString()} rows</span>`),
+          ...(data.errors || []).map(e =>
+            `<span class="rq-state rq-errors fetch-tf-line">✗ ${e.timeframe} — ${_esc(e.reason)}</span>`),
+        ].join('');
+        _singleResults[ticker] = { status: 'done', linesHtml: `<div class="rq-info" style="flex-wrap:wrap;gap:3px 10px;">${lines}</div>` };
+      }
+    } catch {
+      _singleResults[ticker] = { status: 'error', message: 'Network error' };
+    }
+    _renderSingleQueue();
+  }
+
+  _singleRunning = false;
+  btn.disabled = false;
+  btn.textContent = 'Fetch';
+  _loadStats();
+  _loadHistory();
+}
+
+async function _runBatchQueue() {
+  if (!_batchQueue.length || _batchRunning) return;
+  const timeframes = _getChecked('fetch-tfs');
+  if (!timeframes.length) return;
+
+  _batchRunning   = true;
+  _batchCancelled = false;
+  _batchResults   = {};
+  const btn       = document.getElementById('btn-fetch');
+  const btnCancel = document.getElementById('btn-fetch-cancel');
+  btn.disabled = true;
+  btn.textContent = 'Fetching…';
+  btnCancel.style.display = '';
+
+  for (const n of _batchQueue) _batchResults[n] = { status: 'pending' };
+  _renderBatchQueue();
+
+  for (const listName of _batchQueue) {
+    if (_batchCancelled) {
+      _batchResults[listName] = { status: 'cancelled' };
+      _renderBatchQueueStatus();
+      continue;
+    }
+    _batchResults[listName] = { status: 'running', done: 0, total: 0, errors: 0, current: '' };
+    _renderBatchQueueStatus();
+
+    const res = await fetch('/api/fetch/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker_list: listName, timeframes }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      _batchResults[listName] = { status: 'error', message: err.detail || 'Failed to start' };
+      _renderBatchQueueStatus();
+      continue;
+    }
+
+    await new Promise(resolve => {
+      const timer = setInterval(async () => {
+        const data  = await fetch('/api/jobs/status').then(r => r.json());
+        const state = data.fetch;
+        if (state.status === 'running') {
+          _batchResults[listName] = { status: 'running', done: state.done, total: state.total, errors: state.errors, current: state.current };
+          _renderBatchQueueStatus();
+        } else {
+          if (state.status === 'done') {
+            _batchResults[listName] = { status: 'done', done: state.done, total: state.total, errors: state.errors };
+          } else {
+            _batchResults[listName] = {
+              status: state.status === 'cancelled' ? 'cancelled' : 'error',
+              done: state.done, total: state.total,
+            };
+            if (state.status === 'cancelled') _batchCancelled = true;
+          }
+          _renderBatchQueueStatus();
+          clearInterval(timer);
+          resolve();
+        }
+      }, 2000);
+    });
+
+    _loadStats();
+    _loadHistory();
+  }
+
+  _batchRunning = false;
+  btn.disabled = false;
+  btn.textContent = 'Fetch';
+  btnCancel.style.display = 'none';
+  _renderBatchQueue();
+  _loadStats();
+  _loadHistory();
+}
+
+// ── Add to queues ─────────────────────────────────────────────
+
+function _addSingleTicker(ticker) {
+  ticker = ticker.trim().toUpperCase();
+  if (!ticker) return;
+  if (!_singleQueue.includes(ticker)) {
+    _singleQueue.push(ticker);
+    _saveSingleQueue();
+    _renderSingleQueue();
+  }
+  document.getElementById('single-ticker').value = '';
+  _ddHide(document.getElementById('single-ticker-dd'));
+}
+
+function _addBatchList() {
+  const listName = document.getElementById('fetch-list').value;
+  if (!listName) return;
+  if (!_batchQueue.includes(listName)) {
+    _batchQueue.push(listName);
+    _saveBatchQueue();
+    _renderBatchQueue();
+  }
 }
 
 // ── Ticker lists ──────────────────────────────────────────────
@@ -87,10 +391,10 @@ async function _loadApiKey() {
 }
 
 function _setApiKeyEditMode(on) {
-  document.getElementById('apikey-masked').style.display    = on ? 'none' : '';
-  document.getElementById('apikey-input').style.display     = on ? '' : 'none';
-  document.getElementById('btn-apikey-edit').style.display  = on ? 'none' : '';
-  document.getElementById('btn-apikey-save').style.display  = on ? '' : 'none';
+  document.getElementById('apikey-masked').style.display     = on ? 'none' : '';
+  document.getElementById('apikey-input').style.display      = on ? '' : 'none';
+  document.getElementById('btn-apikey-edit').style.display   = on ? 'none' : '';
+  document.getElementById('btn-apikey-save').style.display   = on ? '' : 'none';
   document.getElementById('btn-apikey-cancel').style.display = on ? '' : 'none';
   document.getElementById('btn-apikey-verify').style.display = on ? 'none' : '';
   document.getElementById('btn-apikey-delete').style.display = on ? 'none' : '';
@@ -230,26 +534,13 @@ async function _loadHistory() {
 // ── Buttons ───────────────────────────────────────────────────
 
 function _wireButtons() {
-  document.getElementById('btn-fetch').addEventListener('click', async () => {
-    const list       = document.getElementById('fetch-list').value;
-    const timeframes = _getChecked('fetch-tfs');
-    if (!list || !timeframes.length) return;
-    const res = await fetch('/api/fetch/batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker_list: list, timeframes }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.detail || 'Failed to start fetch job');
-      return;
-    }
-    _startPolling();
-  });
-
+  document.getElementById('btn-single-fetch').addEventListener('click', _runSingleQueue);
+  document.getElementById('btn-fetch').addEventListener('click', _runBatchQueue);
   document.getElementById('btn-fetch-cancel').addEventListener('click', () => {
+    _batchCancelled = true;
     fetch('/api/jobs/fetch/cancel', { method: 'POST' });
   });
+  document.getElementById('btn-batch-add').addEventListener('click', _addBatchList);
 
   document.getElementById('btn-apikey-edit').addEventListener('click', () => _setApiKeyEditMode(true));
   document.getElementById('btn-apikey-cancel').addEventListener('click', () => _setApiKeyEditMode(false));
@@ -296,61 +587,10 @@ function _wireButtons() {
     _loadHistory();
   });
 
-  // Single ticker
-  document.getElementById('btn-single-fetch').addEventListener('click', _fetchSingleTicker);
   _initTickerSearch();
 }
 
-// ── Single ticker fetch ───────────────────────────────────────
-
-async function _fetchSingleTicker() {
-  const ticker = document.getElementById('single-ticker').value.trim().toUpperCase();
-  if (!ticker) return;
-  const timeframes = _getChecked('single-tfs');
-  if (!timeframes.length) return;
-
-  const btn      = document.getElementById('btn-single-fetch');
-  const resultEl = document.getElementById('single-result');
-  btn.disabled = true;
-  btn.textContent = 'Fetching…';
-  resultEl.innerHTML = '';
-
-  try {
-    const res = await fetch('/api/fetch/ticker', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, timeframes }),
-    });
-    const data = await res.json();
-    if (res.status === 429) {
-      resultEl.innerHTML = `<div class="dash-report-inner"><span class="report-err">✗ ${data.detail}</span></div>`;
-    } else if (!res.ok) {
-      resultEl.innerHTML = `<div class="dash-report-inner"><span class="report-err">✗ ${data.detail || 'Error'}</span></div>`;
-    } else {
-      resultEl.innerHTML = _buildSingleResult(data);
-      _loadStats();
-      _loadHistory();
-    }
-  } catch {
-    resultEl.innerHTML = `<div class="dash-report-inner"><span class="report-err">✗ Network error</span></div>`;
-  }
-
-  btn.disabled = false;
-  btn.textContent = 'Fetch';
-}
-
-function _buildSingleResult({ ticker, results, errors }) {
-  const lines = [
-    ...results.map(r => `<span class="report-ok">✓ ${r.timeframe} — ${r.rows.toLocaleString()} rows</span>`),
-    ...errors.map(e => `<span class="report-err">✗ ${e.timeframe} — ${e.reason}</span>`),
-  ];
-  return `<div class="dash-report-inner">
-    <span class="single-result-ticker">${ticker}</span>
-    <div class="single-result-lines">${lines.join('')}</div>
-  </div>`;
-}
-
-// ── Ticker search autocomplete ────────────────────────────────
+// ── Single ticker autocomplete ────────────────────────────────
 
 function _initTickerSearch() {
   const input = document.getElementById('single-ticker');
@@ -361,17 +601,17 @@ function _initTickerSearch() {
   input.addEventListener('input', e => {
     e.target.value = e.target.value.toUpperCase();
     clearTimeout(debounce);
+    hiIdx = -1;
     const q = e.target.value.trim();
     if (!q) { _ddHide(dd); return; }
-    debounce = setTimeout(() => _ddFetch(q, input, dd), 120);
+    debounce = setTimeout(() => _ddFetch(q, dd), 120);
   });
 
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
-      const hi = dd.querySelector('.hi');
-      if (hi) { input.value = hi.dataset.ticker; _ddHide(dd); }
-      else _fetchSingleTicker();
       e.preventDefault();
+      const hi = dd.querySelector('.hi');
+      _addSingleTicker(hi ? hi.dataset.ticker : input.value);
       return;
     }
     if (e.key === 'Escape') { _ddHide(dd); return; }
@@ -393,7 +633,7 @@ function _initTickerSearch() {
   });
 }
 
-async function _ddFetch(q, input, dd) {
+async function _ddFetch(q, dd) {
   const data = await fetch(`/api/tickers/search?q=${encodeURIComponent(q)}`).then(r => r.json());
   const results = data.results || [];
   if (!results.length) { _ddHide(dd); return; }
@@ -407,8 +647,7 @@ async function _ddFetch(q, input, dd) {
   dd.querySelectorAll('.ticker-dd-item').forEach(el => {
     el.addEventListener('mousedown', e => {
       e.preventDefault();
-      input.value = el.dataset.ticker;
-      _ddHide(dd);
+      _addSingleTicker(el.dataset.ticker);
     });
   });
   dd.style.display = 'block';
@@ -422,9 +661,9 @@ function _ddHide(dd) {
 // ── Drop zone ─────────────────────────────────────────────────
 
 function _initDropZone() {
-  const zone    = document.getElementById('drop-zone');
-  const input   = document.getElementById('file-input');
-  const browse  = document.getElementById('btn-browse');
+  const zone   = document.getElementById('drop-zone');
+  const input  = document.getElementById('file-input');
+  const browse = document.getElementById('btn-browse');
 
   browse.addEventListener('click', () => input.click());
   input.addEventListener('change', () => {
@@ -471,12 +710,11 @@ async function _uploadFile(file) {
   }
 }
 
-// ── Polling ───────────────────────────────────────────────────
+// ── Polling (page-load sync only) ─────────────────────────────
 
 function _startPolling() {
   if (_pollTimer) return;
   _pollTimer = setInterval(_poll, 2000);
-  _poll();
 }
 
 function _stopPolling() {
@@ -486,91 +724,13 @@ function _stopPolling() {
 
 async function _poll() {
   const status = await fetch('/api/jobs/status').then(r => r.json());
-  _updatePanel(status.fetch);
   if (status.fetch.status !== 'running') {
     _stopPolling();
+    _batchRunning = false;
+    _renderBatchQueue();
     _loadStats();
     _loadHistory();
   }
-}
-
-// ── Progress panel ────────────────────────────────────────────
-
-function _updatePanel(state) {
-  const track     = document.getElementById('fetch-track');
-  const bar       = document.getElementById('fetch-bar');
-  const meta      = document.getElementById('fetch-meta');
-  const count     = document.getElementById('fetch-count');
-  const pctEl     = document.getElementById('fetch-pct');
-  const current   = document.getElementById('fetch-current');
-  const errorsEl  = document.getElementById('fetch-errors');
-  const report    = document.getElementById('fetch-report');
-  const btn       = document.getElementById('btn-fetch');
-  const btnCancel = document.getElementById('btn-fetch-cancel');
-
-  const pct = state.total > 0 ? (state.done / state.total * 100) : 0;
-  bar.style.width = `${pct}%`;
-
-  const _setActive = on => {
-    track.classList.toggle('active', on);
-    bar.classList.toggle('active', on);
-    meta.classList.toggle('active', on);
-  };
-
-  if (state.status === 'idle') {
-    _setActive(false);
-    count.textContent = pctEl.textContent = current.textContent = errorsEl.textContent = '';
-    report.innerHTML = '';
-    btn.disabled = false;
-    btnCancel.style.display = 'none';
-  } else if (state.status === 'running') {
-    _setActive(true);
-    count.textContent    = `${state.done} / ${state.total}`;
-    pctEl.textContent    = `${Math.round(pct)}%`;
-    current.textContent  = state.current ? `→ ${state.current}` : '';
-    errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors}` : '';
-    btn.disabled = true;
-    btnCancel.style.display = '';
-  } else if (state.status === 'done') {
-    _setActive(false);
-    const ok = state.done - state.errors;
-    count.textContent    = `${state.done} / ${state.total}`;
-    pctEl.textContent    = '100%';
-    current.textContent  = '';
-    errorsEl.textContent = state.errors > 0
-      ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}`
-      : '✓ complete';
-    report.innerHTML = _buildReport(ok, state.failed || []);
-    btn.disabled = false;
-    btnCancel.style.display = 'none';
-  } else if (state.status === 'cancelled') {
-    _setActive(false);
-    count.textContent    = `${state.done} / ${state.total}`;
-    pctEl.textContent    = `${Math.round(pct)}% — cancelled`;
-    current.textContent  = '';
-    errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}` : '';
-    report.innerHTML = state.failed?.length ? _buildReport(state.done - state.errors, state.failed) : '';
-    btn.disabled = false;
-    btnCancel.style.display = 'none';
-  } else if (state.status === 'error') {
-    _setActive(false);
-    count.textContent = 'failed';
-    pctEl.textContent = current.textContent = errorsEl.textContent = '';
-    report.innerHTML = '';
-    btn.disabled = false;
-    btnCancel.style.display = 'none';
-  }
-}
-
-function _buildReport(ok, failed) {
-  if (!ok && !failed.length) return '';
-  const okLine   = `<span class="report-ok">✓ ${ok} fetched</span>`;
-  if (!failed.length) return `<div class="dash-report-inner">${okLine}</div>`;
-  const failLine = `<span class="report-err">✗ ${failed.length} failed</span>`;
-  const tickers  = failed.map(f =>
-    `<span class="report-ticker" title="${f.reason}">${f.ticker}</span>`
-  ).join('');
-  return `<div class="dash-report-inner">${okLine} ${failLine}<div class="report-tickers">${tickers}</div></div>`;
 }
 
 document.addEventListener('keydown', e => {

@@ -47,24 +47,21 @@
     <div class="dash-section">
       <div class="dash-section-head"><span>Single Ticker</span></div>
       <div style="padding:16px;">
-        <div class="dash-field">
-          <label>Ticker</label>
-          <div class="dash-field-right">
-            <div id="single-ticker-wrap">
-              <input id="single-ticker" class="dash-ticker-input" type="text"
-                     placeholder="e.g. AAPL" autocomplete="off" spellcheck="false">
-              <div id="single-ticker-dd"></div>
-            </div>
+        <div class="fetch-add-row">
+          <div id="single-ticker-wrap">
+            <input id="single-ticker" class="dash-ticker-input" type="text"
+                   placeholder="Add ticker…" autocomplete="off" spellcheck="false">
+            <div id="single-ticker-dd"></div>
           </div>
         </div>
         <div class="dash-field">
           <label>Timeframes</label>
           <div id="single-tfs" class="dash-checks"></div>
         </div>
+        <div id="single-queue" class="run-queue-list"></div>
         <div class="dash-btn-row">
           <button id="btn-single-fetch" class="dash-btn">Fetch</button>
         </div>
-        <div id="single-result" class="dash-report"></div>
       </div>
     </div>
 
@@ -72,31 +69,20 @@
     <div class="dash-section">
       <div class="dash-section-head"><span>Batch Fetch</span></div>
       <div style="padding:16px;">
-        <div class="dash-field">
-          <label>Ticker list</label>
-          <div class="dash-field-right">
-            <select id="fetch-list" title="Ticker list to fetch"></select>
-            <span id="fetch-list-count" class="dash-count"></span>
-          </div>
+        <div class="fetch-add-row">
+          <select id="fetch-list" title="Ticker list to fetch"></select>
+          <span id="fetch-list-count" class="dash-count"></span>
+          <button id="btn-batch-add" class="dash-btn-sm">+ Add</button>
         </div>
         <div class="dash-field">
           <label>Timeframes</label>
           <div id="fetch-tfs" class="dash-checks"></div>
         </div>
+        <div id="batch-queue" class="run-queue-list"></div>
         <div class="dash-btn-row">
           <button id="btn-fetch" class="dash-btn">Fetch</button>
           <button id="btn-fetch-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
         </div>
-        <div class="dash-progress">
-          <div id="fetch-track" class="progress-track"><div id="fetch-bar" class="progress-fill"></div></div>
-          <div id="fetch-meta" class="progress-meta">
-            <span id="fetch-count"   class="dash-count-text"></span>
-            <span id="fetch-pct"     class="dash-pct"></span>
-            <span id="fetch-current" class="dash-current"></span>
-            <span id="fetch-errors"  class="dash-errors"></span>
-          </div>
-        </div>
-        <div id="fetch-report" class="dash-report"></div>
       </div>
     </div>
 
