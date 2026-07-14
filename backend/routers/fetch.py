@@ -214,9 +214,9 @@ def fetch_batch(req: BatchFetchRequest, background_tasks: BackgroundTasks):
 
     timeframes = req.timeframes
 
+    job_state.update('fetch', status='running', done=0, total=len(tickers), current='', errors=0)
+
     def _run():
-        job_state.update('fetch', status='running', done=0, total=len(tickers),
-                         current='', errors=0)
         for i, ticker in enumerate(tickers):
             if job_state.is_cancelled('fetch'):
                 job_state.update('fetch', status='cancelled', current='')

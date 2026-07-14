@@ -15,6 +15,7 @@ let _searchQuery = '';
 
 async function init() {
   _buildTimeframeChecks();
+  _wireDbNav();
   await Promise.all([_loadConfigList(), _loadDefaults()]);
   _wireStaticButtons();
   if (_configList.length) {
@@ -52,6 +53,8 @@ async function _selectConfig(id) {
   _showEmpty(false);
   _renderEditor();
   _updateRunConfigLabel();
+  _loadDbSection(id);
+  _loadHistory();
 }
 
 async function _loadConfig(id) {
@@ -450,16 +453,26 @@ async function _startCompute() {
   const timeframes = _getCheckedTfs();
   if (!timeframes.length) { alert('Select at least one timeframe.'); return; }
 
+  const btn       = document.getElementById('btn-compute');
+  const btnCancel = document.getElementById('btn-compute-cancel');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
   const res = await fetch('/api/indicators/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ config_id: _selectedId, timeframes }),
   });
+
   if (!res.ok) {
     const err = await res.json();
+    btn.disabled = false;
+    btn.textContent = 'Run';
     alert(err.detail || 'Failed to start compute job');
     return;
   }
+
+  btnCancel.style.display = '';
   _startPolling();
 }
 
@@ -488,6 +501,7 @@ function _updateProgress(state) {
   const meta      = document.getElementById('comp-meta');
   const count     = document.getElementById('comp-count');
   const pctEl     = document.getElementById('comp-pct');
+  const currentEl = document.getElementById('comp-current');
   const errorsEl  = document.getElementById('comp-errors');
   const btn       = document.getElementById('btn-compute');
   const btnCancel = document.getElementById('btn-compute-cancel');
@@ -503,54 +517,325 @@ function _updateProgress(state) {
 
   if (state.status === 'idle') {
     _setActive(false);
-    count.textContent = pctEl.textContent = errorsEl.textContent = '';
+    count.textContent = pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
+    btn.textContent = 'Run';
     btnCancel.style.display = 'none';
   } else if (state.status === 'running') {
     _setActive(true);
-    count.textContent    = `${state.done} / ${state.total}`;
-    pctEl.textContent    = `${Math.round(pct)}%`;
+    count.textContent    = `${state.done} / ${state.total || '?'}`;
+    pctEl.textContent    = state.total ? `${Math.round(pct)}%` : '…';
+    currentEl.textContent = state.current ? `→ ${state.current}` : '';
     errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors}` : '';
     btn.disabled = true;
+    btn.textContent = 'Running…';
     btnCancel.style.display = '';
+    _renderFeed(state.log || []);
+    if (_dbSectionConfigId) _loadDbPreview();
   } else if (state.status === 'done') {
     _setActive(false);
     count.textContent    = `${state.done} / ${state.total}`;
     pctEl.textContent    = '100%';
+    currentEl.textContent = '';
     errorsEl.textContent = state.errors > 0
       ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}`
       : '✓ complete';
     btn.disabled = false;
+    btn.textContent = 'Run';
     btnCancel.style.display = 'none';
+    _renderFeed(state.log || []);
+    if (_selectedId) { _loadDbSection(_selectedId); _loadHistory(); }
   } else if (state.status === 'cancelled') {
     _setActive(false);
     count.textContent    = `${state.done} / ${state.total}`;
     pctEl.textContent    = `${Math.round(pct)}% — cancelled`;
+    currentEl.textContent = '';
     errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}` : '';
     btn.disabled = false;
+    btn.textContent = 'Run';
     btnCancel.style.display = 'none';
+    _renderFeed(state.log || []);
+    if (_selectedId) _loadDbSection(_selectedId);
   } else if (state.status === 'error') {
     _setActive(false);
     count.textContent = 'failed';
-    pctEl.textContent = errorsEl.textContent = '';
+    pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
+    btn.textContent = 'Run';
     btnCancel.style.display = 'none';
   }
-
-  _renderLog(state.log || []);
 }
 
-function _renderLog(entries) {
-  const el = document.getElementById('comp-log');
-  if (!entries.length) { el.innerHTML = ''; return; }
-  el.innerHTML = [...entries].reverse().map(e =>
-    `<div class="ind-log-row${e.ok ? '' : ' ind-log-err'}">
-      <span class="ind-log-sym">${_esc(e.ticker)}</span>
-      <span class="ind-log-tf">${_esc(e.detail)}</span>
-      <span class="ind-log-status">${e.ok ? '✓' : '✗'}</span>
+// DB card state
+let _dbSectionConfigId = null;
+let _dbActiveTf        = 'daily';
+let _dbAvailableTfs    = [];
+let _dbColumnsData     = null;   // cached /columns response
+let _dbPreviewTicker   = null;   // null = auto (most recently computed)
+let _dbTickers         = [];
+let _dbTickerIdx       = 0;
+let _dbRowOffset       = 0;
+let _dbRowTotal        = 0;
+const _DB_LIMIT        = 8;
+
+// ── DB card nav ────────────────────────────────────────────────
+
+function _wireDbNav() {
+  let _tickerTimer = null;
+
+  document.getElementById('db-ticker-prev').addEventListener('click', () => {
+    if (!_dbTickers.length) return;
+    _dbTickerIdx = Math.max(0, _dbTickerIdx - 1);
+    _dbPreviewTicker = _dbTickers[_dbTickerIdx];
+    _dbRowOffset = 0;
+    document.getElementById('comp-db-ticker').value = _dbPreviewTicker;
+    _loadDbPreview();
+  });
+
+  document.getElementById('db-ticker-next').addEventListener('click', () => {
+    if (!_dbTickers.length) return;
+    _dbTickerIdx = Math.min(_dbTickers.length - 1, _dbTickerIdx + 1);
+    _dbPreviewTicker = _dbTickers[_dbTickerIdx];
+    _dbRowOffset = 0;
+    document.getElementById('comp-db-ticker').value = _dbPreviewTicker;
+    _loadDbPreview();
+  });
+
+  document.getElementById('comp-db-ticker').addEventListener('input', e => {
+    clearTimeout(_tickerTimer);
+    _tickerTimer = setTimeout(() => {
+      const val = e.target.value.trim().toUpperCase();
+      _dbPreviewTicker = val || null;
+      _dbRowOffset = 0;
+      if (val) {
+        const idx = _dbTickers.indexOf(val);
+        if (idx >= 0) _dbTickerIdx = idx;
+      }
+      _loadDbPreview();
+    }, 250);
+  });
+
+  document.getElementById('comp-db-ticker').addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      e.target.value = '';
+      _dbPreviewTicker = null;
+      _dbRowOffset = 0;
+      _loadDbPreview();
+    }
+  });
+
+  document.getElementById('db-tf-prev').addEventListener('click', () => {
+    const idx = _dbAvailableTfs.indexOf(_dbActiveTf);
+    if (idx <= 0) return;
+    _dbActiveTf = _dbAvailableTfs[idx - 1];
+    _onDbTfChange();
+  });
+
+  document.getElementById('db-tf-next').addEventListener('click', () => {
+    const idx = _dbAvailableTfs.indexOf(_dbActiveTf);
+    if (idx >= _dbAvailableTfs.length - 1) return;
+    _dbActiveTf = _dbAvailableTfs[idx + 1];
+    _onDbTfChange();
+  });
+
+  document.getElementById('db-rows-older').addEventListener('click', () => {
+    _dbRowOffset = Math.min(_dbRowOffset + _DB_LIMIT, Math.max(0, _dbRowTotal - _DB_LIMIT));
+    _loadDbPreview();
+  });
+
+  document.getElementById('db-rows-newer').addEventListener('click', () => {
+    _dbRowOffset = Math.max(0, _dbRowOffset - _DB_LIMIT);
+    _loadDbPreview();
+  });
+}
+
+async function _onDbTfChange() {
+  _dbPreviewTicker = null;
+  _dbTickerIdx = 0;
+  _dbRowOffset = 0;
+  document.getElementById('comp-db-ticker').value = '';
+  document.getElementById('db-tf-display').textContent = _dbActiveTf;
+  _updateDbTfNav();
+  _updateDbStats();
+  await _loadDbTickers();
+  _loadDbPreview();
+}
+
+function _updateDbTfNav() {
+  const idx = _dbAvailableTfs.indexOf(_dbActiveTf);
+  document.getElementById('db-tf-prev').disabled = idx <= 0;
+  document.getElementById('db-tf-next').disabled = idx >= _dbAvailableTfs.length - 1;
+}
+
+function _updateDbStats() {
+  if (!_dbColumnsData) return;
+  const tfData = _dbColumnsData.timeframes.find(t => t.timeframe === _dbActiveTf);
+  const el = document.getElementById('comp-db-stats');
+  if (!tfData) { el.innerHTML = ''; return; }
+  el.innerHTML =
+    `<span class="ind-db-pill"><span class="ind-db-pill-num">${tfData.tickers}</span><span class="ind-db-pill-meta"> tickers</span></span>` +
+    `<span class="ind-db-pill"><span class="ind-db-pill-num">${tfData.rows.toLocaleString()}</span><span class="ind-db-pill-meta"> rows</span></span>` +
+    `<span class="ind-db-pill"><span class="ind-db-pill-num">${tfData.columns.length}</span><span class="ind-db-pill-meta"> cols</span></span>`;
+}
+
+function _updateDbTickerNav() {
+  document.getElementById('db-ticker-prev').disabled = _dbTickerIdx <= 0;
+  document.getElementById('db-ticker-next').disabled = _dbTickerIdx >= _dbTickers.length - 1 || !_dbTickers.length;
+}
+
+function _updateDbRowNav(rows) {
+  const older = document.getElementById('db-rows-older');
+  const newer = document.getElementById('db-rows-newer');
+  const label = document.getElementById('db-rows-label');
+  older.disabled = _dbRowOffset + _DB_LIMIT >= _dbRowTotal;
+  newer.disabled = _dbRowOffset <= 0;
+  if (rows && rows.length > 0) {
+    const d0 = rows[0].date?.slice(0, 10) || '';
+    const d1 = rows[rows.length - 1].date?.slice(0, 10) || '';
+    const pos = _dbRowTotal - _dbRowOffset;
+    const from = Math.max(1, pos - rows.length + 1);
+    label.textContent = `rows ${from}–${pos} of ${_dbRowTotal.toLocaleString()}  ·  ${d0} → ${d1}`;
+  } else {
+    label.textContent = '';
+  }
+}
+
+async function _loadDbTickers() {
+  if (!_dbSectionConfigId) return;
+  try {
+    const data = await fetch(`/api/indicators/tickers-list?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}`).then(r => r.json());
+    _dbTickers = data.tickers || [];
+  } catch {
+    _dbTickers = [];
+  }
+  _updateDbTickerNav();
+}
+
+async function _loadDbSection(configId) {
+  _dbSectionConfigId = configId;
+  _dbPreviewTicker   = null;
+  _dbTickerIdx       = 0;
+  _dbRowOffset       = 0;
+  _dbRowTotal        = 0;
+  document.getElementById('comp-db-ticker').value = '';
+  document.getElementById('comp-db-stats').innerHTML = '';
+  document.getElementById('comp-db-table').innerHTML = '';
+
+  let data;
+  try {
+    data = await fetch(`/api/indicators/columns?config_id=${configId}`).then(r => r.json());
+  } catch { return; }
+
+  _dbColumnsData = data;
+
+  if (!data.timeframes?.length) {
+    document.getElementById('db-tf-display').textContent = '—';
+    document.getElementById('comp-db-table').innerHTML =
+      '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">No indicator data computed yet.</td></tr>';
+    return;
+  }
+
+  _dbAvailableTfs = data.timeframes.map(t => t.timeframe);
+  if (!_dbAvailableTfs.includes(_dbActiveTf)) _dbActiveTf = _dbAvailableTfs[0];
+  document.getElementById('db-tf-display').textContent = _dbActiveTf;
+  _updateDbTfNav();
+  _updateDbStats();
+  await _loadDbTickers();
+  await _loadDbPreview();
+}
+
+async function _loadDbPreview() {
+  if (!_dbSectionConfigId) return;
+  const tableEl = document.getElementById('comp-db-table');
+  tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">Loading…</td></tr>';
+
+  const tickerParam = _dbPreviewTicker ? `&ticker=${encodeURIComponent(_dbPreviewTicker)}` : '';
+  let data;
+  try {
+    data = await fetch(
+      `/api/indicators/preview?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}&offset=${_dbRowOffset}${tickerParam}`
+    ).then(r => r.json());
+  } catch {
+    tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">Failed to load.</td></tr>';
+    return;
+  }
+
+  if (data.not_found) {
+    tableEl.innerHTML = `<tr><td style="color:#555;padding:8px 12px;font-size:11px;">${_esc(_dbPreviewTicker)} not found for this config / timeframe.</td></tr>`;
+    return;
+  }
+  if (!data.columns?.length) {
+    tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">No data for this timeframe.</td></tr>';
+    return;
+  }
+
+  // Sync ticker display
+  const tickerInput = document.getElementById('comp-db-ticker');
+  if (!_dbPreviewTicker && data.ticker) {
+    tickerInput.placeholder = data.ticker;
+    const idx = _dbTickers.indexOf(data.ticker);
+    if (idx >= 0) _dbTickerIdx = idx;
+    _updateDbTickerNav();
+  }
+
+  _dbRowTotal = data.total_rows || 0;
+  _updateDbRowNav(data.rows);
+
+  const ohlcvCols = new Set(['date','open','high','low','close','volume']);
+  const thead = `<thead><tr>${data.columns.map(c =>
+    `<th class="${ohlcvCols.has(c) ? 'ind-db-th-ohlcv' : 'ind-db-th-ind'}">${_esc(c)}</th>`
+  ).join('')}</tr></thead>`;
+  const tbody = `<tbody>${data.rows.map(row =>
+    `<tr>${data.columns.map(c => {
+      const v = row[c];
+      const display = v === null || v === undefined ? '<span class="ind-db-null">—</span>' : _esc(String(v));
+      return `<td class="${ohlcvCols.has(c) ? 'ind-db-td-ohlcv' : ''}">${display}</td>`;
+    }).join('')}</tr>`
+  ).join('')}</tbody>`;
+  tableEl.innerHTML = thead + tbody;
+}
+
+function _renderFeed(entries) {
+  const el = document.getElementById('comp-feed');
+  if (!entries.length) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+  el.innerHTML = entries.map(e =>
+    `<div class="ind-feed-row${e.ok ? '' : ' ind-feed-err'}">
+      <span class="ind-feed-status">${e.ok ? '✓' : '✗'}</span>
+      <span class="ind-feed-sym">${_esc(e.ticker)}</span>
+      <span class="ind-feed-tf">${_esc(e.detail)}</span>
     </div>`
   ).join('');
+  if (atBottom) el.scrollTop = el.scrollHeight;
 }
+
+
+async function _loadHistory() {
+  const tbody = document.getElementById('ind-history-body');
+  let data;
+  try {
+    data = await fetch('/api/indicators/history').then(r => r.json());
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">Failed to load.</td></tr>';
+    return;
+  }
+  const rows = data.history || [];
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">No history yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${_esc(r.config_name)}</td>
+      <td>${r.timeframes.join(', ')}</td>
+      <td>${r.tickers}</td>
+      <td class="${r.errors > 0 ? 'ind-hist-err' : ''}">${r.errors}</td>
+      <td>${_esc(r.ran_at)}</td>
+    </tr>
+  `).join('');
+}
+
 
 // ── Utilities ──────────────────────────────────────────────────
 

@@ -33,7 +33,6 @@
   <!-- ── Center: editor ─────────────────────────────────── -->
   <div class="ind-main">
 
-    <!-- Empty state -->
     <div id="ind-empty" class="ind-empty">
       <div>
         <p>No indicator configs yet.</p>
@@ -41,7 +40,6 @@
       </div>
     </div>
 
-    <!-- Editor (shown when config selected) -->
     <div id="ind-editor" style="display:none; flex-direction:column; height:100%;">
 
       <div class="ind-editor-top">
@@ -50,7 +48,6 @@
         <button id="btn-delete-config" class="btn-destructive" title="Delete this config">Delete</button>
       </div>
 
-      <!-- Timeframe tabs -->
       <div class="tf-tabs" id="tf-tabs">
         <button class="tf-tab active" data-tf="daily">daily</button>
         <button class="tf-tab" data-tf="weekly">weekly</button>
@@ -59,47 +56,106 @@
         <button class="tf-tab" data-tf="5min">5min</button>
       </div>
 
-      <!-- Search -->
       <div class="ind-search-bar">
         <input type="text" id="ind-search" class="ind-search-input" placeholder="Search indicators…" autocomplete="off" spellcheck="false">
       </div>
 
-      <!-- Indicator list -->
       <div id="ind-list" class="ind-list"></div>
 
     </div>
   </div>
 
-  <!-- ── Right: run panel ────────────────────────────────── -->
-  <div class="ind-run">
-    <div class="ind-run-head">Run</div>
+  <!-- ── Right: run + history ───────────────────────────── -->
+  <div class="ind-right">
 
-    <div class="ind-run-body">
-      <div class="ind-run-config-label" id="run-config-name">No config selected</div>
+    <!-- Run + DB output card -->
+    <div class="ind-run">
+      <div class="ind-run-head">Run</div>
+      <div class="ind-run-body">
 
-      <div class="dash-field" style="margin-bottom:10px;">
-        <label>Timeframes</label>
-        <div id="compute-tfs" class="dash-checks"></div>
-      </div>
+        <div class="ind-run-config-label" id="run-config-name">No config selected</div>
 
-      <div class="dash-btn-row">
-        <button id="btn-compute" class="dash-btn">Run</button>
-        <button id="btn-compute-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
-      </div>
-
-      <div class="dash-progress">
-        <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
-        <div id="comp-meta" class="progress-meta">
-          <span id="comp-count"   class="dash-count-text"></span>
-          <span id="comp-pct"     class="dash-pct"></span>
-          <span id="comp-errors"  class="dash-errors"></span>
+        <div class="dash-field" style="margin-bottom:10px;">
+          <label>Timeframes</label>
+          <div id="compute-tfs" class="dash-checks"></div>
         </div>
-      </div>
 
-      <div class="ind-run-log-head">Output</div>
-      <div id="comp-log" class="ind-run-log"></div>
+        <div class="dash-btn-row">
+          <button id="btn-compute" class="dash-btn">Run</button>
+          <button id="btn-compute-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
+        </div>
+
+        <div class="dash-progress">
+          <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
+          <div id="comp-meta" class="progress-meta">
+            <span id="comp-count"   class="dash-count-text"></span>
+            <span id="comp-pct"     class="dash-pct"></span>
+            <span id="comp-current" class="dash-current"></span>
+            <span id="comp-errors"  class="dash-errors"></span>
+          </div>
+        </div>
+
+        <div id="comp-feed" class="ind-feed" style="display:none;"></div>
+
+      </div>
     </div>
-  </div>
+
+    <!-- DB card -->
+    <div class="ind-db-card">
+      <div class="ind-run-head">DB — indicators</div>
+      <div class="ind-db-body">
+
+        <div class="ind-db-nav-row">
+          <div class="ind-db-ctrl-group">
+            <button id="db-ticker-prev" class="ind-db-nav-btn" title="Previous ticker">‹</button>
+            <input type="text" id="comp-db-ticker" class="ind-db-ticker-input" placeholder="ticker" autocomplete="off" spellcheck="false">
+            <button id="db-ticker-next" class="ind-db-nav-btn" title="Next ticker">›</button>
+          </div>
+          <div class="ind-db-ctrl-group">
+            <button id="db-tf-prev" class="ind-db-nav-btn">‹</button>
+            <span id="db-tf-display" class="ind-db-tf-display">—</span>
+            <button id="db-tf-next" class="ind-db-nav-btn">›</button>
+          </div>
+        </div>
+
+        <div class="ind-db-info-row">
+          <div id="comp-db-stats" class="ind-db-stats"></div>
+          <div class="ind-db-row-ctrl">
+            <button id="db-rows-older" class="ind-db-nav-btn">‹ older</button>
+            <span id="db-rows-label" class="ind-db-rows-label"></span>
+            <button id="db-rows-newer" class="ind-db-nav-btn">newer ›</button>
+          </div>
+        </div>
+
+        <div class="ind-db-table-wrap">
+          <table id="comp-db-table" class="ind-db-table"></table>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- History card -->
+    <div class="ind-history">
+      <div class="ind-run-head">Run History</div>
+      <div class="ind-history-wrap">
+        <table class="ind-history-table">
+          <thead>
+            <tr>
+              <th>Config</th>
+              <th>Timeframes</th>
+              <th>Tickers</th>
+              <th>Errors</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="ind-history-body">
+            <tr><td colspan="5" class="stats-empty">No history yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- .ind-right -->
 
 </div>
 

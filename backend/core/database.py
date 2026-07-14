@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ind_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_id   INTEGER NOT NULL,
+    config_name TEXT NOT NULL DEFAULT '',
+    timeframes  TEXT NOT NULL DEFAULT '[]',
+    tickers     INTEGER NOT NULL DEFAULT 0,
+    errors      INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'done',
+    ran_at      TEXT NOT NULL
+);
 """
 
 
@@ -224,6 +235,29 @@ def log_fetch(ticker: str, timeframe: str, last_date: Optional[str],
             "INSERT OR REPLACE INTO fetch_log VALUES (?,?,?,?,?)",
             (ticker, timeframe, datetime.utcnow().isoformat(), last_date, ticker_list)
         )
+
+
+def log_indicator_run(config_id: int, config_name: str, timeframes: list,
+                      tickers: int, errors: int, status: str = 'done') -> None:
+    from datetime import datetime
+    with _conn() as con:
+        con.execute(
+            "INSERT INTO ind_log (config_id, config_name, timeframes, tickers, errors, status, ran_at) VALUES (?,?,?,?,?,?,?)",
+            (config_id, config_name, json.dumps(timeframes), tickers, errors, status, datetime.utcnow().isoformat())
+        )
+
+
+def get_indicator_history(limit: int = 30) -> list:
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT config_id, config_name, timeframes, tickers, errors, status, ran_at FROM ind_log ORDER BY ran_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    return [
+        {'config_id': r[0], 'config_name': r[1], 'timeframes': json.loads(r[2]),
+         'tickers': r[3], 'errors': r[4], 'status': r[5], 'ran_at': r[6][:10]}
+        for r in rows
+    ]
 
 
 def get_fetch_log(ticker: str, timeframe: str) -> Optional[dict]:
