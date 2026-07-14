@@ -306,9 +306,9 @@ body.dash {
 .ss-val { color: #666; }
 .ss-sep { color: #2a2a2a; }
 
-#stats-wrap { max-height: 260px; overflow-y: auto; }
-#stats-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-#stats-table th {
+#stats-wrap, #history-wrap { max-height: 260px; overflow-y: auto; }
+#stats-table, #history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#stats-table th, #history-table th {
   padding: 6px 16px;
   text-align: left;
   color: #444;
@@ -319,9 +319,9 @@ body.dash {
   top: 0;
   background: #080808;
 }
-#stats-table td { padding: 5px 16px; color: #888; border-bottom: 1px solid #0f0f0f; }
-#stats-table tbody tr:hover td { background: #0d0d0d; }
-#stats-table td:first-child { color: #bbb; }
+#stats-table td, #history-table td { padding: 5px 16px; color: #888; border-bottom: 1px solid #0f0f0f; }
+#stats-table tbody tr:hover td, #history-table tbody tr:hover td { background: #0d0d0d; }
+#stats-table td:first-child, #history-table td:first-child { color: #bbb; }
 .stats-empty { color: #444; font-style: italic; }
 
 .dash-grid {
@@ -432,6 +432,137 @@ body.dash {
 .progress-meta.active .dash-current    { color: #888; }
 .dash-errors  { color: rgba(239,83,80,0.8); margin-left: auto; }
 
+.fetch-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 16px 20px;
+}
+
+#single-ticker-wrap { position: relative; }
+#single-ticker-dd {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 260px;
+  background: #0d0d0d;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+}
+.ticker-dd-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.ticker-dd-item:hover, .ticker-dd-item.hi { background: #1a1a1a; }
+.ticker-dd-sym  { font-weight: 600; color: #ccc; min-width: 70px; }
+.ticker-dd-exch { color: #555; font-size: 11px; min-width: 60px; }
+.ticker-dd-type { color: #444; font-size: 11px; }
+
+.dash-ticker-input {
+  background: #111; color: #ccc; border: 1px solid #333;
+  padding: 4px 8px; border-radius: 3px; font-size: 13px;
+  width: 120px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.dash-ticker-input:focus { outline: none; border-color: #555; }
+.dash-ticker-input::placeholder { text-transform: none; letter-spacing: normal; color: #555; }
+
+.single-result-ticker {
+  display: block; font-size: 12px; color: #aaa; font-weight: 600;
+  margin-bottom: 5px; letter-spacing: 0.05em;
+}
+.single-result-lines {
+  display: flex; flex-direction: column; gap: 3px;
+}
+
+.dash-divider { height: 1px; background: #111; margin: 12px 0; }
+
+.tiingo-ref-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.tiingo-ref-label { color: #777; }
+.tiingo-ref-link {
+  color: rgba(38,166,154,0.55);
+  font-size: 11px;
+  text-decoration: none;
+  margin-right: auto;
+}
+.tiingo-ref-link:hover { color: rgba(38,166,154,0.9); }
+.tiingo-ref-meta { font-size: 11px; color: #444; margin-bottom: 6px; min-height: 15px; }
+
+.ticker-list-items { display: flex; flex-direction: column; margin-bottom: 10px; }
+.ticker-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid #111;
+}
+.ticker-list-row:last-child { border-bottom: none; }
+.ticker-list-name { color: #bbb; }
+.ticker-list-count { color: #444; font-size: 11px; }
+
+.drop-zone {
+  border: 1px dashed #2a2a2a;
+  border-radius: 3px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.drop-zone:hover { border-color: #444; }
+.drop-zone.drag-over {
+  border-color: rgba(38,166,154,0.5);
+  background: rgba(38,166,154,0.04);
+}
+.drop-zone-text { font-size: 12px; color: #555; }
+.drop-zone-browse {
+  background: none; border: none; padding: 0;
+  color: rgba(38,166,154,0.6); cursor: pointer;
+  font-size: 12px; text-decoration: underline;
+}
+.drop-zone-browse:hover { color: rgba(38,166,154,1); background: none; }
+.upload-status { display: block; font-size: 11px; margin-top: 8px; min-height: 16px; }
+.upload-ok  { color: rgba(38,166,154,0.8); }
+.upload-err { color: rgba(239,83,80,0.7); }
+
+.apikey-masked {
+  font-family: monospace;
+  font-size: 12px;
+  color: #777;
+  letter-spacing: 0.04em;
+}
+.apikey-input {
+  background: #111; color: #ccc; border: 1px solid #333;
+  padding: 4px 8px; border-radius: 3px; font-size: 12px; font-family: monospace;
+}
+.apikey-input:focus { outline: none; border-color: #555; }
+
+.dash-btn-sm {
+  background: #111; color: #666; border: 1px solid #222;
+  font-size: 11px; padding: 3px 9px; border-radius: 3px; cursor: pointer;
+}
+.dash-btn-sm:hover { color: #bbb; border-color: #444; }
+.dash-btn-sm-del { color: rgba(239,83,80,0.5); border-color: rgba(239,83,80,0.15); }
+.dash-btn-sm-del:hover { color: rgba(239,83,80,0.9); border-color: rgba(239,83,80,0.4); background: #111; }
+
+.apikey-status { font-size: 11px; color: #666; }
+.apikey-ok  { color: rgba(38,166,154,0.9); }
+.apikey-err { color: rgba(239,83,80,0.8); }
+
 .dash-report { margin-top: 10px; }
 .dash-report-inner { font-size: 11px; }
 .report-ok  { color: rgba(38,166,154,0.8); margin-right: 8px; }
@@ -500,6 +631,59 @@ body.dash {
 }
 a.page-nav-item:hover { color: #ccc; background: #111; }
 .page-nav-item.active { color: #aaa; cursor: default; }
+
+/* ── Fetch page two-column layout ────────────────────────── */
+body.fetch-page {
+  height: 100vh;
+  min-height: unset;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.fetch-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fetch-left {
+  overflow-y: auto;
+  border-right: 1px solid #1a1a1a;
+  padding-bottom: 20px;
+}
+
+.fetch-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  overflow: hidden;
+}
+
+/* Sections inside right column size by flex ratio instead of scrolling freely */
+.fetch-right .dash-section {
+  margin: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.fetch-right .dash-section-head { flex-shrink: 0; }
+
+.fetch-db { flex: 3; }
+.fetch-history { flex: 1; }
+
+.fetch-db #stats-summary { flex-shrink: 0; }
+.fetch-db #stats-wrap,
+.fetch-history #history-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  max-height: none;
+}
 
 /* ── Indicators page ──────────────────────────────────────── */
 body.ind-page {

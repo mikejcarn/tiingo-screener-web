@@ -1,13 +1,72 @@
 from pathlib import Path
+from functools import lru_cache
+from datetime import datetime
+import csv
+import io
+import os
+import zipfile
+import requests
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from pydantic import BaseModel
 
 from backend.core import job_state
 from backend.core import database as db
+from backend.core.globals import API_KEY as _FALLBACK_API_KEY
 
 router = APIRouter(prefix="/api")
 
 TICKER_LISTS_DIR = Path(__file__).parent.parent / "tickers" / "ticker_lists"
+
+
+def _masked(key: str) -> str:
+    if len(key) <= 8:
+        return '•' * len(key)
+    return key[:4] + '•' * (len(key) - 8) + key[-4:]
+
+
+class ApiKeyBody(BaseModel):
+    key: str
+
+
+@router.get("/settings/api-key")
+def get_api_key():
+    key = db.get_setting('tiingo_api_key') or _FALLBACK_API_KEY
+    return {"set": bool(key), "masked": _masked(key) if key else ""}
+
+
+@router.delete("/settings/api-key")
+def delete_api_key():
+    db.set_setting('tiingo_api_key', '')
+    fallback = _FALLBACK_API_KEY
+    return {"set": bool(fallback), "masked": _masked(fallback) if fallback else ""}
+
+
+@router.put("/settings/api-key")
+def save_api_key(body: ApiKeyBody):
+    key = body.key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Key cannot be empty")
+    db.set_setting('tiingo_api_key', key)
+    return {"set": True, "masked": _masked(key)}
+
+
+@router.post("/settings/api-key/verify")
+def verify_api_key():
+    key = db.get_setting('tiingo_api_key') or _FALLBACK_API_KEY
+    if not key:
+        return {"valid": False, "detail": "No API key set"}
+    try:
+        resp = requests.get(
+            'https://api.tiingo.com/tiingo/daily/AAPL',
+            headers={'Authorization': f'Token {key}', 'Content-Type': 'application/json'},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            return {"valid": True}
+        return {"valid": False, "detail": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"valid": False, "detail": str(e)}
 
 
 @router.get("/jobs/status")
@@ -25,16 +84,114 @@ def cancel_job(job: str):
     return {"status": "cancelling"}
 
 
+@lru_cache(maxsize=1)
+def _tiingo_tickers_cached():
+    path = TICKER_LISTS_DIR / 'tiingo-tickers.csv'
+    rows = []
+    with open(path, newline='', encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            ticker = r.get('ticker', '').strip().upper()
+            if not ticker or not ticker[0].isalpha():
+                continue
+            rows.append((
+                ticker,
+                r.get('exchange', ''),
+                r.get('assetType', ''),
+            ))
+    return rows
+
+
+@router.get("/tickers/search")
+def search_tickers(q: str = ''):
+    if len(q) < 1:
+        return {"results": []}
+    q = q.upper()
+    all_t = _tiingo_tickers_cached()
+    prefix  = [t for t in all_t if t[0].startswith(q)][:20]
+    return {"results": [{"ticker": t[0], "exchange": t[1], "assetType": t[2]} for t in prefix]}
+
+
+@router.post("/ticker-lists/upload")
+async def upload_ticker_list(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only CSV files are accepted")
+    contents = await file.read()
+    name = Path(file.filename).stem
+    dest = TICKER_LISTS_DIR / f"{name}.csv"
+    dest.write_bytes(contents)
+    try:
+        count = len(pd.read_csv(dest))
+    except Exception:
+        count = 0
+    return {"name": name, "count": count}
+
+
+TIINGO_TICKERS_FILE = TICKER_LISTS_DIR / 'tiingo-tickers.csv'
+TIINGO_TICKERS_URL  = 'https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip'
+
+
+@router.get("/tickers/list-info")
+def tiingo_list_info():
+    if not TIINGO_TICKERS_FILE.exists():
+        return {"exists": False}
+    mtime = os.path.getmtime(TIINGO_TICKERS_FILE)
+    updated_at = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
+    with open(TIINGO_TICKERS_FILE, newline='', encoding='utf-8') as f:
+        rows = sum(1 for _ in f) - 1
+    return {"exists": True, "rows": rows, "updated_at": updated_at}
+
+
+@router.post("/tickers/update-list")
+def update_tiingo_tickers():
+    try:
+        resp = requests.get(TIINGO_TICKERS_URL, timeout=60)
+        resp.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
+            csv_name = next(n for n in z.namelist() if n.lower().endswith('.csv'))
+            csv_bytes = z.read(csv_name)
+        TIINGO_TICKERS_FILE.write_bytes(csv_bytes)
+        _tiingo_tickers_cached.cache_clear()
+        rows = csv_bytes.decode('utf-8', errors='replace').count('\n') - 1
+        updated_at = datetime.now().strftime('%Y-%m-%d')
+        return {"updated": True, "rows": rows, "updated_at": updated_at}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get("/ticker-lists")
 def ticker_lists():
     lists = []
     for f in sorted(TICKER_LISTS_DIR.glob("*.csv")):
+        if f.name == 'tiingo-tickers.csv':
+            continue
         try:
             df = pd.read_csv(f)
             lists.append({"name": f.stem, "count": len(df)})
         except Exception:
             lists.append({"name": f.stem, "count": 0})
     return {"lists": lists}
+
+
+@router.get("/fetch-history")
+def fetch_history():
+    with db._conn() as con:
+        rows = con.execute("""
+            SELECT
+                strftime('%Y-%m-%d %H:00', fetched_at) AS session,
+                ticker_list,
+                timeframe,
+                COUNT(DISTINCT ticker)                  AS tickers,
+                MAX(last_date)                          AS last_date
+            FROM fetch_log
+            GROUP BY strftime('%Y-%m-%d %H:00', fetched_at), ticker_list, timeframe
+            ORDER BY session DESC
+            LIMIT 40
+        """).fetchall()
+    return {"history": [
+        {"session": r[0], "ticker_list": r[1] or "—",
+         "timeframe": r[2], "tickers": r[3], "last_date": r[4] or "—"}
+        for r in rows
+    ]}
 
 
 @router.get("/stats")

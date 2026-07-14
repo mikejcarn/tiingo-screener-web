@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS ind_config_indicators (
     params     TEXT NOT NULL DEFAULT '{}',
     PRIMARY KEY (config_id, timeframe, indicator)
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -194,6 +199,19 @@ def list_ind_confs_named() -> list[dict]:
             ORDER BY i.ind_conf
         """).fetchall()
     return [{"id": r[0], "name": r[1]} for r in rows]
+
+
+# ── Settings ─────────────────────────────────────────────────
+
+def get_setting(key: str) -> Optional[str]:
+    with _conn() as con:
+        row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    with _conn() as con:
+        con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, value))
 
 
 # ── Fetch log ────────────────────────────────────────────────

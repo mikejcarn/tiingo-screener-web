@@ -6,7 +6,7 @@
 <title>Fetch — Tiingo Screener</title>
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body class="dash">
+<body class="dash fetch-page">
 
 <div id="dash-header">
   <span id="dash-title">Tiingo Screener</span>
@@ -17,39 +17,170 @@
   </div>
 </div>
 
-<div class="dash-section" style="max-width:680px; margin: 24px auto 0;">
-  <div class="dash-panel-head" style="padding:12px 16px; border-bottom:1px solid #1a1a1a;">Batch Fetch</div>
+<div class="fetch-layout">
 
-  <div style="padding:16px;">
-    <div class="dash-field">
-      <label>Ticker list</label>
-      <div class="dash-field-right">
-        <select id="fetch-list" title="Ticker list to fetch"></select>
-        <span id="fetch-list-count" class="dash-count"></span>
+  <!-- ── Left column ───────────────────────────────────────── -->
+  <div class="fetch-left">
+
+    <!-- API Key -->
+    <div class="dash-section">
+      <div class="dash-section-head"><span>API Key</span></div>
+      <div style="padding:14px 16px;">
+        <div class="dash-field" style="margin-bottom:0;">
+          <label>Tiingo key</label>
+          <div class="dash-field-right" style="flex:1; gap:8px;">
+            <span id="apikey-masked" class="apikey-masked"></span>
+            <input id="apikey-input" class="apikey-input" type="password"
+                   placeholder="Paste key…" style="display:none; flex:1;">
+            <button id="btn-apikey-edit"   class="dash-btn-sm">Edit</button>
+            <button id="btn-apikey-save"   class="dash-btn-sm" style="display:none;">Save</button>
+            <button id="btn-apikey-cancel" class="dash-btn-sm" style="display:none;">Cancel</button>
+            <button id="btn-apikey-verify" class="dash-btn-sm">Verify</button>
+            <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del">Delete</button>
+            <span   id="apikey-status"></span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="dash-field">
-      <label>Timeframes</label>
-      <div id="fetch-tfs" class="dash-checks"></div>
-    </div>
-
-    <div class="dash-btn-row">
-      <button id="btn-fetch" class="dash-btn">Fetch</button>
-      <button id="btn-fetch-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
-    </div>
-
-    <div class="dash-progress">
-      <div id="fetch-track" class="progress-track"><div id="fetch-bar" class="progress-fill"></div></div>
-      <div id="fetch-meta" class="progress-meta">
-        <span id="fetch-count" class="dash-count-text"></span>
-        <span id="fetch-pct" class="dash-pct"></span>
-        <span id="fetch-current" class="dash-current"></span>
-        <span id="fetch-errors" class="dash-errors"></span>
+    <!-- Single Ticker -->
+    <div class="dash-section">
+      <div class="dash-section-head"><span>Single Ticker</span></div>
+      <div style="padding:16px;">
+        <div class="dash-field">
+          <label>Ticker</label>
+          <div class="dash-field-right">
+            <div id="single-ticker-wrap">
+              <input id="single-ticker" class="dash-ticker-input" type="text"
+                     placeholder="e.g. AAPL" autocomplete="off" spellcheck="false">
+              <div id="single-ticker-dd"></div>
+            </div>
+          </div>
+        </div>
+        <div class="dash-field">
+          <label>Timeframes</label>
+          <div id="single-tfs" class="dash-checks"></div>
+        </div>
+        <div class="dash-btn-row">
+          <button id="btn-single-fetch" class="dash-btn">Fetch</button>
+        </div>
+        <div id="single-result" class="dash-report"></div>
       </div>
     </div>
-    <div id="fetch-report" class="dash-report"></div>
+
+    <!-- Batch Fetch -->
+    <div class="dash-section">
+      <div class="dash-section-head"><span>Batch Fetch</span></div>
+      <div style="padding:16px;">
+        <div class="dash-field">
+          <label>Ticker list</label>
+          <div class="dash-field-right">
+            <select id="fetch-list" title="Ticker list to fetch"></select>
+            <span id="fetch-list-count" class="dash-count"></span>
+          </div>
+        </div>
+        <div class="dash-field">
+          <label>Timeframes</label>
+          <div id="fetch-tfs" class="dash-checks"></div>
+        </div>
+        <div class="dash-btn-row">
+          <button id="btn-fetch" class="dash-btn">Fetch</button>
+          <button id="btn-fetch-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
+        </div>
+        <div class="dash-progress">
+          <div id="fetch-track" class="progress-track"><div id="fetch-bar" class="progress-fill"></div></div>
+          <div id="fetch-meta" class="progress-meta">
+            <span id="fetch-count"   class="dash-count-text"></span>
+            <span id="fetch-pct"     class="dash-pct"></span>
+            <span id="fetch-current" class="dash-current"></span>
+            <span id="fetch-errors"  class="dash-errors"></span>
+          </div>
+        </div>
+        <div id="fetch-report" class="dash-report"></div>
+      </div>
+    </div>
+
+    <!-- Ticker Lists -->
+    <div class="dash-section">
+      <div class="dash-section-head"><span>Ticker Lists</span></div>
+      <div style="padding:12px 16px 14px;">
+
+        <div class="tiingo-ref-row">
+          <span class="tiingo-ref-label">Tiingo supported tickers</span>
+          <a href="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
+             target="_blank" class="tiingo-ref-link">&#x2197; tiingo.com</a>
+          <button id="btn-update-tickers" class="dash-btn-sm">Update</button>
+        </div>
+        <div id="tiingo-list-meta" class="tiingo-ref-meta"></div>
+
+        <div class="dash-divider"></div>
+
+        <div id="ticker-list-items" class="ticker-list-items"></div>
+        <div id="drop-zone" class="drop-zone">
+          <input id="file-input" type="file" accept=".csv" style="display:none">
+          <span class="drop-zone-text">Drop CSV here or <button id="btn-browse" class="drop-zone-browse">browse</button></span>
+          <span id="upload-status" class="upload-status"></span>
+        </div>
+
+      </div>
+    </div>
+
   </div>
+
+  <!-- ── Right column ──────────────────────────────────────── -->
+  <div class="fetch-right">
+
+    <!-- Database (expands to fill) -->
+    <div class="dash-section fetch-db">
+      <div class="dash-section-head">
+        <span>Database</span>
+        <div class="dash-section-actions">
+          <button id="btn-refresh-stats" title="Refresh">&#x21BB;</button>
+        </div>
+      </div>
+      <div id="stats-summary"></div>
+      <div id="stats-wrap">
+        <table id="stats-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Timeframe</th>
+              <th>List</th>
+              <th>Last Date</th>
+              <th>Rows</th>
+              <th>Fetched</th>
+            </tr>
+          </thead>
+          <tbody id="stats-body">
+            <tr><td colspan="6" class="stats-empty">No data yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Fetch History (pinned at bottom) -->
+    <div class="dash-section fetch-history">
+      <div class="dash-section-head"><span>Fetch History</span></div>
+      <div id="history-wrap">
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Session</th>
+              <th>List</th>
+              <th>Timeframe</th>
+              <th>Tickers</th>
+              <th>Last Date</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr><td colspan="5" class="stats-empty">No history yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
 </div>
 
 <script type="module" src="/static/js/fetch.js"></script>

@@ -8,7 +8,7 @@ from tiingo import TiingoClient
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
-from backend.core.globals import API_KEY, TIMEFRAME_ALIASES
+from backend.core.globals import API_KEY as _FALLBACK_API_KEY, TIMEFRAME_ALIASES
 from backend.core import database as db
 from backend.core import job_state
 
@@ -93,9 +93,14 @@ def _create_df(data, timeframe: str) -> pd.DataFrame:
     return df
 
 
+def _get_api_key() -> str:
+    return db.get_setting('tiingo_api_key') or _FALLBACK_API_KEY
+
+
 def fetch_ticker(ticker: str, timeframe: str,
                  start_date: Optional[str] = None,
                  end_date: Optional[str] = None) -> pd.DataFrame:
+    api_key = _get_api_key()
     tf = TIMEFRAME_ALIASES.get(timeframe.lower(), timeframe.lower())
     config = _TIMEFRAME_CONFIG.get(tf)
     if config is None:
@@ -111,7 +116,7 @@ def fetch_ticker(ticker: str, timeframe: str,
         start_str = start_date
 
     headers = {'Content-Type': 'application/json'}
-    client = TiingoClient({'api_key': API_KEY, 'session': True})
+    client = TiingoClient({'api_key': api_key, 'session': True})
 
     if 'frequency' in config:
         data = _robust_tiingo_call(client, ticker, start_str, end_str, config['frequency'])
@@ -123,7 +128,7 @@ def fetch_ticker(ticker: str, timeframe: str,
         data = _robust_api_call(url, headers, {
             'startDate': start_str, 'endDate': end_str,
             'resampleFreq': config['resampleFreq'],
-            'columns': 'open,high,low,close,volume', 'token': API_KEY
+            'columns': 'open,high,low,close,volume', 'token': api_key
         })
         return _create_df(data, config['resampleFreq'])
     except ValueError:
@@ -131,7 +136,7 @@ def fetch_ticker(ticker: str, timeframe: str,
         data = _robust_api_call(url, headers, {
             'tickers': ticker, 'startDate': start_str, 'endDate': end_str,
             'resampleFreq': config['resampleFreq'],
-            'columns': 'open,high,low,close,volume', 'token': API_KEY
+            'columns': 'open,high,low,close,volume', 'token': api_key
         })
         data = data[0]['priceData']
         df = _create_df(data, config['resampleFreq'])
@@ -145,6 +150,36 @@ class BatchFetchRequest(BaseModel):
     ticker_list: Optional[str] = None   # CSV filename stem, e.g. "TSX"
     timeframes: List[str]
     end_date: Optional[str] = None
+
+
+class SingleTickerRequest(BaseModel):
+    ticker: str
+    timeframes: List[str]
+
+
+@router.post("/fetch/ticker")
+def fetch_ticker_multi(req: SingleTickerRequest):
+    """Fetch one ticker across multiple timeframes synchronously."""
+    ticker = req.ticker.strip().upper()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Ticker cannot be empty")
+    results, errors = [], []
+    for tf_alias in req.timeframes:
+        tf = TIMEFRAME_ALIASES.get(tf_alias.lower())
+        if not tf:
+            errors.append({"timeframe": tf_alias, "reason": "Unknown timeframe"})
+            continue
+        try:
+            df = fetch_ticker(ticker, tf)
+            rows = db.upsert_ohlcv(ticker, tf, df)
+            last_date = str(df['Date'].max())[:10] if not df.empty else None
+            db.log_fetch(ticker, tf, last_date, ticker_list=None)
+            results.append({"timeframe": tf, "rows": rows})
+        except TiingoQuotaError as e:
+            raise HTTPException(status_code=429, detail=str(e))
+        except Exception as e:
+            errors.append({"timeframe": tf, "reason": str(e)})
+    return {"ticker": ticker, "results": results, "errors": errors}
 
 
 @router.post("/fetch/{ticker}/{timeframe}")
