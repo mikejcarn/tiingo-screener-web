@@ -98,9 +98,11 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
                     _run_and_store_db(ticker, tf, req.config_id)
                 else:
                     _run_and_store(ticker, tf, req.ind_conf)
+                job_state.add_log('indicators', ticker, tf, ok=True)
             except Exception as e:
                 print(f"indicators error {ticker} {tf}: {e}")
                 job_state.add_failure('indicators', f"{ticker}/{tf}", str(e))
+                job_state.add_log('indicators', ticker, tf, ok=False)
             job_state.update('indicators', done=i + 1)
         job_state.update('indicators', status='done', current='')
 

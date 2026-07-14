@@ -30,7 +30,7 @@
     </div>
   </div>
 
-  <!-- ── Right: editor ──────────────────────────────────── -->
+  <!-- ── Center: editor ─────────────────────────────────── -->
   <div class="ind-main">
 
     <!-- Empty state -->
@@ -46,6 +46,7 @@
 
       <div class="ind-editor-top">
         <input type="text" id="config-name" class="config-name-input" placeholder="Config name">
+        <button id="btn-save" class="ind-btn-save" title="Save config to database">Save</button>
         <button id="btn-delete-config" class="btn-destructive" title="Delete this config">Delete</button>
       </div>
 
@@ -58,33 +59,48 @@
         <button class="tf-tab" data-tf="5min">5min</button>
       </div>
 
+      <!-- Search -->
+      <div class="ind-search-bar">
+        <input type="text" id="ind-search" class="ind-search-input" placeholder="Search indicators…" autocomplete="off" spellcheck="false">
+      </div>
+
       <!-- Indicator list -->
       <div id="ind-list" class="ind-list"></div>
 
-      <!-- Bottom bar: save + compute -->
-      <div class="ind-editor-bottom">
-        <div class="ind-bottom-row">
-          <button id="btn-save" class="ind-btn-save" title="Save config to database">Save</button>
-          <span class="ind-bottom-sep"></span>
-          <span class="ind-bottom-label">Compute:</span>
-          <div id="compute-tfs" class="dash-checks"></div>
-          <button id="btn-compute" class="dash-btn" title="Run indicators for this config">Run</button>
-          <button id="btn-compute-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
-        </div>
-        <div class="dash-progress" style="margin-top:8px;">
-          <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
-          <div id="comp-meta" class="progress-meta">
-            <span id="comp-count" class="dash-count-text"></span>
-            <span id="comp-pct"   class="dash-pct"></span>
-            <span id="comp-current" class="dash-current"></span>
-            <span id="comp-errors"  class="dash-errors"></span>
-          </div>
-        </div>
-        <div id="comp-report" class="dash-report"></div>
-      </div>
-
     </div>
   </div>
+
+  <!-- ── Right: run panel ────────────────────────────────── -->
+  <div class="ind-run">
+    <div class="ind-run-head">Run</div>
+
+    <div class="ind-run-body">
+      <div class="ind-run-config-label" id="run-config-name">No config selected</div>
+
+      <div class="dash-field" style="margin-bottom:10px;">
+        <label>Timeframes</label>
+        <div id="compute-tfs" class="dash-checks"></div>
+      </div>
+
+      <div class="dash-btn-row">
+        <button id="btn-compute" class="dash-btn">Run</button>
+        <button id="btn-compute-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
+      </div>
+
+      <div class="dash-progress">
+        <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
+        <div id="comp-meta" class="progress-meta">
+          <span id="comp-count"   class="dash-count-text"></span>
+          <span id="comp-pct"     class="dash-pct"></span>
+          <span id="comp-errors"  class="dash-errors"></span>
+        </div>
+      </div>
+
+      <div class="ind-run-log-head">Output</div>
+      <div id="comp-log" class="ind-run-log"></div>
+    </div>
+  </div>
+
 </div>
 
 <script type="module" src="/static/js/indicators.js"></script>

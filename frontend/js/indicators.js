@@ -9,6 +9,7 @@ let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
 let _dirty       = false;
 let _pollTimer   = null;
+let _searchQuery = '';
 
 // ── Bootstrap ──────────────────────────────────────────────────
 
@@ -39,14 +40,18 @@ async function _loadDefaults() {
 }
 
 async function _selectConfig(id) {
-  _selectedId = id;
-  _pending    = {};
-  _dirty      = false;
-  _activeTf   = 'daily';
+  _selectedId  = id;
+  _pending     = {};
+  _dirty       = false;
+  _activeTf    = 'daily';
+  _searchQuery = '';
+  const searchEl = document.getElementById('ind-search');
+  if (searchEl) searchEl.value = '';
   await _loadConfig(id);
   _renderConfigList();  // update active highlight
   _showEmpty(false);
   _renderEditor();
+  _updateRunConfigLabel();
 }
 
 async function _loadConfig(id) {
@@ -96,10 +101,24 @@ function _renderIndicatorList() {
     return;
   }
 
-  const savedForTf   = _pending[_activeTf] ?? _configData?.indicators?.[_activeTf] ?? {};
+  const savedForTf    = _pending[_activeTf] ?? _configData?.indicators?.[_activeTf] ?? {};
   const defaultsForTf = _defaults.defaults?.[_activeTf] ?? {};
 
-  list.innerHTML = _defaults.available.map(ind => {
+  const visible = _defaults.available
+    .filter(ind => !_searchQuery || ind.toLowerCase().includes(_searchQuery))
+    .sort((a, b) => {
+      const aOn = a in savedForTf;
+      const bOn = b in savedForTf;
+      return aOn === bOn ? 0 : aOn ? -1 : 1;
+    });
+
+  if (!visible.length) {
+    list.innerHTML = `<div class="ind-list-empty">No indicators match "${_esc(_searchQuery)}"</div>`;
+    _wireListEvents();
+    return;
+  }
+
+  list.innerHTML = visible.map(ind => {
     const enabled = ind in savedForTf;
     const params  = savedForTf[ind] ?? defaultsForTf[ind] ?? {};
     return _renderIndicatorCard(ind, enabled, params);
@@ -232,6 +251,27 @@ function _wireStaticButtons() {
   for (const tab of document.querySelectorAll('.tf-tab')) {
     tab.addEventListener('click', () => _switchTf(tab.dataset.tf));
   }
+
+  const searchEl = document.getElementById('ind-search');
+  searchEl.addEventListener('input', e => {
+    _searchQuery = e.target.value.trim().toLowerCase();
+    _renderIndicatorList();
+  });
+  searchEl.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      searchEl.value = '';
+      _searchQuery = '';
+      _renderIndicatorList();
+      searchEl.blur();
+    }
+  });
+}
+
+function _updateRunConfigLabel() {
+  const el = document.getElementById('run-config-name');
+  if (!el) return;
+  el.textContent = _configData?.name || 'No config selected';
 }
 
 function _wireListEvents() {
@@ -371,18 +411,21 @@ async function _saveConfig() {
   });
 
   btn.disabled = false;
-  btn.textContent = 'Save';
 
   if (res.ok) {
     _dirty   = false;
     _pending = {};
     await _loadConfig(_selectedId);
-    // Update name in sidebar
     const item = _configList.find(c => c.id === _selectedId);
     if (item) item.name = name;
     _renderConfigList();
+    btn.textContent = 'Saved ✓';
+    btn.classList.add('ind-btn-save-ok');
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
   } else {
-    alert('Failed to save config');
+    btn.textContent = 'Failed ✗';
+    btn.classList.add('ind-btn-save-err');
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-err'); }, 2000);
   }
 }
 
@@ -440,15 +483,13 @@ async function _poll() {
 }
 
 function _updateProgress(state) {
-  const track    = document.getElementById('comp-track');
-  const bar      = document.getElementById('comp-bar');
-  const meta     = document.getElementById('comp-meta');
-  const count    = document.getElementById('comp-count');
-  const pctEl    = document.getElementById('comp-pct');
-  const current  = document.getElementById('comp-current');
-  const errorsEl = document.getElementById('comp-errors');
-  const report   = document.getElementById('comp-report');
-  const btn      = document.getElementById('btn-compute');
+  const track     = document.getElementById('comp-track');
+  const bar       = document.getElementById('comp-bar');
+  const meta      = document.getElementById('comp-meta');
+  const count     = document.getElementById('comp-count');
+  const pctEl     = document.getElementById('comp-pct');
+  const errorsEl  = document.getElementById('comp-errors');
+  const btn       = document.getElementById('btn-compute');
   const btnCancel = document.getElementById('btn-compute-cancel');
 
   const pct = state.total > 0 ? (state.done / state.total * 100) : 0;
@@ -462,58 +503,53 @@ function _updateProgress(state) {
 
   if (state.status === 'idle') {
     _setActive(false);
-    count.textContent = pctEl.textContent = current.textContent = errorsEl.textContent = '';
-    report.innerHTML = '';
+    count.textContent = pctEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
     btnCancel.style.display = 'none';
   } else if (state.status === 'running') {
     _setActive(true);
-    count.textContent   = `${state.done} / ${state.total}`;
-    pctEl.textContent   = `${Math.round(pct)}%`;
-    current.textContent = state.current ? `→ ${state.current}` : '';
+    count.textContent    = `${state.done} / ${state.total}`;
+    pctEl.textContent    = `${Math.round(pct)}%`;
     errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors}` : '';
     btn.disabled = true;
     btnCancel.style.display = '';
   } else if (state.status === 'done') {
     _setActive(false);
-    const ok = state.done - state.errors;
-    count.textContent   = `${state.done} / ${state.total}`;
-    pctEl.textContent   = '100%';
-    current.textContent = '';
+    count.textContent    = `${state.done} / ${state.total}`;
+    pctEl.textContent    = '100%';
     errorsEl.textContent = state.errors > 0
       ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}`
       : '✓ complete';
-    report.innerHTML = _buildReport(ok, state.failed || []);
     btn.disabled = false;
     btnCancel.style.display = 'none';
   } else if (state.status === 'cancelled') {
     _setActive(false);
     count.textContent    = `${state.done} / ${state.total}`;
     pctEl.textContent    = `${Math.round(pct)}% — cancelled`;
-    current.textContent  = '';
     errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}` : '';
-    report.innerHTML = state.failed?.length ? _buildReport(state.done - state.errors, state.failed) : '';
     btn.disabled = false;
     btnCancel.style.display = 'none';
   } else if (state.status === 'error') {
     _setActive(false);
     count.textContent = 'failed';
-    pctEl.textContent = current.textContent = errorsEl.textContent = '';
-    report.innerHTML = '';
+    pctEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
     btnCancel.style.display = 'none';
   }
+
+  _renderLog(state.log || []);
 }
 
-function _buildReport(ok, failed) {
-  if (!ok && !failed.length) return '';
-  const okLine   = `<span class="report-ok">✓ ${ok} computed</span>`;
-  if (!failed.length) return `<div class="dash-report-inner">${okLine}</div>`;
-  const failLine = `<span class="report-err">✗ ${failed.length} failed</span>`;
-  const tickers  = failed.map(f =>
-    `<span class="report-ticker" title="${_esc(f.reason)}">${_esc(f.ticker)}</span>`
+function _renderLog(entries) {
+  const el = document.getElementById('comp-log');
+  if (!entries.length) { el.innerHTML = ''; return; }
+  el.innerHTML = [...entries].reverse().map(e =>
+    `<div class="ind-log-row${e.ok ? '' : ' ind-log-err'}">
+      <span class="ind-log-sym">${_esc(e.ticker)}</span>
+      <span class="ind-log-tf">${_esc(e.detail)}</span>
+      <span class="ind-log-status">${e.ok ? '✓' : '✗'}</span>
+    </div>`
   ).join('');
-  return `<div class="dash-report-inner">${okLine} ${failLine}<div class="report-tickers">${tickers}</div></div>`;
 }
 
 // ── Utilities ──────────────────────────────────────────────────
