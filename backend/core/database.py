@@ -84,7 +84,11 @@ def init_db() -> None:
         try:
             con.execute("ALTER TABLE fetch_log ADD COLUMN ticker_list TEXT")
         except Exception:
-            pass  # column already exists
+            pass
+        try:
+            con.execute("ALTER TABLE ind_configs ADD COLUMN updated_at TEXT")
+        except Exception:
+            pass
 
 
 # ── OHLCV ────────────────────────────────────────────────────

@@ -47,6 +47,7 @@
         <button id="btn-save" class="ind-btn-save" title="Save config to database">Save</button>
         <button id="btn-delete-config" class="btn-destructive" title="Delete this config">Delete</button>
       </div>
+      <div id="conf-dates" class="conf-dates"></div>
 
       <div class="tf-tabs" id="tf-tabs">
         <button class="tf-tab active" data-tf="daily">daily</button>
@@ -73,12 +74,8 @@
       <div class="ind-run-head">Run</div>
       <div class="ind-run-body">
 
-        <div class="ind-run-config-label" id="run-config-name">No config selected</div>
-
-        <div class="dash-field" style="margin-bottom:10px;">
-          <label>Timeframes</label>
-          <div id="compute-tfs" class="dash-checks"></div>
-        </div>
+        <div id="run-conf-list" class="run-queue-list"></div>
+        <div id="run-queue-status" class="run-queue-status" style="display:none;"></div>
 
         <div class="dash-btn-row">
           <button id="btn-compute" class="dash-btn">Run</button>
@@ -106,6 +103,11 @@
       <div class="ind-db-body">
 
         <div class="ind-db-nav-row">
+          <div class="ind-db-ctrl-group">
+            <button id="db-conf-prev" class="ind-db-nav-btn">‹</button>
+            <span id="db-conf-label" class="ind-db-conf-label">—</span>
+            <button id="db-conf-next" class="ind-db-nav-btn">›</button>
+          </div>
           <div class="ind-db-ctrl-group">
             <button id="db-ticker-prev" class="ind-db-nav-btn" title="Previous ticker">‹</button>
             <input type="text" id="comp-db-ticker" class="ind-db-ticker-input" placeholder="ticker" autocomplete="off" spellcheck="false">

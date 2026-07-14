@@ -189,14 +189,13 @@ def indicator_columns(config_id: int):
 
 
 class BatchIndicatorsRequest(BaseModel):
-    timeframes: Optional[List[str]] = None
     ind_conf: Optional[int] = None      # legacy: use Python file config
     config_id: Optional[int] = None     # new: use DB config
 
 
 @router.post("/indicators/batch")
 def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: BackgroundTasks):
-    """Run indicator pipeline for all available tickers in the DB."""
+    """Run indicator pipeline for all tickers × timeframes defined in the config."""
     if job_state.get_all()['indicators']['status'] == 'running':
         raise HTTPException(status_code=409, detail="Indicators job already running")
     if req.config_id is None and req.ind_conf is None:
@@ -205,8 +204,17 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
     job_state.update('indicators', status='running', done=0, total=0, current='', errors=0)
 
     def _run():
-        tfs = [TIMEFRAME_ALIASES.get(tf.lower(), tf.lower())
-               for tf in (req.timeframes or db.list_timeframes())]
+        # Derive timeframes from the config's indicator assignments
+        if req.config_id is not None:
+            with db._conn() as con:
+                tf_rows = con.execute(
+                    "SELECT DISTINCT timeframe FROM ind_config_indicators WHERE config_id=?",
+                    (req.config_id,)
+                ).fetchall()
+            config_tfs = [r[0] for r in tf_rows]
+        else:
+            config_tfs = db.list_timeframes()
+        tfs = [TIMEFRAME_ALIASES.get(tf.lower(), tf.lower()) for tf in config_tfs]
         pairs = [(ticker, tf) for tf in tfs for ticker in db.list_tickers(tf)]
         unique_tickers = len(set(t for t, _ in pairs))
         job_state.update('indicators', total=len(pairs))

@@ -11,21 +11,45 @@ let _dirty       = false;
 let _pollTimer   = null;
 let _searchQuery = '';
 
+// Multi-config run queue
+let _runCheckedIds  = new Set();  // which configs are in the run queue
+let _runQueue       = [];         // ordered config IDs for current batch run
+let _runQueueIdx    = -1;         // index of currently-running config (-1 = not in a run)
+const _confDataCache = {};        // { id: configData } — avoids re-fetching for queue summary
+let   _runResults    = {};        // { id: { status, done, total, errors, current } } — per-conf run results
+
+// ── Run queue persistence ──────────────────────────────────────
+
+function _saveRunQueue() {
+  try { localStorage.setItem('ind_run_queue', JSON.stringify([..._runCheckedIds])); } catch {}
+}
+
+function _loadRunQueue() {
+  try {
+    const saved  = JSON.parse(localStorage.getItem('ind_run_queue') || '[]');
+    const valid  = new Set(_configList.map(c => c.id));
+    _runCheckedIds = new Set(saved.filter(id => valid.has(id)));
+  } catch { _runCheckedIds = new Set(); }
+}
+
 // ── Bootstrap ──────────────────────────────────────────────────
 
 async function init() {
-  _buildTimeframeChecks();
   _wireDbNav();
   await Promise.all([_loadConfigList(), _loadDefaults()]);
+  _loadRunQueue();   // restore queued confs before first render
   _wireStaticButtons();
   if (_configList.length) {
-    await _selectConfig(_configList[0].id);
+    await _selectConfig(_configList[0].id, { toggleQueue: false });
   } else {
     _showEmpty(true);
   }
   const status = await fetch('/api/jobs/status').then(r => r.json());
-  _updateProgress(status.indicators);
-  if (status.indicators.status === 'running') _startPolling();
+  if (status.indicators.status === 'running') {
+    _updateProgress(status.indicators);
+    _startPolling();
+  }
+  // don't restore a stale done/cancelled state on reload
 }
 
 // ── Data loaders ───────────────────────────────────────────────
@@ -34,13 +58,15 @@ async function _loadConfigList() {
   const data = await fetch('/api/ind-configs').then(r => r.json());
   _configList = data.configs || [];
   _renderConfigList();
+  _renderRunConfigs();
 }
 
 async function _loadDefaults() {
   _defaults = await fetch('/api/indicator-defaults').then(r => r.json());
 }
 
-async function _selectConfig(id) {
+async function _selectConfig(id, { toggleQueue = true } = {}) {
+  const prevSelected = _selectedId;
   _selectedId  = id;
   _pending     = {};
   _dirty       = false;
@@ -48,17 +74,24 @@ async function _selectConfig(id) {
   _searchQuery = '';
   const searchEl = document.getElementById('ind-search');
   if (searchEl) searchEl.value = '';
+  if (toggleQueue) {
+    // Re-clicking the already-active conf removes it; first click on any conf adds it
+    if (id === prevSelected && _runCheckedIds.has(id)) _runCheckedIds.delete(id);
+    else _runCheckedIds.add(id);
+    _saveRunQueue();
+  }
   await _loadConfig(id);
-  _renderConfigList();  // update active highlight
+  _renderConfigList();
   _showEmpty(false);
   _renderEditor();
-  _updateRunConfigLabel();
+  _renderRunConfigs();
   _loadDbSection(id);
   _loadHistory();
 }
 
 async function _loadConfig(id) {
   _configData = await fetch(`/api/ind-configs/${id}`).then(r => r.json());
+  _confDataCache[id] = _configData;
 }
 
 // ── Rendering ──────────────────────────────────────────────────
@@ -68,26 +101,67 @@ function _showEmpty(on) {
   document.getElementById('ind-editor').style.display = on  ? 'none' : 'flex';
 }
 
+function _fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function _renderConfigList() {
   const el = document.getElementById('config-list');
   if (!_configList.length) {
     el.innerHTML = '<div class="ind-loading" style="color:#333">No configs</div>';
     return;
   }
-  el.innerHTML = _configList.map(c => `
-    <div class="ind-config-item${c.id === _selectedId ? ' active' : ''}" data-id="${c.id}">
-      <span class="ind-config-name">${_esc(c.name)}</span>
-    </div>
-  `).join('');
+  el.innerHTML = _configList.map(c => {
+    const queued = _runCheckedIds.has(c.id);
+    return `
+    <div class="ind-config-item${c.id === _selectedId ? ' active' : ''}${queued ? ' queued' : ''}" data-id="${c.id}">
+      <div class="ind-config-info">
+        <span class="ind-config-name">${_esc(c.name)}</span>
+        <span class="ind-config-date">${_fmtDate(c.updated_at || c.created_at)}</span>
+      </div>
+      <button class="ind-queue-btn${queued ? ' queued' : ''}" data-id="${c.id}" title="${queued ? 'Remove from run queue' : 'Add to run queue'}">▶</button>
+    </div>`;
+  }).join('');
   for (const item of el.querySelectorAll('.ind-config-item')) {
-    item.addEventListener('click', () => _selectConfig(+item.dataset.id));
+    item.addEventListener('click', e => {
+      if (!e.target.closest('.ind-queue-btn')) _selectConfig(+item.dataset.id);
+    });
+  }
+  _updateDbConfDisplay();  // keep DB header label current after any list refresh
+  for (const btn of el.querySelectorAll('.ind-queue-btn')) {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = +btn.dataset.id;
+      if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
+      else _runCheckedIds.add(id);
+      _saveRunQueue();
+      _renderConfigList();
+      _renderRunConfigs();
+    });
   }
 }
 
 function _renderEditor() {
   document.getElementById('config-name').value = _configData?.name || '';
+  _renderConfDates();
   _setActiveTab(_activeTf);
   _renderIndicatorList();
+}
+
+function _renderConfDates() {
+  const el = document.getElementById('conf-dates');
+  if (!el || !_configData) return;
+  const created = _fmtDate(_configData.created_at);
+  const updated = _fmtDate(_configData.updated_at);
+  if (updated && updated !== created) {
+    el.textContent = `created ${created} · updated ${updated}`;
+  } else if (created) {
+    el.textContent = `created ${created}`;
+  } else {
+    el.textContent = '';
+  }
 }
 
 function _setActiveTab(tf) {
@@ -248,6 +322,9 @@ function _wireStaticButtons() {
   document.getElementById('btn-save').addEventListener('click', _saveConfig);
   document.getElementById('btn-compute').addEventListener('click', _startCompute);
   document.getElementById('btn-compute-cancel').addEventListener('click', () => {
+    _runQueue    = [];
+    _runQueueIdx = -1;
+    _updateQueueStatus();
     fetch('/api/jobs/indicators/cancel', { method: 'POST' });
   });
 
@@ -263,18 +340,73 @@ function _wireStaticButtons() {
   searchEl.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      searchEl.value = '';
-      _searchQuery = '';
-      _renderIndicatorList();
-      searchEl.blur();
+      searchEl.blur(); // global handler clears _searchQuery and re-renders
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      _selectFirstFilteredIndicator();
     }
   });
 }
 
-function _updateRunConfigLabel() {
-  const el = document.getElementById('run-config-name');
+async function _renderRunConfigs() {
+  const el = document.getElementById('run-conf-list');
   if (!el) return;
-  el.textContent = _configData?.name || 'No config selected';
+  const queued = _configList.filter(c => _runCheckedIds.has(c.id));
+  if (!queued.length) {
+    el.innerHTML = '<div class="run-queue-empty">No configs queued — click a conf to add</div>';
+    return;
+  }
+  // Fetch data for any conf not yet cached
+  await Promise.all(
+    queued.filter(c => !_confDataCache[c.id])
+          .map(c => fetch(`/api/ind-configs/${c.id}`).then(r => r.json()).then(d => { _confDataCache[c.id] = d; }))
+  );
+  el.innerHTML = queued.map((c, i) => {
+    const inds = _confDataCache[c.id]?.indicators || {};
+    const tfs  = ALL_TIMEFRAMES.filter(tf => inds[tf] && Object.keys(inds[tf]).length);
+    const detail = tfs.length
+      ? tfs.map(tf => {
+          const names = Object.keys(inds[tf]);
+          return `<div class="run-summary-row">
+            <span class="run-summary-tf">${_esc(tf)}</span>
+            <span class="run-summary-inds">${names.map(_esc).join('<span class="run-summary-sep">·</span>')}</span>
+          </div>`;
+        }).join('')
+      : '<span class="run-summary-empty">No indicators configured</span>';
+    const inRun = _runQueueIdx >= 0;
+    return `<div class="run-queue-item">
+      <div class="run-queue-header">
+        <span class="run-queue-pos">${i + 1}</span>
+        <span class="run-queue-name">${_esc(c.name)}</span>
+        <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''}>×</button>
+      </div>
+      <div class="run-queue-detail">${detail}</div>
+      <div class="rq-status" data-id="${c.id}"></div>
+    </div>`;
+  }).join('');
+  for (const btn of el.querySelectorAll('.run-queue-remove')) {
+    btn.addEventListener('click', () => {
+      const id = +btn.dataset.id;
+      _runCheckedIds.delete(id);
+      delete _runResults[id];
+      _saveRunQueue();
+      _renderConfigList();
+      _renderRunConfigs();
+    });
+  }
+  _updateRunQueueStatus();  // repopulate any existing results after re-render
+}
+
+function _updateQueueStatus() {
+  const el = document.getElementById('run-queue-status');
+  if (!el) return;
+  if (_runQueue.length <= 1 || _runQueueIdx < 0 || _runQueueIdx >= _runQueue.length) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = '';
+  const conf = _configList.find(c => c.id === _runQueue[_runQueueIdx]);
+  el.textContent = `Config ${_runQueueIdx + 1} / ${_runQueue.length}  ·  ${conf?.name ?? `#${_runQueue[_runQueueIdx]}`}`;
 }
 
 function _wireListEvents() {
@@ -383,6 +515,9 @@ async function _deleteConfig() {
   const name = _configData?.name || 'this config';
   if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
   await fetch(`/api/ind-configs/${_selectedId}`, { method: 'DELETE' });
+  _runCheckedIds.delete(_selectedId);
+  delete _runResults[_selectedId];
+  _saveRunQueue();
   _configList = _configList.filter(c => c.id !== _selectedId);
   _selectedId = null;
   _configData = null;
@@ -416,12 +551,15 @@ async function _saveConfig() {
   btn.disabled = false;
 
   if (res.ok) {
+    const saved = await res.json();
     _dirty   = false;
     _pending = {};
     await _loadConfig(_selectedId);
     const item = _configList.find(c => c.id === _selectedId);
-    if (item) item.name = name;
+    if (item) { item.name = name; item.updated_at = saved.updated_at; }
     _renderConfigList();
+    _renderRunConfigs();
+    _renderConfDates();
     btn.textContent = 'Saved ✓';
     btn.classList.add('ind-btn-save-ok');
     setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
@@ -434,45 +572,78 @@ async function _saveConfig() {
 
 // ── Compute ────────────────────────────────────────────────────
 
-function _buildTimeframeChecks() {
-  const wrap = document.getElementById('compute-tfs');
-  wrap.innerHTML = '';
-  for (const tf of ALL_TIMEFRAMES) {
-    const lbl = document.createElement('label');
-    lbl.innerHTML = `<input type="checkbox" value="${tf}"${tf === 'daily' ? ' checked' : ''}> ${tf}`;
-    wrap.appendChild(lbl);
+function _updateRunQueueStatus() {
+  for (const [idStr, result] of Object.entries(_runResults)) {
+    const el = document.querySelector(`.rq-status[data-id="${idStr}"]`);
+    if (!el) continue;
+    const { status, done = 0, total = 0, errors = 0, current = '' } = result;
+    if (status === 'pending') {
+      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
+    } else if (status === 'running') {
+      const pct = total > 0 ? (done / total * 100) : 0;
+      el.innerHTML =
+        `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:${pct}%"></div></div>
+         <div class="rq-info">
+           <span class="rq-state rq-running">running</span>
+           ${current ? `<span class="rq-current">→ ${_esc(current)}</span>` : ''}
+           <span class="rq-count">${done} / ${total || '?'}</span>
+         </div>`;
+    } else if (status === 'done') {
+      const hasErr = errors > 0;
+      el.innerHTML =
+        `<div class="rq-bar-track"><div class="rq-bar-fill ${hasErr ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
+         <div class="rq-info">
+           <span class="rq-state ${hasErr ? 'rq-errors' : 'rq-done'}">${hasErr ? `✗ ${errors} error${errors !== 1 ? 's' : ''}` : '✓ done'}</span>
+           <span class="rq-count">${done} / ${total}</span>
+         </div>`;
+    } else if (status === 'cancelled') {
+      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-cancelled">cancelled</span></div>`;
+    }
   }
 }
 
-function _getCheckedTfs() {
-  return [...document.querySelectorAll('#compute-tfs input:checked')].map(el => el.value);
+async function _startCompute() {
+  const ids = _configList.filter(c => _runCheckedIds.has(c.id)).map(c => c.id);
+  if (!ids.length) return;
+  _runQueue    = ids;
+  _runQueueIdx = 0;
+  _runResults  = {};
+  await _kickNextQueueItem();
 }
 
-async function _startCompute() {
-  if (!_selectedId) return;
-  const timeframes = _getCheckedTfs();
-  if (!timeframes.length) { alert('Select at least one timeframe.'); return; }
-
+async function _kickNextQueueItem() {
+  const configId  = _runQueue[_runQueueIdx];
   const btn       = document.getElementById('btn-compute');
   const btnCancel = document.getElementById('btn-compute-cancel');
+  _updateQueueStatus();
+  // Mark this conf running, remaining confs pending
+  _runResults[configId] = { status: 'running', done: 0, total: 0, errors: 0, current: '' };
+  for (let i = _runQueueIdx + 1; i < _runQueue.length; i++) {
+    if (!_runResults[_runQueue[i]]) _runResults[_runQueue[i]] = { status: 'pending' };
+  }
+  _updateRunQueueStatus();
   btn.disabled = true;
   btn.textContent = 'Starting…';
+  btnCancel.style.display = '';
 
   const res = await fetch('/api/indicators/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config_id: _selectedId, timeframes }),
+    body: JSON.stringify({ config_id: configId }),
   });
 
   if (!res.ok) {
     const err = await res.json();
     btn.disabled = false;
     btn.textContent = 'Run';
+    btnCancel.style.display = 'none';
+    _runQueue    = [];
+    _runQueueIdx = -1;
+    _updateQueueStatus();
     alert(err.detail || 'Failed to start compute job');
     return;
   }
 
-  btnCancel.style.display = '';
   _startPolling();
 }
 
@@ -490,9 +661,28 @@ function _stopPolling() {
 }
 
 async function _poll() {
-  const status = await fetch('/api/jobs/status').then(r => r.json());
-  _updateProgress(status.indicators);
-  if (status.indicators.status !== 'running') _stopPolling();
+  const data  = await fetch('/api/jobs/status').then(r => r.json());
+  const state = data.indicators;
+  _updateProgress(state);
+  if (state.status !== 'running') {
+    _stopPolling();
+    if (state.status === 'done') {
+      _runQueueIdx++;
+      if (_runQueueIdx < _runQueue.length) {
+        _loadHistory();
+        await _kickNextQueueItem();
+      } else {
+        _runQueue    = [];
+        _runQueueIdx = -1;
+        _updateQueueStatus();
+        if (_selectedId) { _loadDbSection(_selectedId); _loadHistory(); }
+      }
+    } else if (state.status === 'cancelled' || state.status === 'error') {
+      _runQueue    = [];
+      _runQueueIdx = -1;
+      _updateQueueStatus();
+    }
+  }
 }
 
 function _updateProgress(state) {
@@ -532,30 +722,41 @@ function _updateProgress(state) {
     btnCancel.style.display = '';
     _renderFeed(state.log || []);
     if (_dbSectionConfigId) _loadDbPreview();
+    const cid = _runQueue[_runQueueIdx];
+    if (cid !== undefined) {
+      _runResults[cid] = { status: 'running', done: state.done, total: state.total, errors: state.errors, current: state.current };
+      _updateRunQueueStatus();
+    }
   } else if (state.status === 'done') {
     _setActive(false);
-    count.textContent    = `${state.done} / ${state.total}`;
-    pctEl.textContent    = '100%';
+    count.textContent     = `${state.done} / ${state.total}`;
+    pctEl.textContent     = '100%';
     currentEl.textContent = '';
-    errorsEl.textContent = state.errors > 0
+    errorsEl.textContent  = state.errors > 0
       ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}`
       : '✓ complete';
-    btn.disabled = false;
-    btn.textContent = 'Run';
-    btnCancel.style.display = 'none';
+    const isLastInQueue = _runQueueIdx + 1 >= _runQueue.length;
+    if (isLastInQueue) {
+      btn.disabled = false;
+      btn.textContent = 'Run';
+      btnCancel.style.display = 'none';
+    }
     _renderFeed(state.log || []);
-    if (_selectedId) { _loadDbSection(_selectedId); _loadHistory(); }
+    const cidDone = _runQueue[_runQueueIdx];
+    if (cidDone !== undefined) {
+      _runResults[cidDone] = { status: 'done', done: state.done, total: state.total, errors: state.errors };
+      _updateRunQueueStatus();
+    }
   } else if (state.status === 'cancelled') {
     _setActive(false);
-    count.textContent    = `${state.done} / ${state.total}`;
-    pctEl.textContent    = `${Math.round(pct)}% — cancelled`;
+    count.textContent     = `${state.done} / ${state.total}`;
+    pctEl.textContent     = `${Math.round(pct)}% — cancelled`;
     currentEl.textContent = '';
-    errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}` : '';
+    errorsEl.textContent  = state.errors > 0 ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}` : '';
     btn.disabled = false;
     btn.textContent = 'Run';
     btnCancel.style.display = 'none';
     _renderFeed(state.log || []);
-    if (_selectedId) _loadDbSection(_selectedId);
   } else if (state.status === 'error') {
     _setActive(false);
     count.textContent = 'failed';
@@ -567,6 +768,7 @@ function _updateProgress(state) {
 }
 
 // DB card state
+let _dbConfId          = null;   // config currently shown in DB card
 let _dbSectionConfigId = null;
 let _dbActiveTf        = 'daily';
 let _dbAvailableTfs    = [];
@@ -580,8 +782,30 @@ const _DB_LIMIT        = 8;
 
 // ── DB card nav ────────────────────────────────────────────────
 
+function _updateDbConfDisplay() {
+  const conf  = _configList.find(c => c.id === _dbConfId);
+  const label = document.getElementById('db-conf-label');
+  if (label) label.textContent = conf?.name ?? '—';
+  const idx   = _configList.findIndex(c => c.id === _dbConfId);
+  const prev  = document.getElementById('db-conf-prev');
+  const next  = document.getElementById('db-conf-next');
+  if (prev) prev.disabled = idx <= 0;
+  if (next) next.disabled = idx < 0 || idx >= _configList.length - 1;
+}
+
 function _wireDbNav() {
   let _tickerTimer = null;
+
+  document.getElementById('db-conf-prev').addEventListener('click', () => {
+    const idx = _configList.findIndex(c => c.id === _dbConfId);
+    if (idx <= 0) return;
+    _loadDbSection(_configList[idx - 1].id);
+  });
+  document.getElementById('db-conf-next').addEventListener('click', () => {
+    const idx = _configList.findIndex(c => c.id === _dbConfId);
+    if (idx < 0 || idx >= _configList.length - 1) return;
+    _loadDbSection(_configList[idx + 1].id);
+  });
 
   document.getElementById('db-ticker-prev').addEventListener('click', () => {
     if (!_dbTickers.length) return;
@@ -617,10 +841,8 @@ function _wireDbNav() {
 
   document.getElementById('comp-db-ticker').addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      e.target.value = '';
-      _dbPreviewTicker = null;
-      _dbRowOffset = 0;
-      _loadDbPreview();
+      e.preventDefault();
+      e.target.blur(); // global handler clears _dbPreviewTicker and reloads
     }
   });
 
@@ -712,7 +934,9 @@ async function _loadDbTickers() {
 }
 
 async function _loadDbSection(configId) {
+  _dbConfId          = configId;
   _dbSectionConfigId = configId;
+  _updateDbConfDisplay();
   _dbPreviewTicker   = null;
   _dbTickerIdx       = 0;
   _dbRowOffset       = 0;
@@ -845,8 +1069,64 @@ function _esc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function _selectFirstFilteredIndicator() {
+  const firstCard = document.querySelector('#ind-list .ind-card');
+  if (!firstCard) return;
+  const ind = firstCard.dataset.indicator;
+  if (!ind) return;
+  // Enable it if not already on
+  const current = _pending[_activeTf] !== undefined
+    ? _pending[_activeTf]
+    : { ...(_configData?.indicators?.[_activeTf] ?? {}) };
+  if (!(ind in current)) {
+    current[ind] = { ...(_defaults?.defaults?.[_activeTf]?.[ind] ?? {}) };
+    _pending[_activeTf] = current;
+    _dirty = true;
+  }
+  const searchEl = document.getElementById('ind-search');
+  searchEl.value = '';
+  _searchQuery = '';
+  _renderIndicatorList(); // enabled indicator sorts to top
+  searchEl.blur();
+}
+
 document.addEventListener('keydown', e => {
-  if (e.key === '`') { e.preventDefault(); window.location.href = '/'; }
+  if (e.key === '`') { e.preventDefault(); window.location.href = '/'; return; }
+
+  // Universal Esc reset
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    const search = document.getElementById('ind-search');
+    if (_searchQuery) {
+      search.value = '';
+      _searchQuery = '';
+      _renderIndicatorList();
+    }
+    if (_dbPreviewTicker) {
+      document.getElementById('comp-db-ticker').value = '';
+      _dbPreviewTicker = null;
+      _dbRowOffset = 0;
+      _loadDbPreview();
+    }
+    document.activeElement?.blur();
+    return;
+  }
+
+  // Any printable char while nothing interactive is focused → route to indicator search
+  const tag = document.activeElement?.tagName;
+  if (
+    e.key.length === 1 &&
+    !e.ctrlKey && !e.metaKey && !e.altKey &&
+    tag !== 'INPUT' && tag !== 'TEXTAREA' &&
+    document.getElementById('ind-editor')?.style.display !== 'none'
+  ) {
+    e.preventDefault();
+    const search = document.getElementById('ind-search');
+    search.focus();
+    search.value += e.key;
+    _searchQuery = search.value.trim().toLowerCase();
+    _renderIndicatorList();
+  }
 });
 
 init();
