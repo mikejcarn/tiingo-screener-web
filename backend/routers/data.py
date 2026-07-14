@@ -14,13 +14,14 @@ def _resolve_tf(timeframe: str) -> str:
 
 
 @router.get("/tickers")
-def get_tickers(timeframe: Optional[str] = None):
-    """List available tickers, optionally filtered by timeframe."""
+def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None):
+    """List available tickers, optionally filtered by timeframe and/or ticker list."""
     tf = _resolve_tf(timeframe) if timeframe else None
-    tickers = dm.list_tickers(tf)
+    tickers = dm.list_tickers(tf, ticker_list)
     timeframes = dm.list_timeframes()
     confs = dm.list_ind_confs_named()
-    return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs}
+    lists = dm.list_ticker_lists()
+    return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs, "lists": lists}
 
 
 @router.get("/data/{ticker}/{timeframe}")

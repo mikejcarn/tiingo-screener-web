@@ -13,6 +13,8 @@ let timeframes = [];
 let confs      = [];
 let dropIdx    = -1;
 let tickerIdx  = 0;
+let _lists     = ['ALL'];
+let _listIdx   = 0;
 
 const tickerInput  = document.getElementById('ticker-input');
 const tickerCount  = document.getElementById('ticker-count');
@@ -21,6 +23,7 @@ const tfSelect     = document.getElementById('tf-select');
 const confSelect   = document.getElementById('conf-select');
 const btnPrev      = document.getElementById('btn-prev-ticker');
 const btnNext      = document.getElementById('btn-next-ticker');
+const listSelect   = document.getElementById('list-select');
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -31,6 +34,8 @@ export async function initBrowse() {
   tickers    = data.tickers    || [];
   timeframes = data.timeframes || [];
   confs      = data.ind_confs  || [];
+  _lists = ['All', ...(data.lists || [])];
+  _buildListSelect();
 
   // Populate timeframe select
   for (const tf of timeframes) {
@@ -86,11 +91,35 @@ function _updateNavTitles() {
   btnNext.title = tickers[nextIdx];
 }
 
+function _buildListSelect() {
+  listSelect.innerHTML = '';
+  for (const name of _lists) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    listSelect.appendChild(opt);
+  }
+  listSelect.value = _lists[_listIdx] || 'ALL';
+}
+
+async function _selectList() {
+  const selected      = listSelect.value;
+  _listIdx            = _lists.indexOf(selected);
+  const currentTicker = tickers[tickerIdx];
+  const url           = selected === 'All'
+    ? '/api/tickers'
+    : `/api/tickers?ticker_list=${encodeURIComponent(selected)}`;
+  const data = await fetch(url).then(r => r.json());
+  tickers = data.tickers || [];
+  const newIdx = tickers.indexOf(currentTicker);
+  _loadTicker(newIdx >= 0 ? newIdx : 0);
+}
+
 // ── Nav wiring ────────────────────────────────────────────────
 
 function _wireNav() {
   document.getElementById('btn-prev-ticker').addEventListener('click', () => _loadTicker(tickerIdx - 1));
   document.getElementById('btn-next-ticker').addEventListener('click', () => _loadTicker(tickerIdx + 1));
+  listSelect.addEventListener('change', _selectList);
 
   tfSelect.addEventListener('change',   () => _loadTicker(tickerIdx));
   confSelect.addEventListener('change', () => _loadTicker(tickerIdx));

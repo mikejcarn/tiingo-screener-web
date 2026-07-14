@@ -66,6 +66,8 @@ button:hover { background: #1a1a1a; }
 
 #btn-prev-ticker, #btn-next-ticker { font-size: 12px; padding: 4px 8px; }
 #ticker-count { font-size: 12px; color: #aaa; white-space: nowrap; }
+#list-select { background: #111; color: #bbb; border: 1px solid #333; padding: 4px 8px; border-radius: 3px; font-size: 13px; cursor: pointer; }
+#list-select:focus { outline: none; }
 
 #lock-mode {
   background: #111; color: #aaa; border: 1px solid #2a2a2a;

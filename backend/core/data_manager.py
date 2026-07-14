@@ -11,8 +11,12 @@ def load_indicator_df(ticker: str, timeframe: str, ind_conf: int) -> Optional[pd
     return db.load_indicators(ticker, timeframe, ind_conf)
 
 
-def list_tickers(timeframe: Optional[str] = None) -> list[str]:
-    return db.list_tickers(timeframe)
+def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None) -> list[str]:
+    return db.list_tickers(timeframe, ticker_list)
+
+
+def list_ticker_lists() -> list[str]:
+    return db.list_ticker_lists()
 
 
 def list_timeframes(ticker: Optional[str] = None) -> list[str]:

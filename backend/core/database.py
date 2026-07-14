@@ -175,15 +175,31 @@ def load_indicators(ticker: str, timeframe: str, ind_conf: int,
 
 # ── Metadata ─────────────────────────────────────────────────
 
-def list_tickers(timeframe: Optional[str] = None) -> list[str]:
-    query = "SELECT DISTINCT ticker FROM ohlcv"
+def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None) -> list[str]:
     params: list = []
-    if timeframe:
-        query += " WHERE timeframe=?"
-        params.append(timeframe)
-    query += " ORDER BY ticker"
+    if ticker_list:
+        query = ("SELECT DISTINCT o.ticker FROM ohlcv o "
+                 "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
+                 "ON o.ticker = fl.ticker")
+        params.append(ticker_list)
+        if timeframe:
+            query += " WHERE o.timeframe=?"
+            params.append(timeframe)
+    else:
+        query = "SELECT DISTINCT ticker FROM ohlcv"
+        if timeframe:
+            query += " WHERE timeframe=?"
+            params.append(timeframe)
     with _conn() as con:
-        return [r[0] for r in con.execute(query, params).fetchall()]
+        return [r[0] for r in con.execute(query + " ORDER BY 1", params).fetchall()]
+
+
+def list_ticker_lists() -> list[str]:
+    with _conn() as con:
+        return [r[0] for r in con.execute(
+            "SELECT DISTINCT ticker_list FROM fetch_log "
+            "WHERE ticker_list IS NOT NULL ORDER BY ticker_list"
+        ).fetchall()]
 
 
 def list_timeframes(ticker: Optional[str] = None) -> list[str]:
