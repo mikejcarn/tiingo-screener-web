@@ -101,6 +101,13 @@ function _buildListSelect() {
   listSelect.value = _lists[_listIdx] || 'ALL';
 }
 
+function _cycleSelect(el, delta) {
+  const n = el.options.length;
+  if (n < 2) return;
+  el.selectedIndex = ((el.selectedIndex + delta) % n + n) % n;
+  el.dispatchEvent(new Event('change'));
+}
+
 async function _selectList() {
   const selected      = listSelect.value;
   _listIdx            = _lists.indexOf(selected);
@@ -236,8 +243,14 @@ function _wireNav() {
       lockValueEl.select();
       return;
     }
-    if (e.key === '[' || e.key === '=') { e.preventDefault(); _loadTicker(tickerIdx - 1); }
-    if (e.key === ']' || e.key === '-') { e.preventDefault(); _loadTicker(tickerIdx + 1); }
+    if (e.key === '=' ) { e.preventDefault(); _loadTicker(tickerIdx - 1); }
+    if (e.key === '-' ) { e.preventDefault(); _loadTicker(tickerIdx + 1); }
+    if (e.key === '_' ) { e.preventDefault(); _cycleSelect(listSelect,  -1); }
+    if (e.key === '+' ) { e.preventDefault(); _cycleSelect(listSelect,   1); }
+    if (e.key === '[' ) { e.preventDefault(); _cycleSelect(tfSelect,    -1); }
+    if (e.key === ']' ) { e.preventDefault(); _cycleSelect(tfSelect,     1); }
+    if (e.key === '{' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
+    if (e.key === '}' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
     if (e.key === '/' ) { e.preventDefault(); tickerInput.focus(); }
     if (e.key.length === 1 && /[a-zA-Z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
