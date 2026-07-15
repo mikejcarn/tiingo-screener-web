@@ -961,6 +961,12 @@ body.ind-page {
   min-width: 0;
 }
 .param-input:focus { outline: none; border-color: #666; }
+.param-none { font-size: 11px; color: #333; font-style: italic; padding: 2px 0; }
+.param-group.param-inline > .param-group-head { display: none; }
+.param-group.param-inline > .param-group-body { padding-left: 0; }
+.param-select { cursor: pointer; appearance: none; padding-right: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 6px center; }
 .param-json {
   width: 100%;
   min-height: 72px;

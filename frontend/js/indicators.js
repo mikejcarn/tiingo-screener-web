@@ -1,10 +1,22 @@
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
+// Params that should render as a dropdown instead of a text input.
+const PARAM_ENUMS = {
+  indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'engulfing_candle'],
+};
+
+// When param key K changes, replace the value of param key V with the sub-defaults
+// for the newly selected option. Populated from param_options API data.
+const PARAM_CONTROLS = {
+  indicator_color: 'custom_params',
+};
+
 // ── State ──────────────────────────────────────────────────────
 let _configList  = [];   // [{id, name, created_at}]
 let _selectedId  = null;
 let _configData  = null; // {id, name, indicators: {tf: {ind: params}}}
 let _defaults    = null; // {available: [...], defaults: {ind: params}}
+let _paramOptions = {}; // {ind: {param_key: {option_val: sub_params}}}
 let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
 let _dirty       = false;
@@ -63,6 +75,7 @@ async function _loadConfigList() {
 
 async function _loadDefaults() {
   _defaults = await fetch('/api/indicator-defaults').then(r => r.json());
+  _paramOptions = _defaults.param_options || {};
 }
 
 async function _selectConfig(id, { toggleQueue = true } = {}) {
@@ -204,10 +217,25 @@ function _renderIndicatorList() {
   _wireListEvents();
 }
 
+function _normalizeParams(ind, params) {
+  const indOpts = _paramOptions[ind];
+  if (!indOpts) return params;
+  const result = { ...params };
+  for (const [key, subOpts] of Object.entries(indOpts)) {
+    const targetKey = PARAM_CONTROLS[key];
+    if (!targetKey) continue;
+    if (result[targetKey] === null || result[targetKey] === undefined) {
+      result[targetKey] = { ...(subOpts[result[key]] ?? {}) };
+    }
+  }
+  return result;
+}
+
 function _renderIndicatorCard(ind, enabled, params) {
+  const normalized = _normalizeParams(ind, params);
   const bodyHtml = enabled
     ? `<div class="ind-card-body">
-         <div class="param-tree">${_renderParamTree(params)}</div>
+         <div class="param-tree">${_renderParamTree(normalized)}</div>
        </div>`
     : '';
   const arrow = enabled ? '<span class="ind-expand-arrow">▾</span>' : '';
@@ -251,6 +279,14 @@ function _renderParamValue(key, val) {
     </div>`;
   }
   if (typeof val === 'string') {
+    const opts = PARAM_ENUMS[key];
+    if (opts) {
+      const options = opts.map(o => `<option value="${_esc(o)}"${o === val ? ' selected' : ''}>${_esc(o)}</option>`).join('');
+      return `<div class="param-field" data-key="${_esc(key)}" data-type="string">
+        <span class="param-key">${_esc(key)}</span>
+        <select class="param-input param-select">${options}</select>
+      </div>`;
+    }
     return `<div class="param-field" data-key="${_esc(key)}" data-type="string">
       <span class="param-key">${_esc(key)}</span>
       <input type="text" value="${_esc(val)}" class="param-input param-text">
@@ -270,11 +306,15 @@ function _renderParamValue(key, val) {
     </div>`;
   }
   if (typeof val === 'object') {
-    return `<div class="param-group" data-key="${_esc(key)}" data-type="object">
+    const isInline = Object.values(PARAM_CONTROLS).includes(key);
+    const body = Object.keys(val).length
+      ? _renderParamTree(val)
+      : '<span class="param-none">no additional parameters</span>';
+    return `<div class="param-group${isInline ? ' param-inline' : ''}" data-key="${_esc(key)}" data-type="object">
       <div class="param-group-head">
         <span class="param-group-arrow">▾</span>${_esc(key)}
       </div>
-      <div class="param-group-body">${_renderParamTree(val)}</div>
+      <div class="param-group-body">${body}</div>
     </div>`;
   }
   return '';
@@ -288,7 +328,7 @@ function _readParamTree(container) {
     if (child.classList.contains('param-field')) {
       const key  = child.dataset.key;
       const type = child.dataset.type;
-      const input = child.querySelector('input, textarea');
+      const input = child.querySelector('input, textarea, select');
       if (!input) continue;
       switch (type) {
         case 'bool':      result[key] = input.checked; break;
@@ -413,7 +453,26 @@ function _wireListEvents() {
   const list = document.getElementById('ind-list');
 
   list.addEventListener('change', e => {
-    if (e.target.classList.contains('ind-toggle')) _onToggle(e.target);
+    if (e.target.classList.contains('ind-toggle')) { _onToggle(e.target); return; }
+
+    // When a dropdown with param_options changes, swap the dependent sub-param group
+    if (e.target.classList.contains('param-select')) {
+      const field     = e.target.closest('[data-key]');
+      const card      = e.target.closest('.ind-card');
+      if (field && card) {
+        const ind       = card.dataset.indicator;
+        const key       = field.dataset.key;
+        const targetKey = PARAM_CONTROLS[key];
+        const subOpts   = _paramOptions[ind]?.[key];
+        if (targetKey && subOpts) {
+          const subParams = { ...(subOpts[e.target.value] ?? {}) };
+          const paramTree = card.querySelector('.param-tree');
+          const targetEl  = paramTree?.querySelector(`[data-key="${targetKey}"]`);
+          if (targetEl) targetEl.outerHTML = _renderParamValue(targetKey, subParams);
+        }
+      }
+    }
+
     _dirty = true;
   });
 
