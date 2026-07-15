@@ -19,6 +19,13 @@ router = APIRouter(prefix="/api")
 TICKER_LISTS_DIR = Path(__file__).parent.parent / "tickers" / "ticker_lists"
 
 
+def _read_ticker_list(path: Path) -> list[str]:
+    df = pd.read_csv(path)
+    cols_lower = {c.lower(): c for c in df.columns}
+    col = cols_lower.get('ticker') or cols_lower.get('symbol') or df.columns[0]
+    return df[col].dropna().str.strip().str.upper().unique().tolist()
+
+
 def _masked(key: str) -> str:
     if len(key) <= 8:
         return '•' * len(key)
@@ -120,7 +127,7 @@ async def upload_ticker_list(file: UploadFile = File(...)):
     dest = TICKER_LISTS_DIR / f"{name}.csv"
     dest.write_bytes(contents)
     try:
-        count = len(pd.read_csv(dest))
+        count = len(_read_ticker_list(dest))
     except Exception:
         count = 0
     return {"name": name, "count": count}
@@ -165,8 +172,7 @@ def ticker_lists():
         if f.name == 'tiingo-tickers.csv':
             continue
         try:
-            df = pd.read_csv(f)
-            lists.append({"name": f.stem, "count": len(df)})
+            lists.append({"name": f.stem, "count": len(_read_ticker_list(f))})
         except Exception:
             lists.append({"name": f.stem, "count": 0})
     return {"lists": lists}

@@ -1001,7 +1001,8 @@ body.ind-page {
 
 /* ── Run panel ────────────────────────────────────────────── */
 .ind-run {
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
   border: 1px solid #282828;
   border-radius: 4px;
   background: #0f0f0f;
@@ -1030,6 +1031,8 @@ body.ind-page {
 }
 
 .ind-run-body {
+  flex: 1;
+  min-height: 0;
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -1109,8 +1112,8 @@ body.ind-page {
 
 /* ── Live ticker feed ─────────────────────────────────────── */
 .ind-feed {
-  flex-shrink: 0;
-  height: 110px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   border: 1px solid #282828;
   border-radius: 3px;

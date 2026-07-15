@@ -115,6 +115,10 @@ def col_styles_for_columns(columns: list) -> dict:
             mc = [c for c in columns if c.startswith('All_avg')]
             _add(col, colors['gray_trans'], 5 if (col == 'All_avg' and len(mc) > 1) else 3)
 
+        # ── POC ──────────────────────────────────────────────────────────────
+        elif col == 'POC':
+            _add(col, colors['orange_poc'], 6)
+
         # ── SMA ──────────────────────────────────────────────────────────────
         elif col.startswith('SMA_'):
             try:

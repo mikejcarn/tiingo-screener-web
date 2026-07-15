@@ -20,8 +20,8 @@ const C_DOWN = 'rgba(239,83,80,1)';
 const SEG_COLORS = {
   fvg_bull:   'rgba(38,166,154,0.7)',
   fvg_bear:   'rgba(239,83,80,0.7)',
-  ob_bull:    'rgba(38,166,154,0.8)',
-  ob_bear:    'rgba(239,83,80,0.8)',
+  ob_bull:    'rgba(38,166,154,0.5)',
+  ob_bear:    'rgba(239,83,80,0.5)',
   bos_bull:   'rgba(38,166,154,0.9)',
   bos_bear:   'rgba(239,83,80,0.9)',
   choch_bull: 'rgba(38,166,154,0.45)',

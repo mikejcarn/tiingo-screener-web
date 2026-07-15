@@ -16,7 +16,7 @@ from backend.core import database as _db
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
 from backend.core.replay_events import extract_events
-from backend.indicators.indicators import load_indicator_config
+from backend.indicators.indicators import load_indicator_config, load_config_from_db
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
@@ -104,9 +104,7 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
 
     # Send dynamic replay events (peak/valley bars, QQEMOD anchor commitments)
     try:
-        result = load_indicator_config(ind_conf, tf)
-        # load_indicator_config(ind_conf, tf) returns (ind_list, params_for_tf) directly
-        params = result[1] if result else {}
+        _, params = load_config_from_db(ind_conf, tf)
         events = extract_events(df, params or {})
         await websocket.send_text(json.dumps(events))
     except Exception:

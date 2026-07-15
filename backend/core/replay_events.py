@@ -308,9 +308,12 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
     # all OBs are extracted and caps applied via displaced_at so early replay shows
     # the correct OB rather than the full-dataset cap survivor).  When the standalone
     # OB indicator is not enabled, fall back to the pre-stored aVWAP_OB_* columns.
+    # Only activate this path when the user actually has aVWAP_OB (or legacy aVWAP
+    # with OB_params) configured — having OB alone should not produce aVWAP lines.
     ob_bull_evts: list = []
     ob_bear_evts: list = []
-    _use_raw_ob = 'OB' in df.columns
+    _wants_avwap_ob = 'aVWAP_OB' in ind_params or bool(ob_cfgs)
+    _use_raw_ob = _wants_avwap_ob and 'OB' in df.columns
     if _use_raw_ob:
         ob_cfg0         = ob_cfgs[0] if ob_cfgs else {}
         ob_periods      = int(ob_cfg0.get('periods',               25))
@@ -320,7 +323,7 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
             v   = df.at[idx, 'OB']
             mit = df.at[idx, 'OB_Mitigated_Index'] if 'OB_Mitigated_Index' in df.columns else 0
             is_mit = bool(not (pd.isna(mit) or mit == 0))
-            ev = {'anchor_bar': int(idx), 'vf': int(idx) + ob_periods, 'm': is_mit}
+            ev = {'anchor_bar': int(idx), 's': int(idx), 'vf': int(idx) + ob_periods, 'm': is_mit}
             (ob_bull_evts if v > 0 else ob_bear_evts).append(ev)
         ob_bull_evts = _add_displaced_at(ob_bull_evts, max_unmitigated, max_mitigated)
         ob_bear_evts = _add_displaced_at(ob_bear_evts, max_unmitigated, max_mitigated)
@@ -440,8 +443,11 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     peaks_cfgs   = avwap_p.get('peaks_params',   [])
     valleys_cfgs = avwap_p.get('valleys_params',  [])
 
-    qqemod_cfg = avwap_p.get('QQEMOD_params', {})
-    max_qqemod = qqemod_cfg.get('max_anchors', 5) if avwap_p.get('QQEMOD', False) else 0
+    if 'aVWAP_QQEMOD' in ind_params:
+        max_qqemod = ind_params['aVWAP_QQEMOD'].get('max_anchors', 5)
+    else:
+        qqemod_cfg = avwap_p.get('QQEMOD_params', {})
+        max_qqemod = qqemod_cfg.get('max_anchors', 5) if avwap_p.get('QQEMOD', False) else 0
 
     # PMM configs — sent to JS so greedyExtrema can rerun at each replay bar
     pmm_enabled = avwap_p.get('price_maxima_minima', False)

@@ -16,6 +16,15 @@ TICKER_LISTS_DIR = Path(__file__).parent.parent / "tickers" / "ticker_lists"
 
 router = APIRouter(prefix="/api")
 
+
+def _read_ticker_list(path: Path) -> list[str]:
+    """Read tickers from a CSV. Finds 'ticker' or 'symbol' column (case-insensitive),
+    falls back to the first column so any single-column CSV works too."""
+    df = pd.read_csv(path)
+    cols_lower = {c.lower(): c for c in df.columns}
+    col = cols_lower.get('ticker') or cols_lower.get('symbol') or df.columns[0]
+    return df[col].dropna().str.strip().str.upper().unique().tolist()
+
 # ── Tiingo fetch helpers (adapted from tiingo-screener-python/src/tickers/tickers.py) ──
 
 _TIMEFRAME_CONFIG = {
@@ -208,7 +217,7 @@ def fetch_batch(req: BatchFetchRequest, background_tasks: BackgroundTasks):
     # Resolve ticker list
     if req.ticker_list:
         csv_path = TICKER_LISTS_DIR / f"{req.ticker_list}.csv"
-        tickers = pd.read_csv(csv_path).iloc[:, 0].str.strip().tolist()
+        tickers = _read_ticker_list(csv_path)
     else:
         tickers = req.tickers or []
 

@@ -4,7 +4,7 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 let _configList  = [];   // [{id, name, created_at}]
 let _selectedId  = null;
 let _configData  = null; // {id, name, indicators: {tf: {ind: params}}}
-let _defaults    = null; // {available: [...], defaults: {tf: {ind: params}}}
+let _defaults    = null; // {available: [...], defaults: {ind: params}}
 let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
 let _dirty       = false;
@@ -179,7 +179,7 @@ function _renderIndicatorList() {
   }
 
   const savedForTf    = _pending[_activeTf] ?? _configData?.indicators?.[_activeTf] ?? {};
-  const defaultsForTf = _defaults.defaults?.[_activeTf] ?? {};
+  const defaultsForTf = _defaults.defaults ?? {};
 
   const visible = _defaults.available
     .filter(ind => !_searchQuery || ind.toLowerCase().includes(_searchQuery))
@@ -453,7 +453,7 @@ function _onToggle(checkbox) {
   if (enabled) {
     const params = _pending[_activeTf]?.[ind]
       ?? _configData?.indicators?.[_activeTf]?.[ind]
-      ?? _defaults?.defaults?.[_activeTf]?.[ind]
+      ?? _defaults?.defaults?.[ind]
       ?? {};
     let body = card.querySelector('.ind-card-body');
     if (!body) {
@@ -1079,7 +1079,7 @@ function _selectFirstFilteredIndicator() {
     ? _pending[_activeTf]
     : { ...(_configData?.indicators?.[_activeTf] ?? {}) };
   if (!(ind in current)) {
-    current[ind] = { ...(_defaults?.defaults?.[_activeTf]?.[ind] ?? {}) };
+    current[ind] = { ...(_defaults?.defaults?.[ind] ?? {}) };
     _pending[_activeTf] = current;
     _dirty = true;
   }

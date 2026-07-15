@@ -1,4 +1,7 @@
+import importlib
+import inspect
 import json
+import types
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
@@ -7,7 +10,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.core import database as db
-from backend.indicators.indicators import load_indicator_config
 
 router = APIRouter(prefix="/api")
 
@@ -91,20 +93,44 @@ def save_config(config_id: int, body: SaveConfigBody):
     return {"saved": config_id, "updated_at": now}
 
 
+def _get_indicator_defaults(name: str) -> Dict[str, Any]:
+    try:
+        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
+    except ImportError:
+        return {}
+    if hasattr(mod, 'defaults'):
+        return mod.defaults
+    # Find the calculate_* function defined in this module whose first parameter
+    # is 'df' — that's the convention for all indicator main functions, and it
+    # naturally skips local helpers like calculate_ema / calculate_atr.
+    mod_name = f'backend.indicators.indicators_list.{name}'
+    fn = None
+    for attr_name, obj in vars(mod).items():
+        if (attr_name.startswith('calculate_')
+                and attr_name != 'calculate_indicator'
+                and isinstance(obj, types.FunctionType)
+                and obj.__module__ == mod_name):
+            first_param = next(iter(inspect.signature(obj).parameters), None)
+            if first_param == 'df':
+                fn = obj
+                break
+    if fn is None:
+        return {}
+    sig = inspect.signature(fn)
+    return {
+        k: v.default
+        for k, v in sig.parameters.items()
+        if k != 'df'
+        and v.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+        and v.default is not inspect.Parameter.empty
+    }
+
+
 @router.get("/indicator-defaults")
 def indicator_defaults():
     available = sorted(
         f.stem for f in INDICATORS_LIST_DIR.glob("*.py")
         if not f.stem.startswith("_")
     )
-
-    defaults: Dict[str, Any] = {}
-    for tf in ALL_TIMEFRAMES:
-        result = load_indicator_config(0, tf)
-        if result and result != (None, None):
-            _, params = result
-            defaults[tf] = params or {}
-        else:
-            defaults[tf] = {}
-
+    defaults = {name: _get_indicator_defaults(name) for name in available}
     return {"available": available, "defaults": defaults}

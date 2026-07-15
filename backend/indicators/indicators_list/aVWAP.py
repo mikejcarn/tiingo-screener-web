@@ -2,6 +2,14 @@ import pandas as pd
 import numpy as np
 from backend.indicators.indicators import get_indicators
 
+defaults = {
+    'QQEMOD': True,
+    'QQEMOD_params': {
+        'max_anchors': 5,
+        'extend_to_end': True,
+    },
+}
+
 
 def calculate_avwap_channel(
     df,
