@@ -3,12 +3,14 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
   indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'engulfing_candle'],
+  centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
 };
 
 // When param key K changes, replace the value of param key V with the sub-defaults
 // for the newly selected option. Populated from param_options API data.
 const PARAM_CONTROLS = {
   indicator_color: 'custom_params',
+  centreline:      'centreline_params',
 };
 
 // ── State ──────────────────────────────────────────────────────
@@ -219,13 +221,23 @@ function _renderIndicatorList() {
 
 function _normalizeParams(ind, params) {
   const indOpts = _paramOptions[ind];
-  if (!indOpts) return params;
+  if (!indOpts || !params || typeof params !== 'object') return params;
   const result = { ...params };
+  // Fill any null/missing controlled sub-param group at this level.
+  // Guard: only act when the controlling key is actually present here,
+  // so nested levels don't pick up each other's rules.
   for (const [key, subOpts] of Object.entries(indOpts)) {
     const targetKey = PARAM_CONTROLS[key];
     if (!targetKey) continue;
-    if (result[targetKey] === null || result[targetKey] === undefined) {
+    if (result[key] !== undefined && (result[targetKey] === null || result[targetKey] === undefined)) {
       result[targetKey] = { ...(subOpts[result[key]] ?? {}) };
+    }
+  }
+  // Recurse so nested levels (e.g. centreline→centreline_params inside custom_params)
+  // are also normalized.
+  for (const [k, v] of Object.entries(result)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      result[k] = _normalizeParams(ind, v);
     }
   }
   return result;

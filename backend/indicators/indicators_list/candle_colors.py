@@ -192,12 +192,27 @@ import pandas as pd
 from backend.indicators.indicators import get_indicators
 from backend.core.color_palette import get_color_palette
 
+# Sub-params shown per centreline mode. Keys must match the **kwargs names that
+# ZScore / StDev forward to their sub-indicators.
+_CENTRELINE_SUB_DEFAULTS = {
+    'peaks_valleys_avg': {'periods': 20, 'max_aVWAPs': None},
+    'gaps_avg':          {'max_aVWAPs': 10},
+    'OB_avg':            {'periods': 20, 'max_aVWAPs': None},
+    'SMA':               {'sma_periods': 75},
+}
+
 # User-facing params per color mode (exposed to UI as sub-param groups).
-# Internal-only params (centreline, peaks_valleys_params) are kept inside
-# the function's default_params and are not shown in the editor.
 _SUB_DEFAULTS = {
-    'ZScore':           {'std_lookback': 75,  'avg_lookback': 20},
-    'StDev':            {'std_lookback': 100, 'avg_lookback': 10},
+    'ZScore': {
+        'std_lookback': 75, 'avg_lookback': 20,
+        'centreline': 'peaks_valleys_avg',
+        'centreline_params': dict(_CENTRELINE_SUB_DEFAULTS['peaks_valleys_avg']),
+    },
+    'StDev': {
+        'stdev_lookback': 100, 'avg_lookback': 10,
+        'centreline': 'peaks_valleys_avg',
+        'centreline_params': dict(_CENTRELINE_SUB_DEFAULTS['peaks_valleys_avg']),
+    },
     'QQEMOD':           {'rsi_period': 8, 'rsi_period2': 4, 'sf': 8, 'sf2': 4,
                          'qqe_factor': 3.0, 'qqe_factor2': 1.61, 'threshold': 3,
                          'bb_length': 10, 'bb_multi': 0.35},
@@ -216,10 +231,11 @@ defaults = {
     'custom_params':   dict(_SUB_DEFAULTS['StDev']),
 }
 
-# Consumed by _get_param_options: tells the UI which sub-params to show
-# when the user picks a different indicator_color value.
+# Consumed by _get_param_options: tells the UI which sub-params to swap
+# when the user changes indicator_color or centreline.
 param_options = {
     'indicator_color': _SUB_DEFAULTS,
+    'centreline':      _CENTRELINE_SUB_DEFAULTS,
 }
 
 
@@ -252,7 +268,7 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
         'StDev': {
             'centreline': 'peaks_valleys_avg',
             'peaks_valleys_params': {'periods': 100, 'max_aVWAPs': None},
-            'std_lookback': 100,
+            'stdev_lookback': 100,
             'avg_lookback': 10,
         },
         'TTM_squeeze': {
@@ -286,6 +302,21 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
     # custom_params is a flat dict of overrides for the selected indicator_color.
     if custom_params and indicator_color in default_params:
         default_params[indicator_color].update(custom_params)
+
+    # Unwrap centreline_params (UI wrapper) into the kwarg name the indicator expects.
+    ind_p = default_params[indicator_color]
+    cp = ind_p.pop('centreline_params', None)
+    if cp:
+        centreline = ind_p.get('centreline', 'peaks_valleys_avg')
+        _kwarg_map = {
+            'peaks_valleys_avg': 'peaks_valleys_params',
+            'gaps_avg':          'gaps_params',
+            'OB_avg':            'OB_params',
+        }
+        if centreline in _kwarg_map:
+            ind_p[_kwarg_map[centreline]] = cp
+        elif centreline == 'SMA':
+            ind_p.update(cp)  # flattens {'sma_periods': N} directly into kwargs
 
     df = get_indicators(df, [indicator_color], default_params)
 
