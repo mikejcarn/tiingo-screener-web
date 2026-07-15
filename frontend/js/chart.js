@@ -56,7 +56,7 @@ export class ChartManager {
       layout:          { background: { color: '#000000' }, textColor: '#aaaaaa' },
       grid:            { vertLines: { color: '#111111' }, horzLines: { color: '#111111' } },
       crosshair:       { mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#222222' },
+      rightPriceScale: { borderColor: '#222222', scaleMargins: { top: 0.03, bottom: 0.03 } },
       timeScale:       { borderColor: '#222222', timeVisible: true },
     });
 
