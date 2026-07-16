@@ -961,6 +961,7 @@ body.ind-page {
   min-width: 0;
 }
 .param-input:focus { outline: none; border-color: #666; }
+.param-input:disabled { opacity: 0.25; cursor: not-allowed; }
 .param-none { font-size: 11px; color: #333; font-style: italic; padding: 2px 0; }
 .param-group.param-inline > .param-group-head { display: none; }
 .param-group.param-inline > .param-group-body { padding-left: 0; }

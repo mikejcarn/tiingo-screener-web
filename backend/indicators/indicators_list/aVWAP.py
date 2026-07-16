@@ -186,7 +186,7 @@ def calculate_avwap_channel(
     peaks_valleys_configs = ensure_config_list(peaks_valleys_params, default_config)
    
     # Other types
-    gaps_configs = ensure_config_list(gaps_params, {'max_aVWAPs': None}) if gaps else []
+    gaps_configs = ensure_config_list(gaps_params, {'max_aVWAPs': None}) if (gaps or gaps_avg) else []
     
     # OB configs with mode parameter (default to 'combined' for backward compatibility)
     default_ob_config = {
@@ -194,7 +194,7 @@ def calculate_avwap_channel(
         'max_aVWAPs': None,
         'mode': 'combined'  # 'bullish', 'bearish', 'combined', 'none' (with synonyms)
     }
-    OB_configs = ensure_config_list(OB_params, default_ob_config) if OB else []
+    OB_configs = ensure_config_list(OB_params, default_ob_config) if (OB or OB_avg) else []
     
     BoS_CHoCH_configs = ensure_config_list(BoS_CHoCH_params, {
         'swing_length': 25,
@@ -236,7 +236,8 @@ def calculate_avwap_channel(
     if not (show_peaks or show_valleys or show_peaks_valleys or
             gaps or OB or BoS_CHoCH or QQEMOD or price_maxima_minima or
             need_peaks_for_avg or need_valleys_for_avg or
-            need_peaks_valleys_for_avg or QQEMOD_avg or need_all_avg):
+            need_peaks_valleys_for_avg or
+            gaps_avg or OB_avg or BoS_CHoCH_avg or QQEMOD_avg or need_all_avg):
         return {}
 
     # -------------------------

@@ -1,5 +1,9 @@
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
+// Numeric params that are legitimately nullable (null = no limit / disabled).
+// These always render as a checkbox + number input regardless of current value.
+const NULLABLE_NUM_KEYS = new Set(['max_aVWAPs', 'max_anchors']);
+
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
   indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'engulfing_candle'],
@@ -270,12 +274,20 @@ function _renderParamTree(params) {
   return Object.entries(params).map(([k, v]) => _renderParamValue(k, v)).join('');
 }
 
+function _renderNullableNum(key, val) {
+  const enabled = val !== null && val !== undefined;
+  return `<div class="param-field param-nullable" data-key="${_esc(key)}" data-type="nullable_num">
+    <input type="checkbox" class="param-checkbox param-nullable-toggle"${enabled ? ' checked' : ''}>
+    <span class="param-key">${_esc(key)}</span>
+    <input type="number" value="${enabled ? val : ''}" step="1"
+      class="param-input param-num param-nullable-value"${enabled ? '' : ' disabled'}
+      placeholder="∞">
+  </div>`;
+}
+
 function _renderParamValue(key, val) {
   if (val === null || val === undefined) {
-    return `<div class="param-field" data-key="${_esc(key)}" data-type="null">
-      <span class="param-key">${_esc(key)}</span>
-      <input type="text" value="null" class="param-input param-text">
-    </div>`;
+    return _renderNullableNum(key, null);
   }
   if (typeof val === 'boolean') {
     return `<label class="param-field param-bool" data-key="${_esc(key)}" data-type="bool">
@@ -284,6 +296,7 @@ function _renderParamValue(key, val) {
     </label>`;
   }
   if (typeof val === 'number') {
+    if (NULLABLE_NUM_KEYS.has(key)) return _renderNullableNum(key, val);
     const isInt = Number.isInteger(val);
     return `<div class="param-field" data-key="${_esc(key)}" data-type="${isInt ? 'int' : 'float'}">
       <span class="param-key">${_esc(key)}</span>
@@ -352,8 +365,18 @@ function _readParamTree(container) {
           result[key] = parts.map(v => v.includes('.') ? parseFloat(v) : parseInt(v));
           break;
         }
+        case 'nullable_num': {
+          const toggle = child.querySelector('.param-nullable-toggle');
+          const numEl  = child.querySelector('.param-nullable-value');
+          if (toggle?.checked) {
+            const n = parseInt(numEl?.value);
+            result[key] = isNaN(n) ? null : n;
+          } else {
+            result[key] = null;
+          }
+          break;
+        }
         case 'json':
-        case 'null':
           try { result[key] = JSON.parse(input.value); } catch { result[key] = input.value; }
           break;
       }
@@ -466,6 +489,15 @@ function _wireListEvents() {
 
   list.addEventListener('change', e => {
     if (e.target.classList.contains('ind-toggle')) { _onToggle(e.target); return; }
+
+    // Nullable-number toggle: enable/disable the number input
+    if (e.target.classList.contains('param-nullable-toggle')) {
+      const numEl = e.target.closest('.param-nullable')?.querySelector('.param-nullable-value');
+      if (numEl) {
+        numEl.disabled = !e.target.checked;
+        if (e.target.checked && !numEl.value) numEl.value = '5';
+      }
+    }
 
     // When a dropdown with param_options changes, swap the dependent sub-param group
     if (e.target.classList.contains('param-select')) {
@@ -1163,6 +1195,7 @@ function _selectFirstFilteredIndicator() {
 
 document.addEventListener('keydown', e => {
   if (e.key === '`') { e.preventDefault(); window.location.href = '/'; return; }
+  if (e.key === '~') { e.preventDefault(); window.location.href = '/fetch'; return; }
 
   // Universal Esc reset
   if (e.key === 'Escape') {
@@ -1185,6 +1218,11 @@ document.addEventListener('keydown', e => {
 
   // Any printable char while nothing interactive is focused → route to indicator search
   const tag = document.activeElement?.tagName;
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
+    if (e.key === 'C') { e.preventDefault(); window.location.href = '/'; return; }
+    if (e.key === 'T') { e.preventDefault(); window.location.href = '/fetch'; return; }
+    if (e.key === 'I') { e.preventDefault(); window.location.href = '/indicators'; return; }
+  }
   if (
     e.key.length === 1 &&
     !e.ctrlKey && !e.metaKey && !e.altKey &&

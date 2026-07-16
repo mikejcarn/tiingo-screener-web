@@ -734,7 +734,13 @@ async function _poll() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === '`') { e.preventDefault(); window.location.href = '/indicators'; }
+  if (e.key === '`') { e.preventDefault(); window.location.href = '/indicators'; return; }
+  if (e.key === '~') { e.preventDefault(); window.location.href = '/'; return; }
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; }
+  if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
+  if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }
 });
 
 init();
