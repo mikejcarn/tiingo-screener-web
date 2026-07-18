@@ -195,8 +195,13 @@ def _extract_bos_choch_segments(df: pd.DataFrame) -> list:
     BoS_CHoCH_Break_Index_{sl}.  The segment runs from the structure bar (s)
     to the break bar (e), drawn at the structure price level.
     """
-    bos_re = re.compile(r'^BoS_(\d+)$')
-    swing_lengths = [int(m.group(1)) for c in df.columns for m in [bos_re.match(c)] if m]
+    bos_re   = re.compile(r'^BoS_(\d+)$')
+    choch_re = re.compile(r'^CHoCH_(\d+)$')
+    swing_lengths = set()
+    for c in df.columns:
+        m = bos_re.match(c) or choch_re.match(c)
+        if m:
+            swing_lengths.add(int(m.group(1)))
     if not swing_lengths:
         return []
     n = len(df)
@@ -206,7 +211,7 @@ def _extract_bos_choch_segments(df: pd.DataFrame) -> list:
         choch_col = f'CHoCH_{sl}'
         price_col = f'BoS_CHoCH_Price_{sl}'
         break_col = f'BoS_CHoCH_Break_Index_{sl}'
-        if not all(c in df.columns for c in [bos_col, price_col, break_col]):
+        if not all(c in df.columns for c in [price_col, break_col]):
             continue
         for col, sig_type in [(bos_col, 'bos'), (choch_col, 'choch')]:
             if col not in df.columns:

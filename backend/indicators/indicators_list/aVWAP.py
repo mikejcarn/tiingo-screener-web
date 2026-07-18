@@ -293,6 +293,7 @@ def calculate_avwap_channel(
         df = add_ob_per_config(df, OB_configs)
 
     # Compute BoS_CHoCH for each unique swing length needed across all configs
+    _bos_choch_cols_added = set()  # columns we add here (not pre-existing) → dropped in cleanup
     if BoS_CHoCH and BoS_CHoCH_configs:
         _bc_swings = set()
         for _cfg in BoS_CHoCH_configs:
@@ -308,6 +309,7 @@ def calculate_avwap_channel(
                              f'BoS_CHoCH_Price_{_sl}', f'BoS_CHoCH_Break_Index_{_sl}']:
                     if _col in _tmp.columns:
                         df[_col] = _tmp[_col]
+                        _bos_choch_cols_added.add(_col)
 
     # Compute QQEMOD signals per config if requested
     if 'QQEMOD' in aVWAP_anchors and QQEMOD_configs:
@@ -679,8 +681,6 @@ def calculate_avwap_channel(
             else:
                 include_bull, include_bear = True, True
 
-            include_BoS   = config.get('include_BoS',   True)
-            include_CHoCH = config.get('include_CHoCH', True)
             max_BoS_aVWAPs   = config.get('max_BoS_aVWAPs',   config.get('max_aVWAPs', None))
             max_CHoCH_aVWAPs = config.get('max_CHoCH_aVWAPs', config.get('max_aVWAPs', None))
 
@@ -706,7 +706,7 @@ def calculate_avwap_channel(
             _break_bos_col   = f'BoS_CHoCH_Break_Index_{_bos_sl}'
             _break_choch_col = f'BoS_CHoCH_Break_Index_{_choch_sl}'
 
-            if include_BoS and include_bull and _bos_col in df.columns:
+            if include_bull and _bos_col in df.columns:
                 for idx in df[df[_bos_col] == 1].index:
                     if idx in seen_BoS_bull_indices:
                         continue
@@ -717,7 +717,7 @@ def calculate_avwap_channel(
                             config_BoS[f'aVWAP_BoS_bull_c{config_idx}_{idx}'] = vwap
                             seen_BoS_bull_indices.add(idx)
 
-            if include_BoS and include_bear and _bos_col in df.columns:
+            if include_bear and _bos_col in df.columns:
                 for idx in df[df[_bos_col] == -1].index:
                     if idx in seen_BoS_bear_indices:
                         continue
@@ -728,7 +728,7 @@ def calculate_avwap_channel(
                             config_BoS[f'aVWAP_BoS_bear_c{config_idx}_{idx}'] = vwap
                             seen_BoS_bear_indices.add(idx)
 
-            if include_CHoCH and include_bull and _choch_col in df.columns:
+            if include_bull and _choch_col in df.columns:
                 for idx in df[df[_choch_col] == 1].index:
                     if idx in seen_CHoCH_bull_indices:
                         continue
@@ -739,7 +739,7 @@ def calculate_avwap_channel(
                             config_BoS[f'aVWAP_CHoCH_bull_c{config_idx}_{idx}'] = vwap
                             seen_CHoCH_bull_indices.add(idx)
 
-            if include_CHoCH and include_bear and _choch_col in df.columns:
+            if include_bear and _choch_col in df.columns:
                 for idx in df[df[_choch_col] == -1].index:
                     if idx in seen_CHoCH_bear_indices:
                         continue
@@ -1079,8 +1079,27 @@ def calculate_avwap_channel(
                 f'OB_Low_c{i}',
                 f'OB_Mitigated_Index_c{i}',
             ])
-    if not BoS_CHoCH:
-        cols_to_drop.extend(['BoS', 'CHoCH', 'BoS_CHoCH_Price', 'BoS_CHoCH_Break_Index'])
+    # Drop intermediate BoS/CHoCH signal columns we added, except those needed
+    # for horizontal segment drawing (controlled per-config by include_BoS/include_CHoCH).
+    _keep_segment_cols = set()
+    if BoS_CHoCH and BoS_CHoCH_configs:
+        for _cfg in BoS_CHoCH_configs:
+            _sl  = _cfg.get('swing_length', 25)
+            _bsl = _cfg.get('BoS_swing_length',   _sl)
+            _csl = _cfg.get('CHoCH_swing_length', _sl)
+            if _cfg.get('include_BoS', True):
+                _keep_segment_cols |= {
+                    f'BoS_{_bsl}',
+                    f'BoS_CHoCH_Price_{_bsl}',
+                    f'BoS_CHoCH_Break_Index_{_bsl}',
+                }
+            if _cfg.get('include_CHoCH', True):
+                _keep_segment_cols |= {
+                    f'CHoCH_{_csl}',
+                    f'BoS_CHoCH_Price_{_csl}',
+                    f'BoS_CHoCH_Break_Index_{_csl}',
+                }
+    cols_to_drop.extend([c for c in _bos_choch_cols_added if c not in _keep_segment_cols])
     for i in range(len(QQEMOD_configs)):
         cols_to_drop.extend([
             f'QQE1_Above_Upper_c{i}', f'QQE1_Below_Lower_c{i}',

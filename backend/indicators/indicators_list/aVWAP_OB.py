@@ -6,7 +6,9 @@ from backend.indicators.indicators_list.aVWAP import calculate_avwap
 def calculate_aVWAP_OB(
     df,
     periods=25,
-    mode='combined',
+    include_bull=True,
+    include_bear=True,
+    include_OB_lines=False,
     max_aVWAPs=None,
     max_mitigated=None,
     max_unmitigated=None,
@@ -16,15 +18,18 @@ def calculate_aVWAP_OB(
     """
     Anchor aVWAPs at Order Block bars.
 
-    mode: 'combined' | 'bull' | 'bear'
-    extend_to_end: if True, aVWAPs run to the last bar (mitigated OBs not truncated)
-    faded: if True, add a ghost extension after the mitigation point
+    include_bull:     draw aVWAP lines from bullish OB anchors
+    include_bear:     draw aVWAP lines from bearish OB anchors
+    include_OB_lines: also output OB horizontal segment columns
+    extend_to_end:    if True, aVWAPs run to the last bar (mitigated OBs not truncated)
+    faded:            if True, add a ghost extension after the mitigation point
 
     Output columns:
         aVWAP_OB_bull_c0_{anchor_bar}
         aVWAP_OB_bear_c0_{anchor_bar}
         aVWAP_OB_bull_ghost_c0_{anchor_bar}  (when faded=True and OB is mitigated)
         aVWAP_OB_bear_ghost_c0_{anchor_bar}
+        OB, OB_High, OB_Low, OB_Mitigated_Index  (when include_OB_lines=True)
     """
     df = df.reset_index()
     df['date'] = pd.to_datetime(df['date'])
@@ -35,10 +40,6 @@ def calculate_aVWAP_OB(
     if 'OB' not in ob_df.columns:
         df.set_index('date', inplace=True)
         return df[[]]
-
-    mode_lower = mode.lower()
-    include_bull = mode_lower in ('combined', 'both', 'all', 'bull', 'bullish')
-    include_bear = mode_lower in ('combined', 'both', 'all', 'bear', 'bearish')
 
     mit_col = 'OB_Mitigated_Index'
     has_mit = mit_col in ob_df.columns
@@ -88,8 +89,16 @@ def calculate_aVWAP_OB(
     for col, series in result.items():
         df[col] = series
 
+    ob_segment_cols = []
+    if include_OB_lines:
+        for col in ['OB', 'OB_High', 'OB_Low', 'OB_Mitigated_Index']:
+            if col in ob_df.columns:
+                df[col] = ob_df[col].values
+                ob_segment_cols.append(col)
+
     df.set_index('date', inplace=True)
-    return df[list(result.keys())] if result else df[[]]
+    all_cols = list(result.keys()) + ob_segment_cols
+    return df[all_cols] if all_cols else df[[]]
 
 
 def calculate_indicator(df, **params):

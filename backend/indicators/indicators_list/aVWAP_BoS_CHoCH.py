@@ -6,9 +6,10 @@ from backend.indicators.indicators_list.aVWAP import calculate_avwap
 def calculate_aVWAP_BoS_CHoCH(
     df,
     swing_length=25,
-    mode='combined',
-    include_BoS=True,
-    include_CHoCH=True,
+    include_bull_aVWAP=True,  # draw aVWAP lines anchored at bullish BoS/CHoCH signals
+    include_bear_aVWAP=True,  # draw aVWAP lines anchored at bearish BoS/CHoCH signals
+    include_BoS=True,         # output BoS horizontal segment columns
+    include_CHoCH=True,       # output CHoCH horizontal segment columns
     max_aVWAPs=None,
 ):
     """
@@ -18,16 +19,22 @@ def calculate_aVWAP_BoS_CHoCH(
       - Bullish BoS/CHoCH → Low minimum (support that was defended before the break)
       - Bearish BoS/CHoCH → High maximum (resistance that was defended before the break)
 
-    Because calculate_avwap starts at the actual anchor bar, first_valid_index() of
-    the stored Series always returns the correct anchor for the replay engine.
+    include_bull_aVWAP — draw aVWAP lines from bullish BoS and CHoCH anchors
+    include_bear_aVWAP — draw aVWAP lines from bearish BoS and CHoCH anchors
+    include_BoS        — whether BoS horizontal segment columns are output
+    include_CHoCH      — whether CHoCH horizontal segment columns are output
 
-    mode: 'combined' | 'bull' | 'bear'
-
-    Output columns:
+    Output columns (aVWAP lines):
         aVWAP_BoS_bull_c0_{signal_bar}
         aVWAP_BoS_bear_c0_{signal_bar}
         aVWAP_CHoCH_bull_c0_{signal_bar}
         aVWAP_CHoCH_bear_c0_{signal_bar}
+
+    Output columns (horizontal segments, when include_* is True):
+        BoS_{swing_length}
+        CHoCH_{swing_length}
+        BoS_CHoCH_Price_{swing_length}
+        BoS_CHoCH_Break_Index_{swing_length}
     """
     df = df.reset_index()
     df['date'] = pd.to_datetime(df['date'])
@@ -37,12 +44,9 @@ def calculate_aVWAP_BoS_CHoCH(
         df[base_cols].copy(), ['BoS_CHoCH'], {'BoS_CHoCH': {'swing_length': swing_length}}
     )
 
-    mode_lower = mode.lower()
-    include_bull = mode_lower in ('combined', 'both', 'all', 'bull', 'bullish')
-    include_bear = mode_lower in ('combined', 'both', 'all', 'bear', 'bearish')
-
     bos_col   = f'BoS_{swing_length}'
     choch_col = f'CHoCH_{swing_length}'
+    price_col = f'BoS_CHoCH_Price_{swing_length}'
     break_col = f'BoS_CHoCH_Break_Index_{swing_length}'
 
     def _avwap_for_range(signal_idx, brk, direction):
@@ -55,21 +59,13 @@ def calculate_aVWAP_BoS_CHoCH(
 
     result = {}
 
-    for sig_col, sig_name, direction, prefix in [
-        (bos_col,   'BoS',   'bull',  'aVWAP_BoS_bull_c0'),
-        (bos_col,   'BoS',   'bear',  'aVWAP_BoS_bear_c0'),
-        (choch_col, 'CHoCH', 'bull',  'aVWAP_CHoCH_bull_c0'),
-        (choch_col, 'CHoCH', 'bear',  'aVWAP_CHoCH_bear_c0'),
+    for sig_col, use_avwap, direction, prefix in [
+        (bos_col,   include_bull_aVWAP, 'bull', 'aVWAP_BoS_bull_c0'),
+        (bos_col,   include_bear_aVWAP, 'bear', 'aVWAP_BoS_bear_c0'),
+        (choch_col, include_bull_aVWAP, 'bull', 'aVWAP_CHoCH_bull_c0'),
+        (choch_col, include_bear_aVWAP, 'bear', 'aVWAP_CHoCH_bear_c0'),
     ]:
-        if sig_col not in bc_df.columns:
-            continue
-        if sig_name == 'BoS'   and not include_BoS:
-            continue
-        if sig_name == 'CHoCH' and not include_CHoCH:
-            continue
-        if direction == 'bull' and not include_bull:
-            continue
-        if direction == 'bear' and not include_bear:
+        if not use_avwap or sig_col not in bc_df.columns:
             continue
 
         val = 1 if direction == 'bull' else -1
@@ -86,8 +82,25 @@ def calculate_aVWAP_BoS_CHoCH(
     for col, series in result.items():
         df[col] = series
 
+    # Add horizontal segment columns so _extract_bos_choch_segments can draw them.
+    segment_cols = []
+    if include_BoS and bos_col in bc_df.columns:
+        df[bos_col] = bc_df[bos_col].values
+        segment_cols.append(bos_col)
+    if include_CHoCH and choch_col in bc_df.columns:
+        df[choch_col] = bc_df[choch_col].values
+        segment_cols.append(choch_col)
+    if segment_cols:
+        if price_col in bc_df.columns:
+            df[price_col] = bc_df[price_col].values
+            segment_cols.append(price_col)
+        if break_col in bc_df.columns:
+            df[break_col] = bc_df[break_col].values
+            segment_cols.append(break_col)
+
     df.set_index('date', inplace=True)
-    return df[list(result.keys())] if result else df[[]]
+    all_output_cols = list(result.keys()) + segment_cols
+    return df[all_output_cols] if all_output_cols else df[[]]
 
 
 def calculate_indicator(df, **params):

@@ -10,6 +10,7 @@ const PARAM_ENUMS = {
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
 };
 
+
 // When param key K changes, replace the value of param key V with the sub-defaults
 // for the newly selected option. Populated from param_options API data.
 const PARAM_CONTROLS = {
