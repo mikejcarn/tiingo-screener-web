@@ -86,6 +86,8 @@ def _robust_api_call(url, headers, params, max_retries=5):
 
 
 def _create_df(data, timeframe: str) -> pd.DataFrame:
+    if not data:
+        raise ValueError("No data returned from Tiingo")
     df = pd.DataFrame(data)
     if timeframe in ('daily', 'weekly'):
         df.rename(columns={'adjLow': 'Low', 'adjHigh': 'High',

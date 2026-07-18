@@ -394,6 +394,7 @@ function _readParamTree(container) {
 
 function _wireStaticButtons() {
   document.getElementById('btn-new-config').addEventListener('click', _createConfig);
+  document.getElementById('btn-clear-results').addEventListener('click', _clearResults);
   document.getElementById('btn-delete-config').addEventListener('click', _deleteConfig);
   document.getElementById('btn-save').addEventListener('click', _saveConfig);
   document.getElementById('btn-compute').addEventListener('click', _startCompute);
@@ -614,10 +615,18 @@ async function _createConfig() {
   await _selectConfig(created.id);
 }
 
+async function _clearResults() {
+  if (!_selectedId) return;
+  const name = _configData?.name || 'this config';
+  if (!confirm(`Clear all computed results for "${name}"? The config will be kept.`)) return;
+  await fetch(`/api/data/indicators/${_selectedId}`, { method: 'DELETE' });
+}
+
 async function _deleteConfig() {
   if (!_selectedId) return;
   const name = _configData?.name || 'this config';
-  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  if (!confirm(`Delete "${name}" and all its computed results? This cannot be undone.`)) return;
+  await fetch(`/api/data/indicators/${_selectedId}`, { method: 'DELETE' });
   await fetch(`/api/ind-configs/${_selectedId}`, { method: 'DELETE' });
   _runCheckedIds.delete(_selectedId);
   delete _runResults[_selectedId];

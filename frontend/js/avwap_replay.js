@@ -21,8 +21,8 @@ const C_QQ_BULL = 'rgba(239, 83, 80, 0.75)';
 // Generic anchor pool colour / style config
 // Each entry: [color, lineWidth, lineStyle]  (lineStyle: 0=solid, 1=dotted, 2=dashed)
 const ANCHOR_POOL_STYLE = {
-  ob_bull:    ['rgba(38,166,154,0.5)',  1, 0],
-  ob_bear:    ['rgba(239,83,80,0.5)',   1, 0],
+  ob_bull:    ['rgba(38,166,154,0.85)', 2, 0],
+  ob_bear:    ['rgba(239,83,80,0.85)',  2, 0],
   bos_bull:   ['rgba(38,166,154,0.5)',  1, 0],
   bos_bear:   ['rgba(239,83,80,0.5)',   1, 0],
   choch_bull: ['rgba(38,166,154,0.9)',  1, 0],

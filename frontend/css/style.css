@@ -567,6 +567,8 @@ body.dash {
 .dash-btn-sm:hover { color: #bbb; border-color: #666; }
 .dash-btn-sm-del { color: rgba(239,83,80,0.5); border-color: rgba(239,83,80,0.15); }
 .dash-btn-sm-del:hover { color: rgba(239,83,80,0.9); border-color: rgba(239,83,80,0.4); background: #111; }
+.dash-btn-sm-add { color: rgba(38,166,154,0.9); border-color: rgba(38,166,154,0.4); }
+.dash-btn-sm-add:hover { color: #fff; border-color: rgba(38,166,154,0.8); background: rgba(38,166,154,0.15); }
 
 .apikey-status { font-size: 11px; color: #888; }
 .apikey-ok  { color: rgba(38,166,154,0.9); }

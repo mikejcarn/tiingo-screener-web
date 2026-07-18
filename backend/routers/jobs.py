@@ -249,12 +249,46 @@ def clear_ohlcv():
     return {"cleared": "ohlcv"}
 
 
+@router.delete("/data/ohlcv/ticker/{ticker}")
+def delete_ticker(ticker: str):
+    """Delete all timeframes for a single ticker."""
+    ticker = ticker.upper()
+    with db._conn() as con:
+        con.execute("DELETE FROM ohlcv      WHERE ticker = ?", (ticker,))
+        con.execute("DELETE FROM fetch_log  WHERE ticker = ?", (ticker,))
+        con.execute("DELETE FROM indicators WHERE ticker = ?", (ticker,))
+    return {"deleted": ticker}
+
+
+@router.delete("/data/ohlcv/list/{list_name}")
+def delete_ticker_list(list_name: str):
+    """Delete all tickers that were fetched as part of a named ticker list."""
+    with db._conn() as con:
+        tickers = [r[0] for r in con.execute(
+            "SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list = ?", (list_name,)
+        ).fetchall()]
+        if tickers:
+            placeholders = ','.join('?' * len(tickers))
+            con.execute(f"DELETE FROM ohlcv      WHERE ticker IN ({placeholders})", tickers)
+            con.execute(f"DELETE FROM indicators  WHERE ticker IN ({placeholders})", tickers)
+            con.execute(f"DELETE FROM fetch_log   WHERE ticker IN ({placeholders})", tickers)
+    return {"deleted_list": list_name, "tickers": len(tickers)}
+
+
 @router.delete("/data/indicators")
 def clear_indicators():
     """Delete all computed indicator data."""
     with db._conn() as con:
         con.execute("DELETE FROM indicators")
     return {"cleared": "indicators"}
+
+
+@router.delete("/data/indicators/{config_id}")
+def clear_indicators_for_config(config_id: int):
+    """Delete computed indicator results for a specific config."""
+    with db._conn() as con:
+        con.execute("DELETE FROM indicators WHERE ind_conf = ?", (config_id,))
+    return {"cleared_config": config_id}
 
 
 @router.delete("/data/indicators/orphaned")

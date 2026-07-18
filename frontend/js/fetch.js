@@ -227,9 +227,23 @@ async function _runSingleQueue() {
 }
 
 async function _runBatchQueue() {
-  if (!_batchQueue.length || _batchRunning) return;
+  if (_batchRunning) return;
+
+  // Auto-add selected list if queue is empty
+  if (!_batchQueue.length) {
+    const listName = document.getElementById('fetch-list').value;
+    if (!listName) {
+      alert('Select a ticker list first.');
+      return;
+    }
+    _addBatchList();
+  }
+
   const timeframes = _getChecked('fetch-tfs');
-  if (!timeframes.length) return;
+  if (!timeframes.length) {
+    alert('Select at least one timeframe.');
+    return;
+  }
 
   _batchRunning   = true;
   _batchCancelled = false;
@@ -492,14 +506,23 @@ async function _loadStats() {
   }
   tbody.innerHTML = rows.map(r => `
     <tr>
-      <td>${r.ticker}</td>
-      <td>${r.timeframe}</td>
-      <td>${r.ticker_list || '—'}</td>
+      <td>${_esc(r.ticker)}</td>
+      <td>${_esc(r.timeframe)}</td>
+      <td>${_esc(r.ticker_list || '—')}</td>
       <td>${r.last_date || '—'}</td>
       <td>${r.rows.toLocaleString()}</td>
       <td>${r.fetched_at || '—'}</td>
+      <td><button class="tbl-del-btn" data-ticker="${_esc(r.ticker)}" title="Delete ${_esc(r.ticker)}">×</button></td>
     </tr>
   `).join('');
+  for (const btn of tbody.querySelectorAll('.tbl-del-btn')) {
+    btn.addEventListener('click', async () => {
+      const ticker = btn.dataset.ticker;
+      if (!confirm(`Delete all data for ${ticker}?`)) return;
+      await fetch(`/api/data/ohlcv/ticker/${encodeURIComponent(ticker)}`, { method: 'DELETE' });
+      _loadStats();
+    });
+  }
 }
 
 // ── History ───────────────────────────────────────────────────
@@ -522,13 +545,25 @@ async function _loadHistory() {
   }
   tbody.innerHTML = rows.map(r => `
     <tr>
-      <td>${r.session}</td>
-      <td>${r.ticker_list}</td>
-      <td>${r.timeframe}</td>
+      <td>${_esc(r.session)}</td>
+      <td>${_esc(r.ticker_list)}</td>
+      <td>${_esc(r.timeframe)}</td>
       <td>${r.tickers.toLocaleString()}</td>
       <td>${r.last_date}</td>
+      <td>${r.ticker_list !== '—'
+        ? `<button class="tbl-del-btn" data-list="${_esc(r.ticker_list)}" title="Delete list ${_esc(r.ticker_list)}">×</button>`
+        : ''}</td>
     </tr>
   `).join('');
+  for (const btn of tbody.querySelectorAll('.tbl-del-btn')) {
+    btn.addEventListener('click', async () => {
+      const list = btn.dataset.list;
+      if (!confirm(`Delete all tickers from list "${list}"?`)) return;
+      await fetch(`/api/data/ohlcv/list/${encodeURIComponent(list)}`, { method: 'DELETE' });
+      _loadStats();
+      _loadHistory();
+    });
+  }
 }
 
 // ── Buttons ───────────────────────────────────────────────────
@@ -583,6 +618,13 @@ function _wireButtons() {
   });
 
   document.getElementById('btn-refresh-stats').addEventListener('click', () => {
+    _loadStats();
+    _loadHistory();
+  });
+
+  document.getElementById('btn-clear-all').addEventListener('click', async () => {
+    if (!confirm('Delete ALL ticker data from the database?')) return;
+    await fetch('/api/data/ohlcv', { method: 'DELETE' });
     _loadStats();
     _loadHistory();
   });
