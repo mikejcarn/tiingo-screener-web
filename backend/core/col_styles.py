@@ -44,7 +44,9 @@ def col_styles_for_columns(columns: list) -> dict:
                 or col.startswith('aVWAP_CHoCH_')       # CHoCH aVWAPs
                 or col.startswith('Gap_Up_aVWAP_')      # Gap aVWAPs
                 or col.startswith('Gap_Down_aVWAP_')
-                or col.startswith('aVWAP_price_maxima_minima_')):  # PMM aVWAPs
+                or col.startswith('aVWAP_price_maxima_minima_')   # PMM aVWAPs
+                or col.startswith('aVWAP_max_')
+                or col.startswith('aVWAP_min_')):
             continue
 
         # ── aVWAP pinch ──────────────────────────────────────────────────────

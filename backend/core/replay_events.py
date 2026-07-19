@@ -276,10 +276,16 @@ _CHOCH_BULL_RE = re.compile(r'^aVWAP_CHoCH_bull_c(\d+)_(\d+)$')
 _CHOCH_BEAR_RE = re.compile(r'^aVWAP_CHoCH_bear_c(\d+)_(\d+)$')
 _GAP_UP_RE     = re.compile(r'^Gap_Up_aVWAP_c(\d+)_(\d+)$')
 _GAP_DN_RE     = re.compile(r'^Gap_Down_aVWAP_c(\d+)_(\d+)$')
-_PMM_VALLEY_RE = re.compile(r'^aVWAP_price_maxima_minima_valley_c(\d+)_(\d+)$')
-_PMM_PEAK_RE   = re.compile(r'^aVWAP_price_maxima_minima_peak_c(\d+)_(\d+)$')
-_PEAK_RE       = re.compile(r'^aVWAP_peak_c(\d+)_(\d+)$')
-_VALLEY_RE     = re.compile(r'^aVWAP_valley_c(\d+)_(\d+)$')
+_PMM_VALLEY_RE      = re.compile(r'^aVWAP_price_maxima_minima_valley_c(\d+)_(\d+)$')
+_PMM_PEAK_RE        = re.compile(r'^aVWAP_price_maxima_minima_peak_c(\d+)_(\d+)$')
+_PEAK_RE            = re.compile(r'^aVWAP_peak_c(\d+)_(\d+)$')
+_VALLEY_RE          = re.compile(r'^aVWAP_valley_c(\d+)_(\d+)$')
+_QQEMOD_BULL_RE     = re.compile(r'^aVWAP_QQEMOD_bull_(\d+)$')
+_QQEMOD_BEAR_RE     = re.compile(r'^aVWAP_QQEMOD_bear_(\d+)$')
+_QQEMOD_BULL_DOT_RE = re.compile(r'^aVWAP_QQEMOD_bull_dot_(\d+)$')
+_QQEMOD_BEAR_DOT_RE = re.compile(r'^aVWAP_QQEMOD_bear_dot_(\d+)$')
+_AVWAP_MAX_RE       = re.compile(r'^aVWAP_max_(\d+)$')
+_AVWAP_MIN_RE       = re.compile(r'^aVWAP_min_(\d+)$')
 
 
 def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
@@ -400,6 +406,40 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
             anchor_bar = int(m.group(2))
             pools['gap_dn'].append({'anchor_bar': anchor_bar, 'vf': anchor_bar})
             continue
+
+        # QQEMOD aVWAP columns — anchor from first_valid_index, da from last_valid_index
+        # so the JS stops drawing at the bar where the stored series goes NaN.
+        for _re, _key in [
+            (_QQEMOD_BULL_RE,     'qqemod_bull'),
+            (_QQEMOD_BEAR_RE,     'qqemod_bear'),
+            (_QQEMOD_BULL_DOT_RE, 'qqemod_bull_dot'),
+            (_QQEMOD_BEAR_DOT_RE, 'qqemod_bear_dot'),
+        ]:
+            m = _re.match(col)
+            if m:
+                fvi = df[col].first_valid_index()
+                lvi = df[col].last_valid_index()
+                if fvi is not None and lvi is not None:
+                    ev = {'anchor_bar': int(fvi), 'vf': int(fvi)}
+                    if int(lvi) < len(df) - 1:
+                        ev['da'] = int(lvi) + 1
+                    if _key not in pools:
+                        pools[_key] = []
+                    pools[_key].append(ev)
+                break
+
+        # minmax aVWAP columns — anchor visible from the anchor bar onward
+        for _re, _key in [
+            (_AVWAP_MAX_RE, 'avwap_max'),
+            (_AVWAP_MIN_RE, 'avwap_min'),
+        ]:
+            m = _re.match(col)
+            if m:
+                anchor_bar = int(m.group(1))
+                if _key not in pools:
+                    pools[_key] = []
+                pools[_key].append({'anchor_bar': anchor_bar, 'vf': anchor_bar})
+                break
 
         # PMM aVWAP columns are intentionally skipped here — PMM anchors are
         # recomputed dynamically in JS at each replay bar via greedyExtrema,

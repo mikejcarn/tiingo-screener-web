@@ -2,7 +2,7 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
 // Numeric params that are legitimately nullable (null = no limit / disabled).
 // These always render as a checkbox + number input regardless of current value.
-const NULLABLE_NUM_KEYS = new Set(['max_aVWAPs', 'max_anchors']);
+const NULLABLE_NUM_KEYS = new Set(['max_aVWAPs', 'max_anchors', 'periods']);
 
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
@@ -217,7 +217,7 @@ function _renderIndicatorList() {
 
   list.innerHTML = visible.map(ind => {
     const enabled = ind in savedForTf;
-    const params  = savedForTf[ind] ?? defaultsForTf[ind] ?? {};
+    const params  = { ...(defaultsForTf[ind] ?? {}), ...(savedForTf[ind] ?? {}) };
     return _renderIndicatorCard(ind, enabled, params);
   }).join('');
 
@@ -289,6 +289,10 @@ function _renderNullableNum(key, val) {
 function _renderParamValue(key, val) {
   if (val === null || val === undefined) {
     return _renderNullableNum(key, null);
+  }
+  if (NULLABLE_NUM_KEYS.has(key)) {
+    const numVal = Array.isArray(val) ? (val[0] ?? null) : (typeof val === 'number' ? val : null);
+    return _renderNullableNum(key, numVal);
   }
   if (typeof val === 'boolean') {
     return `<label class="param-field param-bool" data-key="${_esc(key)}" data-type="bool">
@@ -556,10 +560,11 @@ function _onToggle(checkbox) {
   let arrow   = head.querySelector('.ind-expand-arrow');
 
   if (enabled) {
-    const params = _pending[_activeTf]?.[ind]
-      ?? _configData?.indicators?.[_activeTf]?.[ind]
-      ?? _defaults?.defaults?.[ind]
-      ?? {};
+    const params = {
+      ...(_defaults?.defaults?.[ind] ?? {}),
+      ...(_configData?.indicators?.[_activeTf]?.[ind] ?? {}),
+      ...(_pending[_activeTf]?.[ind] ?? {}),
+    };
     let body = card.querySelector('.ind-card-body');
     if (!body) {
       body = document.createElement('div');

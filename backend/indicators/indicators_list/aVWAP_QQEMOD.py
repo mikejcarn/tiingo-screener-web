@@ -8,9 +8,17 @@ def calculate_aVWAP_QQEMOD(
     df,
     max_anchors=5,
     extend_to_end=True,
-    show_solid=True,
-    show_dotted=True,
-    qqe_params=None,
+    include_zone_aVWAPs=True,
+    include_bridge_aVWAPs=True,
+    rsi_period=6,
+    rsi_period2=6,
+    sf=5,
+    sf2=5,
+    qqe_factor=3.0,
+    qqe_factor2=1.61,
+    threshold=3,
+    bb_length=50,
+    bb_multi=0.35,
 ):
     """
     Anchor aVWAPs at QQEMOD zone extrema.
@@ -18,20 +26,26 @@ def calculate_aVWAP_QQEMOD(
     Bull zones: anchor at High maximum (prior resistance).
     Bear zones: anchor at Low minimum  (prior support).
 
-    Solid lines extend from anchor to the opposite zone transition (or chart end).
-    Dotted lines bridge consecutive same-type anchors.
+    include_zone_aVWAPs:   main aVWAP lines from anchor to zone end (or chart end).
+    include_bridge_aVWAPs: dotted lines bridging consecutive same-type zone anchors.
 
     Output columns:
-        aVWAP_QQEMOD_bull_{anchor_bar}      — solid, from bull-zone peak
-        aVWAP_QQEMOD_bear_{anchor_bar}      — solid, from bear-zone trough
-        aVWAP_QQEMOD_bull_dot_{anchor_bar}  — dotted, bull-to-bull bridge
-        aVWAP_QQEMOD_bear_dot_{anchor_bar}  — dotted, bear-to-bear bridge
+        aVWAP_QQEMOD_bull_{anchor_bar}      — zone line, from bull-zone peak
+        aVWAP_QQEMOD_bear_{anchor_bar}      — zone line, from bear-zone trough
+        aVWAP_QQEMOD_bull_dot_{anchor_bar}  — bridge line, bull-to-bull
+        aVWAP_QQEMOD_bear_dot_{anchor_bar}  — bridge line, bear-to-bear
     """
     df = df.reset_index()
     df['date'] = pd.to_datetime(df['date'])
 
     base_cols = [c for c in ['Open', 'High', 'Low', 'Close', 'Volume', 'date'] if c in df.columns]
-    qqe_df = get_indicators(df[base_cols].copy(), ['QQEMOD'], {'QQEMOD': qqe_params or {}})
+    qqe_params = {
+        'rsi_period': rsi_period, 'rsi_period2': rsi_period2,
+        'sf': sf, 'sf2': sf2,
+        'qqe_factor': qqe_factor, 'qqe_factor2': qqe_factor2,
+        'threshold': threshold, 'bb_length': bb_length, 'bb_multi': bb_multi,
+    }
+    qqe_df = get_indicators(df[base_cols].copy(), ['QQEMOD'], {'QQEMOD': qqe_params})
 
     required = ['QQE1_Above_Upper', 'QQE1_Below_Lower',
                 'QQE2_Above_Threshold', 'QQE2_Below_Threshold', 'QQE2_Above_TL']
@@ -80,7 +94,7 @@ def calculate_aVWAP_QQEMOD(
 
     result = {}
 
-    if show_solid:
+    if include_zone_aVWAPs:
         for seg in segments:
             anchor = seg['anchor']
             direction = 'bull' if seg['type'] == 'bull' else 'bear'
@@ -90,7 +104,7 @@ def calculate_aVWAP_QQEMOD(
             avwap.iloc[end_idx - anchor + 1:] = np.nan
             result[col] = avwap
 
-    if show_dotted:
+    if include_bridge_aVWAPs:
         for seg_type, direction in (('bull', 'bull'), ('bear', 'bear')):
             same_type = [s for s in segments if s['type'] == seg_type]
             for k in range(len(same_type) - 1):

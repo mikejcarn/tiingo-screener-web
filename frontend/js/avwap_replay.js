@@ -29,8 +29,14 @@ const ANCHOR_POOL_STYLE = {
   choch_bear: ['rgba(239,83,80,0.9)',   1, 0],
   gap_up:     ['rgba(38,166,154,0.5)',  1, 2],
   gap_dn:     ['rgba(239,83,80,0.5)',   1, 2],
-  pmm_valley: ['rgba(38,166,154,0.75)', 2, 0],
-  pmm_peak:   ['rgba(239,83,80,0.75)',  2, 0],
+  pmm_valley:      ['rgba(38,166,154,0.75)', 2, 0],
+  pmm_peak:        ['rgba(239,83,80,0.75)',  2, 0],
+  qqemod_bull:     ['rgba(239,83,80,0.75)',  1, 0],
+  qqemod_bear:     ['rgba(38,166,154,0.75)', 1, 0],
+  qqemod_bull_dot: ['rgba(239,83,80,0.45)',  1, 1],
+  qqemod_bear_dot: ['rgba(38,166,154,0.45)', 1, 1],
+  avwap_max:       ['rgba(239,83,80,0.85)',  2, 0],
+  avwap_min:       ['rgba(38,166,154,0.85)', 2, 0],
 };
 
 
