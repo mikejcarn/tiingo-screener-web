@@ -31,12 +31,12 @@ const ANCHOR_POOL_STYLE = {
   gap_dn:     ['rgba(239,83,80,0.5)',   1, 2],
   pmm_valley:      ['rgba(38,166,154,0.75)', 2, 0],
   pmm_peak:        ['rgba(239,83,80,0.75)',  2, 0],
-  qqemod_bull:     ['rgba(239,83,80,0.75)',  1, 0],
-  qqemod_bear:     ['rgba(38,166,154,0.75)', 1, 0],
-  qqemod_bull_dot: ['rgba(239,83,80,0.45)',  1, 1],
-  qqemod_bear_dot: ['rgba(38,166,154,0.45)', 1, 1],
-  avwap_max:       ['rgba(239,83,80,0.85)',  2, 0],
-  avwap_min:       ['rgba(38,166,154,0.85)', 2, 0],
+  qqemod_bull:     ['rgba(239,83,80,0.9)',  3, 0],
+  qqemod_bear:     ['rgba(38,166,154,0.9)', 3, 0],
+  qqemod_bull_dot: ['rgba(239,83,80,0.7)',  2, 1],
+  qqemod_bear_dot: ['rgba(38,166,154,0.7)', 2, 1],
+  avwap_max:       ['rgba(255,0,0,1.0)',      1, 0],
+  avwap_min:       ['rgba(0,255,255,0.85)',  1, 0],
 };
 
 
@@ -290,10 +290,12 @@ export class DynamicVWAPEngine {
         const ev = pool.events[i];
         if (ev.vf > n) continue;
         if (ev.da !== undefined && n >= ev.da) continue;
-        active.push(ev.anchor_bar);
+        // eb (end_bar): freeze the line at this bar rather than extending to n
+        active.push({ ab: ev.anchor_bar, toIdx: ev.eb !== undefined ? Math.min(ev.eb, n) : n });
       }
       for (let i = 0; i < pool.series.length; i++) {
-        pool.series[i].setData(active[i] !== undefined ? this._vwapLine(active[i], n) : []);
+        const item = active[i];
+        pool.series[i].setData(item !== undefined ? this._vwapLine(item.ab, item.toIdx) : []);
       }
     }
 

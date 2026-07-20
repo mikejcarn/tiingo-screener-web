@@ -407,8 +407,9 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
             pools['gap_dn'].append({'anchor_bar': anchor_bar, 'vf': anchor_bar})
             continue
 
-        # QQEMOD aVWAP columns — anchor from first_valid_index, da from last_valid_index
-        # so the JS stops drawing at the bar where the stored series goes NaN.
+        # QQEMOD aVWAP columns — anchor from first_valid_index, eb from last_valid_index.
+        # eb (end_bar) freezes the line at its natural endpoint rather than hiding it,
+        # so all N anchors remain visible simultaneously regardless of extend_to_end.
         for _re, _key in [
             (_QQEMOD_BULL_RE,     'qqemod_bull'),
             (_QQEMOD_BEAR_RE,     'qqemod_bear'),
@@ -422,7 +423,7 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
                 if fvi is not None and lvi is not None:
                     ev = {'anchor_bar': int(fvi), 'vf': int(fvi)}
                     if int(lvi) < len(df) - 1:
-                        ev['da'] = int(lvi) + 1
+                        ev['eb'] = int(lvi)
                     if _key not in pools:
                         pools[_key] = []
                     pools[_key].append(ev)
@@ -488,11 +489,9 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     peaks_cfgs   = avwap_p.get('peaks_params',   [])
     valleys_cfgs = avwap_p.get('valleys_params',  [])
 
-    if 'aVWAP_QQEMOD' in ind_params:
-        max_qqemod = ind_params['aVWAP_QQEMOD'].get('max_anchors', 5)
-    else:
-        qqemod_cfg = avwap_p.get('QQEMOD_params', {})
-        max_qqemod = qqemod_cfg.get('max_anchors', 5) if avwap_p.get('QQEMOD', False) else 0
+    # Legacy QQEMOD rendering via qqemod_events/_qbPool/_qlPool is disabled —
+    # the column-based aVWAP_QQEMOD_* system handles all rendering now.
+    max_qqemod = 0
 
     # PMM configs — sent to JS so greedyExtrema can rerun at each replay bar
     pmm_enabled = avwap_p.get('price_maxima_minima', False)

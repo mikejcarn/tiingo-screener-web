@@ -4,7 +4,7 @@ import numpy as np
 def calculate_qqemod(
     df,
     rsi_period=6,
-    rsi_period2=6,
+    rsi_period2=5,
     sf=5,
     sf2=5,
     qqe_factor=3.0,

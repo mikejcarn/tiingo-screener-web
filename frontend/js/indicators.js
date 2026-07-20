@@ -2,7 +2,7 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
 // Numeric params that are legitimately nullable (null = no limit / disabled).
 // These always render as a checkbox + number input regardless of current value.
-const NULLABLE_NUM_KEYS = new Set(['max_aVWAPs', 'max_anchors', 'periods']);
+const NULLABLE_NUM_KEYS = new Set(['max_aVWAPs', 'max_anchors', 'lookback_bars']);
 
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {

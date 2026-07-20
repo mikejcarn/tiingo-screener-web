@@ -8,10 +8,12 @@ def calculate_aVWAP_QQEMOD(
     df,
     max_anchors=5,
     extend_to_end=True,
-    include_zone_aVWAPs=True,
-    include_bridge_aVWAPs=True,
+    peak_to_valley=True,
+    valley_to_peak=True,
+    peak_to_peak=True,
+    valley_to_valley=True,
     rsi_period=6,
-    rsi_period2=6,
+    rsi_period2=5,
     sf=5,
     sf2=5,
     qqe_factor=3.0,
@@ -23,17 +25,19 @@ def calculate_aVWAP_QQEMOD(
     """
     Anchor aVWAPs at QQEMOD zone extrema.
 
-    Bull zones: anchor at High maximum (prior resistance).
-    Bear zones: anchor at Low minimum  (prior support).
+    Bull zones: anchor at High maximum (peak of the bull zone)  → red line.
+    Bear zones: anchor at Low minimum  (bottom of the bear zone) → teal line.
 
-    include_zone_aVWAPs:   main aVWAP lines from anchor to zone end (or chart end).
-    include_bridge_aVWAPs: dotted lines bridging consecutive same-type zone anchors.
+    peak_to_valley:   solid red line from bull-zone peak, runs until next bear zone
+    valley_to_peak:   solid teal line from bear-zone low, runs until next bull zone
+    peak_to_peak:     dotted red line from bull-zone peak to next bull-zone peak
+    valley_to_valley: dotted teal line from bear-zone low to next bear-zone low
 
     Output columns:
-        aVWAP_QQEMOD_bull_{anchor_bar}      — zone line, from bull-zone peak
-        aVWAP_QQEMOD_bear_{anchor_bar}      — zone line, from bear-zone trough
-        aVWAP_QQEMOD_bull_dot_{anchor_bar}  — bridge line, bull-to-bull
-        aVWAP_QQEMOD_bear_dot_{anchor_bar}  — bridge line, bear-to-bear
+        aVWAP_QQEMOD_bull_{anchor_bar}      — peak_to_valley line
+        aVWAP_QQEMOD_bear_{anchor_bar}      — valley_to_peak line
+        aVWAP_QQEMOD_bull_dot_{anchor_bar}  — peak_to_peak line
+        aVWAP_QQEMOD_bear_dot_{anchor_bar}  — valley_to_valley line
     """
     df = df.reset_index()
     df['date'] = pd.to_datetime(df['date'])
@@ -94,34 +98,43 @@ def calculate_aVWAP_QQEMOD(
 
     result = {}
 
-    if include_zone_aVWAPs:
-        for seg in segments:
-            anchor = seg['anchor']
-            direction = 'bull' if seg['type'] == 'bull' else 'bear'
-            col = f'aVWAP_QQEMOD_{direction}_{anchor}'
+    for seg in segments:
+        anchor = seg['anchor']
+        if seg['type'] == 'bull' and peak_to_valley:
+            col = f'aVWAP_QQEMOD_bull_{anchor}'
+            avwap = calculate_avwap(df, anchor).copy()
+            end_idx = last_valid if extend_to_end else seg['end']
+            avwap.iloc[end_idx - anchor + 1:] = np.nan
+            result[col] = avwap
+        elif seg['type'] == 'bear' and valley_to_peak:
+            col = f'aVWAP_QQEMOD_bear_{anchor}'
             avwap = calculate_avwap(df, anchor).copy()
             end_idx = last_valid if extend_to_end else seg['end']
             avwap.iloc[end_idx - anchor + 1:] = np.nan
             result[col] = avwap
 
-    if include_bridge_aVWAPs:
-        for seg_type, direction in (('bull', 'bull'), ('bear', 'bear')):
-            same_type = [s for s in segments if s['type'] == seg_type]
-            for k in range(len(same_type) - 1):
-                anchor = same_type[k]['anchor']
-                next_anchor = same_type[k + 1]['anchor']
-                col = f'aVWAP_QQEMOD_{direction}_dot_{anchor}'
+    for seg_type, direction, enabled in (
+        ('bull', 'bull', peak_to_peak),
+        ('bear', 'bear', valley_to_valley),
+    ):
+        if not enabled:
+            continue
+        same_type = [s for s in segments if s['type'] == seg_type]
+        for k in range(len(same_type) - 1):
+            anchor = same_type[k]['anchor']
+            next_anchor = same_type[k + 1]['anchor']
+            col = f'aVWAP_QQEMOD_{direction}_dot_{anchor}'
+            avwap = calculate_avwap(df, anchor).copy()
+            end_idx = last_valid if extend_to_end else next_anchor
+            avwap.iloc[end_idx - anchor + 1:] = np.nan
+            result[col] = avwap
+        if same_type:
+            anchor = same_type[-1]['anchor']
+            col = f'aVWAP_QQEMOD_{direction}_dot_{anchor}'
+            if col not in result:
                 avwap = calculate_avwap(df, anchor).copy()
-                end_idx = last_valid if extend_to_end else next_anchor
-                avwap.iloc[end_idx - anchor + 1:] = np.nan
+                avwap.iloc[last_valid - anchor + 1:] = np.nan
                 result[col] = avwap
-            if same_type:
-                anchor = same_type[-1]['anchor']
-                col = f'aVWAP_QQEMOD_{direction}_dot_{anchor}'
-                if col not in result:
-                    avwap = calculate_avwap(df, anchor).copy()
-                    avwap.iloc[last_valid - anchor + 1:] = np.nan
-                    result[col] = avwap
 
     for col, series in result.items():
         df[col] = series
