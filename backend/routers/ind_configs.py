@@ -134,6 +134,14 @@ def _get_param_options(name: str) -> dict:
         return {}
 
 
+def _get_param_labels(name: str) -> dict:
+    try:
+        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
+        return getattr(mod, 'param_labels', {})
+    except ImportError:
+        return {}
+
+
 @router.get("/indicator-defaults")
 def indicator_defaults():
     available = sorted(
@@ -143,4 +151,7 @@ def indicator_defaults():
     defaults = {name: _get_indicator_defaults(name) for name in available}
     param_options = {name: opts for name in available
                      if (opts := _get_param_options(name))}
-    return {"available": available, "defaults": defaults, "param_options": param_options}
+    param_labels = {name: lbls for name in available
+                    if (lbls := _get_param_labels(name))}
+    return {"available": available, "defaults": defaults,
+            "param_options": param_options, "param_labels": param_labels}

@@ -2,7 +2,8 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
 // Numeric params that are legitimately nullable (null = no limit / disabled).
 // These always render as a checkbox + number input regardless of current value.
-const NULLABLE_NUM_KEYS = new Set(['max_aVWAPs', 'max_anchors', 'lookback_bars']);
+const NULLABLE_NUM_KEYS  = new Set(['max_aVWAPs', 'max_anchors', 'lookback_bars']);
+const NULLABLE_LIST_KEYS = new Set(['BoS_swing_lengths', 'CHoCH_swing_lengths']);
 
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
@@ -24,6 +25,8 @@ let _selectedId  = null;
 let _configData  = null; // {id, name, indicators: {tf: {ind: params}}}
 let _defaults    = null; // {available: [...], defaults: {ind: params}}
 let _paramOptions = {}; // {ind: {param_key: {option_val: sub_params}}}
+let _paramLabels  = {}; // {ind: {param_key: display_label}}
+let _currentParamLabels = {}; // active indicator's labels during rendering
 let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
 let _dirty       = false;
@@ -83,6 +86,7 @@ async function _loadConfigList() {
 async function _loadDefaults() {
   _defaults = await fetch('/api/indicator-defaults').then(r => r.json());
   _paramOptions = _defaults.param_options || {};
+  _paramLabels  = _defaults.param_labels  || {};
 }
 
 async function _selectConfig(id, { toggleQueue = true } = {}) {
@@ -250,6 +254,7 @@ function _normalizeParams(ind, params) {
 
 function _renderIndicatorCard(ind, enabled, params) {
   const normalized = _normalizeParams(ind, params);
+  _currentParamLabels = _paramLabels[ind] || {};
   const bodyHtml = enabled
     ? `<div class="ind-card-body">
          <div class="param-tree">${_renderParamTree(normalized)}</div>
@@ -277,16 +282,30 @@ function _renderParamTree(params) {
 
 function _renderNullableNum(key, val) {
   const enabled = val !== null && val !== undefined;
+  const label = _currentParamLabels[key] ?? key;
   return `<div class="param-field param-nullable" data-key="${_esc(key)}" data-type="nullable_num">
     <input type="checkbox" class="param-checkbox param-nullable-toggle"${enabled ? ' checked' : ''}>
-    <span class="param-key">${_esc(key)}</span>
+    <span class="param-key">${_esc(label)}</span>
     <input type="number" value="${enabled ? val : ''}" step="1"
       class="param-input param-num param-nullable-value"${enabled ? '' : ' disabled'}
       placeholder="∞">
   </div>`;
 }
 
+function _renderNullableList(key, val) {
+  const enabled = Array.isArray(val) && val.length > 0;
+  const label = _currentParamLabels[key] ?? key;
+  return `<div class="param-field param-nullable" data-key="${_esc(key)}" data-type="nullable_list">
+    <input type="checkbox" class="param-checkbox param-nullable-list-toggle"${enabled ? ' checked' : ''}>
+    <span class="param-key">${_esc(label)}</span>
+    <input type="text" value="${enabled ? val.join(', ') : ''}"
+      class="param-input param-text param-nullable-list-value"${enabled ? '' : ' disabled'}
+      placeholder="e.g. 5, 25">
+  </div>`;
+}
+
 function _renderParamValue(key, val) {
+  const label = _currentParamLabels[key] ?? key;
   if (val === null || val === undefined) {
     return _renderNullableNum(key, null);
   }
@@ -294,17 +313,20 @@ function _renderParamValue(key, val) {
     const numVal = Array.isArray(val) ? (val[0] ?? null) : (typeof val === 'number' ? val : null);
     return _renderNullableNum(key, numVal);
   }
+  if (NULLABLE_LIST_KEYS.has(key)) {
+    return _renderNullableList(key, Array.isArray(val) ? val : []);
+  }
   if (typeof val === 'boolean') {
     return `<label class="param-field param-bool" data-key="${_esc(key)}" data-type="bool">
       <input type="checkbox"${val ? ' checked' : ''} class="param-checkbox">
-      <span class="param-key">${_esc(key)}</span>
+      <span class="param-key">${_esc(label)}</span>
     </label>`;
   }
   if (typeof val === 'number') {
     if (NULLABLE_NUM_KEYS.has(key)) return _renderNullableNum(key, val);
     const isInt = Number.isInteger(val);
     return `<div class="param-field" data-key="${_esc(key)}" data-type="${isInt ? 'int' : 'float'}">
-      <span class="param-key">${_esc(key)}</span>
+      <span class="param-key">${_esc(label)}</span>
       <input type="number" value="${val}" step="${isInt ? '1' : 'any'}" class="param-input param-num">
     </div>`;
   }
@@ -313,25 +335,25 @@ function _renderParamValue(key, val) {
     if (opts) {
       const options = opts.map(o => `<option value="${_esc(o)}"${o === val ? ' selected' : ''}>${_esc(o)}</option>`).join('');
       return `<div class="param-field" data-key="${_esc(key)}" data-type="string">
-        <span class="param-key">${_esc(key)}</span>
+        <span class="param-key">${_esc(label)}</span>
         <select class="param-input param-select">${options}</select>
       </div>`;
     }
     return `<div class="param-field" data-key="${_esc(key)}" data-type="string">
-      <span class="param-key">${_esc(key)}</span>
+      <span class="param-key">${_esc(label)}</span>
       <input type="text" value="${_esc(val)}" class="param-input param-text">
     </div>`;
   }
   if (Array.isArray(val)) {
     if (val.length === 0 || val.every(v => typeof v === 'number')) {
       return `<div class="param-field" data-key="${_esc(key)}" data-type="list_num">
-        <span class="param-key">${_esc(key)}</span>
+        <span class="param-key">${_esc(label)}</span>
         <input type="text" value="${val.join(', ')}" class="param-input param-text" placeholder="e.g. 50, 200">
       </div>`;
     }
     // Complex array (list of dicts, etc.) → JSON textarea
     return `<div class="param-field param-wide" data-key="${_esc(key)}" data-type="json">
-      <span class="param-key">${_esc(key)}</span>
+      <span class="param-key">${_esc(label)}</span>
       <textarea class="param-input param-json">${_esc(JSON.stringify(val, null, 2))}</textarea>
     </div>`;
   }
@@ -342,7 +364,7 @@ function _renderParamValue(key, val) {
       : '<span class="param-none">no additional parameters</span>';
     return `<div class="param-group${isInline ? ' param-inline' : ''}" data-key="${_esc(key)}" data-type="object">
       <div class="param-group-head">
-        <span class="param-group-arrow">▾</span>${_esc(key)}
+        <span class="param-group-arrow">▾</span>${_esc(label)}
       </div>
       <div class="param-group-body">${body}</div>
     </div>`;
@@ -378,6 +400,17 @@ function _readParamTree(container) {
             result[key] = isNaN(n) ? null : n;
           } else {
             result[key] = null;
+          }
+          break;
+        }
+        case 'nullable_list': {
+          const toggle = child.querySelector('.param-nullable-list-toggle');
+          if (toggle?.checked) {
+            const textEl = child.querySelector('.param-nullable-list-value');
+            const parts = (textEl?.value || '').split(',').map(v => v.trim()).filter(Boolean);
+            result[key] = parts.map(v => v.includes('.') ? parseFloat(v) : parseInt(v));
+          } else {
+            result[key] = [];
           }
           break;
         }
@@ -503,6 +536,12 @@ function _wireListEvents() {
         numEl.disabled = !e.target.checked;
         if (e.target.checked && !numEl.value) numEl.value = '5';
       }
+    }
+
+    // Nullable-list toggle: enable/disable the text input
+    if (e.target.classList.contains('param-nullable-list-toggle')) {
+      const textEl = e.target.closest('.param-nullable')?.querySelector('.param-nullable-list-value');
+      if (textEl) textEl.disabled = !e.target.checked;
     }
 
     // When a dropdown with param_options changes, swap the dependent sub-param group

@@ -1,6 +1,6 @@
 import pandas as pd
 from backend.indicators.indicators import get_indicators
-from backend.indicators.indicators_list.aVWAP import calculate_avwap
+from backend.indicators.indicators_list._aVWAP import calculate_avwap
 
 
 def calculate_avwap_pinch(

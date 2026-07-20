@@ -1,22 +1,30 @@
 import pandas as pd
 from smartmoneyconcepts import smc
 
-def calculate_BoS_CHoCH(df, swing_lengths=None, swing_length=25,
+def _to_list(val):
+    if val is None or val == []:
+        return None
+    return [val] if isinstance(val, (int, float)) else list(val)
+
+
+def calculate_BoS_CHoCH(df, swing_lengths=[25],
                          show_bos=True, show_choch=True,
-                         BoS_swing_lengths=None, CHoCH_swing_lengths=None):
-    # Per-signal swing lengths: BoS and CHoCH can use different lookbacks.
-    # When either is specified, only the listed swing lengths are active for that signal type.
+                         BoS_swing_lengths=[], CHoCH_swing_lengths=[]):
+    BoS_swing_lengths   = _to_list(BoS_swing_lengths)
+    CHoCH_swing_lengths = _to_list(CHoCH_swing_lengths)
+
     if BoS_swing_lengths is not None or CHoCH_swing_lengths is not None:
-        _bos_sls   = set(BoS_swing_lengths  or [])
-        _choch_sls = set(CHoCH_swing_lengths or [])
-        # Compute the union so we only run each swing length once
-        if swing_lengths is None:
-            swing_lengths = sorted(_bos_sls | _choch_sls)
+        _bos_sls   = set(BoS_swing_lengths)   if BoS_swing_lengths   is not None else None
+        _choch_sls = set(CHoCH_swing_lengths) if CHoCH_swing_lengths is not None else None
+        explicit = (_bos_sls or set()) | (_choch_sls or set())
+        fallback = set(swing_lengths) if (_bos_sls is None or _choch_sls is None) else set()
+        swing_lengths = sorted(explicit | fallback)
     else:
-        _bos_sls   = None   # None = use global show_bos / show_choch flags
+        _bos_sls   = None
         _choch_sls = None
-        if swing_lengths is None:
-            swing_lengths = [swing_length]
+
+    if not swing_lengths:
+        return {}
 
     df = df.rename(columns={
         'Open': 'open', 'Close': 'close',
@@ -52,6 +60,12 @@ def calculate_BoS_CHoCH(df, swing_lengths=None, swing_length=25,
         out[f'BoS_CHoCH_Break_Index_{sl}'] = tmp[f'BoS_CHoCH_Break_Index_{sl}']
 
     return out
+
+param_labels = {
+    'BoS_swing_lengths':   'BoS_swing_lengths [override]',
+    'CHoCH_swing_lengths': 'CHoCH_swing_lengths [override]',
+}
+
 
 def calculate_indicator(df, **params):
     """
