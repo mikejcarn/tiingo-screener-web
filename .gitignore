@@ -5,4 +5,5 @@ __pycache__/
 data/tickers/
 data/indicators/
 data/scans/
+data/screener.db
 .env
