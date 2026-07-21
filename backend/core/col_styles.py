@@ -123,9 +123,9 @@ def col_styles_for_columns(columns: list) -> dict:
 
         # ── ZScore bands ─────────────────────────────────────────────────────
         elif col == 'ZScore_Mean':
-            _add(col, colors['yellow'], 2, 'solid')
-        elif col in ('ZScore_Upper', 'ZScore_Lower'):
-            _add(col, colors['yellow'], 1, 'solid')
+            _add(col, 'rgba(250,250,0,0.75)', 2, 'solid')
+        elif col.startswith('ZScore_Upper_') or col.startswith('ZScore_Lower_'):
+            _add(col, 'rgba(250,250,0,0.35)', 1, 'dashed')
 
         # ── POC ──────────────────────────────────────────────────────────────
         elif col == 'POC':

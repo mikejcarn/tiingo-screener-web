@@ -74,6 +74,7 @@ button:hover { background: #1a1a1a; }
   padding: 4px 6px; border-radius: 3px; font-size: 12px; cursor: pointer;
 }
 #lock-mode:focus { outline: none; }
+#lock-mode.active { color: #26a69a; border-color: rgba(38,166,154,0.4); }
 
 .nav-inp {
   background: #111; color: #bbb; border: 1px solid #2a2a2a;

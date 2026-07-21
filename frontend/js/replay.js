@@ -18,9 +18,9 @@ let current  = 0;
 let playing  = false;
 let fps      = 8;
 let playTimer = null;
-let autoFit    = false;
-let lockMode   = null;   // 'start' | 'end' | 'bar' | 'date'
-let lockValue  = null;   // string
+let autoFit    = localStorage.getItem('replay_autofit') === 'true';
+let lockMode   = localStorage.getItem('replay_lock_mode')  || null;
+let lockValue  = localStorage.getItem('replay_lock_value') || null;
 
 // DOM refs
 const scrubber    = document.getElementById('scrubber');
@@ -180,6 +180,7 @@ function _updateBarInfo() {
 function _setAutoFit(val) {
   autoFit = val;
   btnAutoFit.classList.toggle('active', autoFit);
+  try { localStorage.setItem('replay_autofit', autoFit); } catch {}
   if (autoFit && chart) chart.fitContent();
 }
 

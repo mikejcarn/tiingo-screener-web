@@ -19,7 +19,7 @@ param_options = {
 
 def calculate_zscore_probability(df,
                                  std_lookback=75,
-                                 band_std=2.0,
+                                 band_std=[2.0],
                                  show_centreline=True,
                                  centreline='peaks_valleys_avg',
                                  centreline_params=None):
@@ -75,13 +75,14 @@ def calculate_zscore_probability(df,
     dev_std = price_deviation.rolling(std_lookback).std()
     z_score = price_deviation / dev_std
 
-    result = {
-        'ZScore':       z_score,
-        'ZScore_Upper': mean_line + band_std * dev_std,
-        'ZScore_Lower': mean_line - band_std * dev_std,
-    }
+    result = {'ZScore': z_score}
     if show_centreline:
         result['ZScore_Mean'] = mean_line
+
+    for std_val in (band_std or []):
+        label = f"{std_val:g}"
+        result[f'ZScore_Upper_{label}'] = mean_line + std_val * dev_std
+        result[f'ZScore_Lower_{label}'] = mean_line - std_val * dev_std
 
     return result
 

@@ -141,11 +141,10 @@ def _extract_fvg_segments(df: pd.DataFrame, params: dict = None) -> list:
             's': int(idx), 'e': end, 'p': price,
             'm': is_mit, 'dir': 'bull' if v > 0 else 'bear',
         })
-    return _add_displaced_at(
-        events,
-        max_unmitigated=params.get('max_unmitigated'),
-        max_mitigated=params.get('max_mitigated'),
-    )
+    # For FVG: None (unchecked checkbox) means show none, not unlimited.
+    max_unmitigated = params.get('max_unmitigated') or 0
+    max_mitigated   = params.get('max_mitigated')   or 0
+    return _add_displaced_at(events, max_unmitigated=max_unmitigated, max_mitigated=max_mitigated)
 
 
 def _extract_ob_segments(df: pd.DataFrame, params: dict = None) -> list:

@@ -171,26 +171,43 @@ function _wireNav() {
   function _updateLockUI() {
     lockValueEl.style.display = _needsValue() ? '' : 'none';
     lockValueEl.placeholder   = lockModeEl.value === 'bar' ? 'bar #' : 'YYYY-MM-DD';
+    lockModeEl.classList.toggle('active', lockModeEl.value !== 'start');
   }
 
   function _commitLock() {
     applyRangeLock(lockModeEl.value, _needsValue() ? (lockValueEl.value.trim() || null) : null);
   }
 
+  function _saveLock() {
+    try {
+      localStorage.setItem('replay_lock_mode',  lockModeEl.value);
+      localStorage.setItem('replay_lock_value', lockValueEl.value.trim());
+    } catch {}
+  }
+
+  // Restore persisted lock state before first apply
+  const _savedLockMode  = localStorage.getItem('replay_lock_mode');
+  const _savedLockValue = localStorage.getItem('replay_lock_value');
+  if (_savedLockMode) {
+    lockModeEl.value  = _savedLockMode;
+    lockValueEl.value = _savedLockValue || '';
+  }
+
   lockModeEl.addEventListener('change', () => {
     _updateLockUI();
     _commitLock();
+    _saveLock();
   });
 
   // Digits only for bar mode; commit on Enter or blur
   lockValueEl.addEventListener('input', () => {
     if (lockModeEl.value === 'bar') lockValueEl.value = lockValueEl.value.replace(/\D/g, '');
   });
-  lockValueEl.addEventListener('change', _commitLock);
+  lockValueEl.addEventListener('change', () => { _commitLock(); _saveLock(); });
   lockValueEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { lockValueEl.blur(); } });
 
   _updateLockUI();
-  _commitLock(); // apply start mode immediately on page load
+  _commitLock(); // apply restored (or default) lock on page load
 
   // Help overlay
   const helpOverlay = document.getElementById('help-overlay');
@@ -216,9 +233,20 @@ function _wireNav() {
   }
   btnFullscreen.addEventListener('click', _toggleFullscreen);
   document.addEventListener('fullscreenchange', () => {
-    btnFullscreen.classList.toggle('active', !!document.fullscreenElement);
+    const isFs = !!document.fullscreenElement;
+    btnFullscreen.classList.toggle('active', isFs);
+    try { localStorage.setItem('replay_fullscreen', isFs); } catch {}
     setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
   });
+
+  // Restore fullscreen on reload — glow immediately, attempt re-entry
+  if (localStorage.getItem('replay_fullscreen') === 'true') {
+    btnFullscreen.classList.add('active');
+    document.body.requestFullscreen().catch(() => {
+      btnFullscreen.classList.remove('active');
+      try { localStorage.removeItem('replay_fullscreen'); } catch {}
+    });
+  }
 
   // Global keyboard shortcuts
   const _lockModes = ['start', 'end', 'bar', 'date'];
@@ -236,6 +264,7 @@ function _wireNav() {
       lockModeEl.value = _lockModes[next];
       _updateLockUI();
       _commitLock();
+      _saveLock();
       return;
     }
     if (e.key === 'Enter' && _needsValue()) {
