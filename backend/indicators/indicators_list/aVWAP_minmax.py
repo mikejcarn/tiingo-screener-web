@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from backend.indicators.indicators_list._aVWAP import calculate_avwap
+from backend.indicators.indicators_list.aVWAP import calculate_avwap
 
 
 def _greedy_extrema(values, n, spacing, mode):

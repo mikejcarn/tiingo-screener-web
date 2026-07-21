@@ -142,11 +142,14 @@ def _get_param_labels(name: str) -> dict:
         return {}
 
 
+# Utility modules that exist as indicators but should not appear in the UI
+_HIDDEN_INDICATORS = {'aVWAP'}
+
 @router.get("/indicator-defaults")
 def indicator_defaults():
     available = sorted(
         f.stem for f in INDICATORS_LIST_DIR.glob("*.py")
-        if not f.stem.startswith("_")
+        if not f.stem.startswith("_") and f.stem not in _HIDDEN_INDICATORS
     )
     defaults = {name: _get_indicator_defaults(name) for name in available}
     param_options = {name: opts for name in available

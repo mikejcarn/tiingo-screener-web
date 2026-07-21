@@ -238,9 +238,14 @@ function _normalizeParams(ind, params) {
   for (const [key, subOpts] of Object.entries(indOpts)) {
     const targetKey = PARAM_CONTROLS[key];
     if (!targetKey) continue;
-    if (result[key] !== undefined && (result[targetKey] === null || result[targetKey] === undefined)) {
-      result[targetKey] = { ...(subOpts[result[key]] ?? {}) };
-    }
+    if (result[key] === undefined) continue;
+    const defaults = subOpts[result[key]] ?? {};
+    const existing = result[targetKey] ?? {};
+    // Keep only keys that belong to this option's defaults, dropping stale keys
+    const filtered = Object.fromEntries(
+      Object.entries(existing).filter(([k]) => k in defaults)
+    );
+    result[targetKey] = { ...defaults, ...filtered };
   }
   // Recurse so nested levels (e.g. centreline→centreline_params inside custom_params)
   // are also normalized.
