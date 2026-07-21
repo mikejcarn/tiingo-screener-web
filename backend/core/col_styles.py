@@ -127,9 +127,7 @@ def col_styles_for_columns(columns: list) -> dict:
         elif col.startswith('ZScore_Upper_') or col.startswith('ZScore_Lower_'):
             _add(col, 'rgba(250,250,0,0.35)', 1, 'dashed')
 
-        # ── POC ──────────────────────────────────────────────────────────────
-        elif col == 'POC':
-            _add(col, colors['orange_poc'], 6)
+        # POC_* columns are rendered as segment events — skip static line series
 
         # ── SMA ──────────────────────────────────────────────────────────────
         elif col.startswith('SMA_'):

@@ -28,11 +28,13 @@ const SEG_COLORS = {
   choch_bear: 'rgba(239,83,80,0.9)',
   liq_bull:   'rgba(255,165,0,0.8)',
   liq_bear:   'rgba(255,165,0,0.8)',
+  gap_bull:   'rgba(38,166,154,0.4)',
+  gap_bear:   'rgba(239,83,80,0.4)',
 };
 
 // Segment line widths and styles (match original app)
-const SEG_WIDTH  = { fvg: 1, ob: 8, bos: 1, liq: 1 };
-const SEG_LSTYLE = { fvg: 2, ob: 0, bos: 0, liq: 0 };  // 0=solid, 2=dashed
+const SEG_WIDTH  = { fvg: 1, ob: 8, bos: 1, liq: 1, gap: 1, poc: 4 };
+const SEG_LSTYLE = { fvg: 2, ob: 0, bos: 0, liq: 0, gap: 0, poc: 0 };  // 0=solid, 2=dashed
 
 export class ChartManager {
   constructor(container) {
@@ -208,6 +210,8 @@ export class ChartManager {
     if (type === 'fvg')  return ev.dir === 'bull' ? SEG_COLORS.fvg_bull  : SEG_COLORS.fvg_bear;
     if (type === 'ob')   return ev.dir === 'bull' ? SEG_COLORS.ob_bull   : SEG_COLORS.ob_bear;
     if (type === 'liq')  return ev.dir === 'bull' ? SEG_COLORS.liq_bull  : SEG_COLORS.liq_bear;
+    if (type === 'gap')  return ev.dir === 'bull' ? SEG_COLORS.gap_bull  : SEG_COLORS.gap_bear;
+    if (type === 'poc')  return `rgba(255,165,0,${ev.opacity ?? 0.9})`;
     if (type === 'bos')  {
       const isBos = ev.sig === 'bos' || ev.sig === undefined;
       return ev.dir === 'bull'
@@ -222,7 +226,7 @@ export class ChartManager {
     this._segEvents = {};
     this._segKeys   = {};
 
-    for (const type of ['fvg', 'ob', 'bos', 'liq']) {
+    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap', 'poc']) {
       const evts = events[type] || [];
       this._segEvents[type] = evts;
       this._segSeries[type] = [];
@@ -242,7 +246,7 @@ export class ChartManager {
   }
 
   _revealSegments(n) {
-    for (const type of ['fvg', 'ob', 'bos', 'liq']) {
+    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap', 'poc']) {
       const evts   = this._segEvents[type];
       const series = this._segSeries[type];
       const keys   = this._segKeys[type];

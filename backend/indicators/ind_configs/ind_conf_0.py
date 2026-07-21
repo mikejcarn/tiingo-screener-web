@@ -501,7 +501,7 @@ params = {
                 'atr_period': 20, 'explosion_multiplier': 2.0
             },
             'liquidity': {'swing_length': 20, 'range_percent': 0.1},
-            'POC': {'num_bins': 200, 'num_bars': 200},
+            'POC': {'num_levels': 4, 'lookback_bars': None},
             'supertrend': {'periods': 14, 'multiplier': 3},
             'TTM_squeeze': {
                 'bb_length': 18, 'bb_std_dev': 1.9,
@@ -511,9 +511,6 @@ params = {
             'divergence_Volume': {'period': 50, 'lookback': 50},
             'divergence_Fisher': {'period': 50, 'lookback': 50},
             'divergence_Vortex': {'period': 50, 'lookback': 50},
-            'engulfing_candle': {'mode': 'both', 
-                                 'engulfing_periods': 3, 
-                                 'close_threshold': 0.25}
         },
 
 

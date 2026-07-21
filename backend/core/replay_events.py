@@ -141,10 +141,60 @@ def _extract_fvg_segments(df: pd.DataFrame, params: dict = None) -> list:
             's': int(idx), 'e': end, 'p': price,
             'm': is_mit, 'dir': 'bull' if v > 0 else 'bear',
         })
-    # For FVG: None (unchecked checkbox) means show none, not unlimited.
-    max_unmitigated = params.get('max_unmitigated') or 0
-    max_mitigated   = params.get('max_mitigated')   or 0
-    return _add_displaced_at(events, max_unmitigated=max_unmitigated, max_mitigated=max_mitigated)
+    return _add_displaced_at(
+        events,
+        max_unmitigated=params.get('max_unmitigated'),
+        max_mitigated=params.get('max_mitigated'),
+    )
+
+
+def _extract_gap_segments(df: pd.DataFrame, params: dict = None) -> list:
+    if 'Gap_Up' not in df.columns and 'Gap_Down' not in df.columns:
+        return []
+    if params is None:
+        params = {}
+    n = len(df)
+    events = []
+
+    for flag_col, high_col, low_col, mit_col, direction in (
+        ('Gap_Up',   'Gap_Up_High',   'Gap_Up_Low',   'Gap_Up_Mitigated',   'bull'),
+        ('Gap_Down', 'Gap_Down_High', 'Gap_Down_Low', 'Gap_Down_Mitigated', 'bear'),
+    ):
+        if flag_col not in df.columns:
+            continue
+        for idx in df[df[flag_col] != 0].index:
+            high = df.at[idx, high_col] if high_col in df.columns else None
+            low  = df.at[idx, low_col]  if low_col  in df.columns else None
+            if high is None or low is None or pd.isna(high) or pd.isna(low):
+                continue
+            mit = df.at[idx, mit_col] if mit_col in df.columns else 0
+            if pd.isna(mit) or mit == 0:
+                end, is_mit = n - 1, False
+            else:
+                end, is_mit = int(mit), True
+            s = int(idx)
+            # One representative event carries both price levels; displacement
+            # applied once per gap, then expanded to upper+lower edge pair.
+            events.append({
+                's': s, 'e': end, 'm': is_mit, 'dir': direction,
+                'p': float(high), '_low': float(low),
+            })
+
+    # Apply rolling cap to representative events (one per gap)
+    events = _add_displaced_at(
+        events,
+        max_unmitigated=params.get('max_unmitigated'),
+        max_mitigated=params.get('max_mitigated'),
+    )
+
+    # Expand each gap into two line events (upper and lower edge)
+    final = []
+    for ev in events:
+        low = ev.pop('_low')
+        final.append(ev)
+        lower = {**ev, 'p': low}
+        final.append(lower)
+    return final
 
 
 def _extract_ob_segments(df: pd.DataFrame, params: dict = None) -> list:
@@ -472,6 +522,37 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
     return pools
 
 
+def _extract_poc_segments(df: pd.DataFrame) -> list:
+    """
+    Extract POC horizontal segment events.  Each POC_N column carries a single
+    non-NaN value at the window start bar; the segment runs flat to the last bar.
+    Opacity fades from 0.9 (longest window) to 0.25 (shortest).
+    """
+    import re as _re
+    poc_cols = sorted(
+        [c for c in df.columns if _re.fullmatch(r'POC_\d+', c)],
+        key=lambda c: int(c.split('_')[1]),
+    )
+    n      = len(df)
+    total  = len(poc_cols)
+    events = []
+    for i, col in enumerate(poc_cols):
+        non_nan = df[col].dropna()
+        if non_nan.empty:
+            continue
+        start_bar = int(df.index.get_loc(non_nan.index[0]))
+        price     = float(non_nan.iloc[0])
+        opacity   = round(0.9 - (i / max(total - 1, 1)) * 0.65, 3) if total > 1 else 0.9
+        events.append({
+            's':       start_bar,
+            'e':       n - 1,
+            'p':       price,
+            'vf':      start_bar,
+            'opacity': opacity,
+        })
+    return events
+
+
 def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     """
     Build the replay_events payload to send over WebSocket.
@@ -525,6 +606,8 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'ob':  _extract_ob_segments(df,  ind_params.get('OB',         {})),
         'bos': _extract_bos_choch_segments(df),
         'liq': _extract_liquidity_segments(df, ind_params.get('liquidity', {})),
+        'gap': _extract_gap_segments(df,  ind_params.get('gaps',       {})),
+        'poc': _extract_poc_segments(df),
         # Dynamic aVWAP anchor pools (OB, BoS/CHoCH, gaps, price_maxima_minima)
         'avwap_anchors': _extract_dynamic_avwap_anchors(df, ind_params),
     }

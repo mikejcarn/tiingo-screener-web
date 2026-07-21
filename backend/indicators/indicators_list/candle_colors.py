@@ -222,7 +222,6 @@ _SUB_DEFAULTS = {
     'supertrend':       {'periods': 14, 'multiplier': 3},
     'TTM_squeeze':      {'bb_length': 20, 'bb_std_dev': 2.0,
                          'kc_length': 20, 'kc_mult': 1.5, 'use_true_range': True},
-    'engulfing_candle': {'mode': 'both', 'engulfing_periods': 3, 'close_threshold': 0.25},
 }
 
 # Consumed by _get_indicator_defaults: top-level param defaults shown in editor.
@@ -255,7 +254,7 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
 
     # Indicator Color Options: 
     # 'ZScore', 'StDev', 'RSI', 'QQEMOD', 'banker_RSI', 'WAE', 'supertrend', 
-    # 'TTM_squeeze', 'engulfing_candle'
+    # 'TTM_squeeze'
 
     # Default parameters for supported indicators
     default_params = {
@@ -292,11 +291,6 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
         'banker_RSI': {},
         'WAE': {},
         'supertrend': {},
-        'engulfing_candle': {
-            'mode': 'both',
-            'engulfing_periods': 3,
-            'close_threshold': 0.25
-        }
     }
 
     # custom_params is a flat dict of overrides for the selected indicator_color.
@@ -413,27 +407,6 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
     def map_supertrend(row):
         return colors['teal'] if row['Supertrend_Direction'] > 0 else colors['red']
 
-    def map_engulfing_candle(row):
-        """
-        Color candles based on their role in engulfing patterns:
-        - Bullish engulfing candle: neon green (strong buy signal)
-        - Bullish engulfed candles: teal (weaker buy, part of pattern)
-        - Bearish engulfing candle: magenta (strong sell signal)
-        - Bearish engulfed candles: red (weaker sell, part of pattern)
-        """
-        cluster_value = row['engulfing_pattern_cluster']
-        
-        if cluster_value == 'bullish_engulfing':
-            return colors['aqua']
-        elif cluster_value == 'bullish_engulfed':
-            return colors['teal']
-        elif cluster_value == 'bearish_engulfing':
-            return colors['red_dark']
-        elif cluster_value == 'bearish_engulfed':
-            return colors['red']
-        
-        return colors['black']
-
     # Create a mapping of indicator to their color functions
     color_mappers = {
         'ZScore': lambda df: df['ZScore'].apply(map_zscore),
@@ -444,7 +417,6 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
         'WAE': lambda df: df.apply(map_WAE, axis=1),
         'supertrend': lambda df: df.apply(map_supertrend, axis=1),
         'TTM_squeeze': lambda df: df.apply(map_TTM_squeeze, axis=1),
-        'engulfing_candle': lambda df: df.apply(map_engulfing_candle, axis=1),
     }
 
     # Get the base indicator name (before _color)

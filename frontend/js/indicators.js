@@ -3,11 +3,11 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 // Numeric params that are legitimately nullable (null = no limit / disabled).
 // These always render as a checkbox + number input regardless of current value.
 const NULLABLE_NUM_KEYS  = new Set(['max_aVWAPs', 'max_anchors', 'lookback_bars', 'max_mitigated', 'max_unmitigated']);
-const NULLABLE_LIST_KEYS = new Set(['BoS_swing_lengths', 'CHoCH_swing_lengths', 'band_std']);
+const NULLABLE_LIST_KEYS = new Set(['BoS_swing_lengths', 'CHoCH_swing_lengths', 'band_std', 'num_bars']);
 
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
-  indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'engulfing_candle'],
+  indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI'],
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
 };
 
@@ -294,7 +294,7 @@ function _renderNullableNum(key, val) {
   return `<div class="param-field param-nullable" data-key="${_esc(key)}" data-type="nullable_num">
     <input type="checkbox" class="param-checkbox param-nullable-toggle"${enabled ? ' checked' : ''}>
     <span class="param-key">${_esc(label)}</span>
-    <input type="number" value="${enabled ? val : ''}" step="1"
+    <input type="number" value="${enabled ? val : ''}" step="1" min="0"
       class="param-input param-num param-nullable-value"${enabled ? '' : ' disabled'}
       placeholder="∞">
   </div>`;
@@ -335,7 +335,7 @@ function _renderParamValue(key, val) {
     const isInt = Number.isInteger(val);
     return `<div class="param-field" data-key="${_esc(key)}" data-type="${isInt ? 'int' : 'float'}">
       <span class="param-key">${_esc(label)}</span>
-      <input type="number" value="${val}" step="${isInt ? '1' : 'any'}" class="param-input param-num">
+      <input type="number" value="${val}" step="${isInt ? '1' : 'any'}" min="0" class="param-input param-num">
     </div>`;
   }
   if (typeof val === 'string') {

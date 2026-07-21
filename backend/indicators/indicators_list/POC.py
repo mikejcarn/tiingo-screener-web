@@ -1,50 +1,65 @@
 import numpy as np
 import pandas as pd
 
+display_name = "Point of Control (Volume Profile)"
 
-def calculate_poc(df, num_bins=200, num_bars=200):
-    """
-    Point of Control: the price bin with the highest cumulative volume.
-    num_bars: how many recent real bars to include (None = all history).
-    Returns a constant horizontal level across those bars.
-    """
-    close = df['Close'].values
+_NUM_BINS = 500
+
+
+def calculate_poc(df, num_levels=4, lookback_bars=None, **_):
+    num_levels = max(1, int(num_levels))
+    fractions  = [1.0 - i / num_levels for i in range(num_levels)]
+
+    high   = df['High'].values
+    low    = df['Low'].values
     volume = df['Volume'].fillna(0).values
+    n      = len(df)
 
-    real_mask = volume > 0
+    base = min(n, int(lookback_bars)) if lookback_bars else n
+    high_w, low_w, vol_w = high[-base:], low[-base:], volume[-base:]
+
+    real_mask = vol_w > 0
     if not real_mask.any():
-        return {'POC': pd.Series(np.nan, index=df.index)}
+        return {}
 
-    real_indices = np.where(real_mask)[0]
-    if num_bars is not None:
-        real_indices = real_indices[-num_bars:]
-
-    real_close = close[real_indices]
-    real_volume = volume[real_indices]
-
-    price_min = real_close.min()
-    price_max = real_close.max()
+    price_min   = float(low_w[real_mask].min())
+    price_max   = float(high_w[real_mask].max())
     price_range = price_max - price_min
-
     if price_range == 0:
-        poc_price = float(price_min)
-    else:
-        bin_size = price_range / num_bins
-        bins = np.floor((real_close - price_min) / bin_size).astype(int)
-        bins = np.clip(bins, 0, num_bins - 1)
-        volume_by_bin = np.zeros(num_bins)
-        np.add.at(volume_by_bin, bins, real_volume)
-        poc_bin = int(np.argmax(volume_by_bin))
-        poc_price = float(price_min + (poc_bin + 0.5) * bin_size)
+        return {}
 
-    window_mask = np.zeros(len(df), dtype=bool)
-    window_mask[real_indices] = True
-    poc_series = pd.Series(
-        np.where(window_mask, poc_price, np.nan),
-        index=df.index
-    )
+    bin_size = price_range / _NUM_BINS
+    lo_bins  = np.clip(((low_w  - price_min) / bin_size).astype(int), 0, _NUM_BINS - 1)
+    hi_bins  = np.clip(((high_w - price_min) / bin_size).astype(int), 0, _NUM_BINS - 1)
 
-    return {'POC': poc_series}
+    bar_profile = np.zeros((base, _NUM_BINS))
+    for i in range(base):
+        if real_mask[i]:
+            span = hi_bins[i] - lo_bins[i] + 1
+            bar_profile[i, lo_bins[i]:hi_bins[i] + 1] = vol_w[i] / span
+
+    cumsum       = np.cumsum(bar_profile, axis=0)
+    full_profile = cumsum[-1]
+
+    result = {}
+    for i, frac in enumerate(fractions):
+        window     = max(1, int(base * frac))
+        start_in_w = base - window
+        start_bar  = n - base + start_in_w
+
+        profile = full_profile - cumsum[start_in_w - 1] if start_in_w > 0 else full_profile
+
+        poc_bin   = int(np.argmax(profile))
+        poc_price = price_min + (poc_bin + 0.5) * bin_size
+
+        series = pd.Series(np.nan, index=df.index, dtype=float)
+        if 0 <= start_bar < n:
+            series.iloc[start_bar] = poc_price
+
+        label = f'POC_{i}'
+        result[label] = series
+
+    return result
 
 
 def calculate_indicator(df, **params):
