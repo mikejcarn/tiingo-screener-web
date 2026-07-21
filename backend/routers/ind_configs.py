@@ -142,6 +142,14 @@ def _get_param_labels(name: str) -> dict:
         return {}
 
 
+def _get_display_name(name: str) -> str | None:
+    try:
+        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
+        return getattr(mod, 'display_name', None)
+    except ImportError:
+        return None
+
+
 # Utility modules that exist as indicators but should not appear in the UI
 _HIDDEN_INDICATORS = {'aVWAP'}
 
@@ -156,5 +164,8 @@ def indicator_defaults():
                      if (opts := _get_param_options(name))}
     param_labels = {name: lbls for name in available
                     if (lbls := _get_param_labels(name))}
+    display_names = {name: dn for name in available
+                     if (dn := _get_display_name(name))}
     return {"available": available, "defaults": defaults,
-            "param_options": param_options, "param_labels": param_labels}
+            "param_options": param_options, "param_labels": param_labels,
+            "display_names": display_names}

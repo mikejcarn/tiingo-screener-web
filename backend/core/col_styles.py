@@ -121,6 +121,12 @@ def col_styles_for_columns(columns: list) -> dict:
         elif col == 'StDev_Mean':
             _add(col, colors['orange_aVWAP'], 2, 'dashed')
 
+        # ── ZScore bands ─────────────────────────────────────────────────────
+        elif col == 'ZScore_Mean':
+            _add(col, colors['yellow'], 2, 'solid')
+        elif col in ('ZScore_Upper', 'ZScore_Lower'):
+            _add(col, colors['yellow'], 1, 'solid')
+
         # ── POC ──────────────────────────────────────────────────────────────
         elif col == 'POC':
             _add(col, colors['orange_poc'], 6)

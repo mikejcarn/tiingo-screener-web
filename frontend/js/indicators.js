@@ -26,6 +26,7 @@ let _configData  = null; // {id, name, indicators: {tf: {ind: params}}}
 let _defaults    = null; // {available: [...], defaults: {ind: params}}
 let _paramOptions = {}; // {ind: {param_key: {option_val: sub_params}}}
 let _paramLabels  = {}; // {ind: {param_key: display_label}}
+let _displayNames = {}; // {ind: display_name} — optional long name for UI
 let _currentParamLabels = {}; // active indicator's labels during rendering
 let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
@@ -85,8 +86,9 @@ async function _loadConfigList() {
 
 async function _loadDefaults() {
   _defaults = await fetch('/api/indicator-defaults').then(r => r.json());
-  _paramOptions = _defaults.param_options || {};
-  _paramLabels  = _defaults.param_labels  || {};
+  _paramOptions = _defaults.param_options  || {};
+  _paramLabels  = _defaults.param_labels   || {};
+  _displayNames = _defaults.display_names  || {};
 }
 
 async function _selectConfig(id, { toggleQueue = true } = {}) {
@@ -206,7 +208,8 @@ function _renderIndicatorList() {
   const defaultsForTf = _defaults.defaults ?? {};
 
   const visible = _defaults.available
-    .filter(ind => !_searchQuery || ind.toLowerCase().includes(_searchQuery))
+    .filter(ind => !_searchQuery || ind.toLowerCase().includes(_searchQuery)
+      || (_displayNames[ind] ?? '').toLowerCase().includes(_searchQuery))
     .sort((a, b) => {
       const aOn = a in savedForTf;
       const bOn = b in savedForTf;
@@ -271,7 +274,7 @@ function _renderIndicatorCard(ind, enabled, params) {
       <label class="ind-toggle-wrap">
         <input type="checkbox" class="ind-toggle"${enabled ? ' checked' : ''}>
       </label>
-      <span class="ind-name">${_esc(ind)}</span>
+      <span class="ind-name">${_esc(_displayNames[ind] ?? ind)}</span>
       ${arrow}
     </div>
     ${bodyHtml}
