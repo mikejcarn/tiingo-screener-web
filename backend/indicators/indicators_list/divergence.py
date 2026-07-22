@@ -10,7 +10,7 @@ from backend.indicators.indicators_list.divergence_Stochastic import calculate_s
 from backend.indicators.indicators_list.divergence_Volume     import calculate_volume_divergence
 from backend.indicators.indicators_list.divergence_Vortex     import calculate_vortex_divergence
 
-display_name = "Divergence"
+display_name = "Divergences"
 
 param_separators = ['RSI']  # visual divider before the type toggles
 

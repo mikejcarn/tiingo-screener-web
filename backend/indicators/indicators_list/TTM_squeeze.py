@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-display_name = "TTM Squeeze"
+display_name = "Squeeze Momentum Indicator (TTM Squeeze)"
 def calculate_ttm_squeeze(
                           df,
                           bb_length=20,
