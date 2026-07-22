@@ -252,10 +252,10 @@ function _wireKeys() {
     if (e.key === 'Escape') { document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT') return;
     if (e.key === ' ')          { e.preventDefault(); setPlaying(!playing); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); setPlaying(false); jump(current + 1); }
-    if (e.key === 'ArrowLeft')  { e.preventDefault(); setPlaying(false); jump(current - 1); }
-    if (e.key === 'ArrowRight' && e.shiftKey) { e.preventDefault(); setPlaying(false); jump(current + 20); }
-    if (e.key === 'ArrowLeft'  && e.shiftKey) { e.preventDefault(); setPlaying(false); jump(current - 20); }
+    if (e.key === 'ArrowRight' && !e.shiftKey) { e.preventDefault(); setPlaying(false); jump(current + 1); }
+    if (e.key === 'ArrowLeft'  && !e.shiftKey) { e.preventDefault(); setPlaying(false); jump(current - 1); }
+    if (e.key === 'ArrowRight' && e.shiftKey)  { e.preventDefault(); setPlaying(false); jump(current + 20); }
+    if (e.key === 'ArrowLeft'  && e.shiftKey)  { e.preventDefault(); setPlaying(false); jump(current - 20); }
     if (e.key === 'Home') { e.preventDefault(); setPlaying(false); jump(0); }
     if (e.key === 'End')  { e.preventDefault(); setPlaying(false); jump(N - 1); }
     if (e.key === 'ArrowUp')   { e.preventDefault(); fps = Math.min(60, fps + 1); fpsInput.value = fps; }

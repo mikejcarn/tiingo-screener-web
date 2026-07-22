@@ -11,9 +11,9 @@
 <div id="ind-header">
   <span id="ind-title">Tiingo Screener</span>
   <div class="page-nav">
-    <a class="page-nav-item" href="/">chart</a>
-    <a class="page-nav-item" href="/fetch">tickers</a>
-    <span class="page-nav-item active">indicators</span>
+    <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
+    <span class="page-nav-item active" title="Indicators page (I)">indicators</span>
+    <a class="page-nav-item" href="/" title="Go to chart page (C)">chart</a>
   </div>
 </div>
 
@@ -22,8 +22,10 @@
   <!-- ── Left: config list ──────────────────────────────── -->
   <div class="ind-sidebar">
     <div class="ind-sidebar-head">
-      Configs
-      <button id="btn-new-config" title="Create new config">+ New</button>
+      <span>Configs</span>
+      <div class="dash-section-actions">
+        <button id="btn-new-config" class="dash-btn-sm dash-btn-sm-add" title="Create new config">+ New</button>
+      </div>
     </div>
     <div id="config-list">
       <div class="ind-loading">Loading…</div>
@@ -43,7 +45,7 @@
     <div id="ind-editor" style="display:none; flex-direction:column; height:100%;">
 
       <div class="ind-editor-top">
-        <input type="text" id="config-name" class="config-name-input" placeholder="Config name">
+        <input type="text" id="config-name" class="config-name-input" placeholder="Config name" title="Name for this indicator config">
         <button id="btn-save" class="ind-btn-save" title="Save config to database">Save</button>
         <button id="btn-clear-results" class="btn-destructive" title="Delete computed indicator results for this config">Clear Results</button>
         <button id="btn-delete-config" class="btn-destructive" title="Delete this config and its results">Delete</button>
@@ -51,15 +53,15 @@
       <div id="conf-dates" class="conf-dates"></div>
 
       <div class="tf-tabs" id="tf-tabs">
-        <button class="tf-tab active" data-tf="daily">daily</button>
-        <button class="tf-tab" data-tf="weekly">weekly</button>
-        <button class="tf-tab" data-tf="1hour">1hour</button>
-        <button class="tf-tab" data-tf="4hour">4hour</button>
-        <button class="tf-tab" data-tf="5min">5min</button>
+        <button class="tf-tab active" data-tf="daily" title="Edit indicators for the daily timeframe">daily</button>
+        <button class="tf-tab" data-tf="weekly" title="Edit indicators for the weekly timeframe">weekly</button>
+        <button class="tf-tab" data-tf="1hour" title="Edit indicators for the 1hour timeframe">1hour</button>
+        <button class="tf-tab" data-tf="4hour" title="Edit indicators for the 4hour timeframe">4hour</button>
+        <button class="tf-tab" data-tf="5min" title="Edit indicators for the 5min timeframe">5min</button>
       </div>
 
       <div class="ind-search-bar">
-        <input type="text" id="ind-search" class="ind-search-input" placeholder="Type to find indicators…" autocomplete="off" spellcheck="false">
+        <input type="text" id="ind-search" class="ind-search-input" placeholder="Type to find indicators…" autocomplete="off" spellcheck="false" title="Filter the indicator list below by name">
       </div>
 
       <div id="ind-list" class="ind-list"></div>
@@ -72,16 +74,17 @@
 
     <!-- Run + DB output card -->
     <div class="ind-run">
-      <div class="ind-run-head">Run</div>
+      <div class="ind-run-head">
+        <span>Run</span>
+        <div class="dash-section-actions">
+          <button id="btn-compute" class="dash-btn-sm dash-btn-sm-launch" title="Run indicator computation for the queued configs below">Run</button>
+          <button id="btn-compute-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running computation">Cancel</button>
+        </div>
+      </div>
       <div class="ind-run-body">
 
         <div id="run-conf-list" class="run-queue-list"></div>
         <div id="run-queue-status" class="run-queue-status" style="display:none;"></div>
-
-        <div class="dash-btn-row">
-          <button id="btn-compute" class="dash-btn">Run</button>
-          <button id="btn-compute-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
-        </div>
 
         <div class="dash-progress">
           <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
@@ -100,33 +103,33 @@
 
     <!-- DB card -->
     <div class="ind-db-card">
-      <div class="ind-run-head">DB — indicators</div>
+      <div class="ind-run-head" title="Browse computed indicator rows stored in the database">DB — indicators</div>
       <div class="ind-db-body">
 
         <div class="ind-db-nav-row">
           <div class="ind-db-ctrl-group">
-            <button id="db-conf-prev" class="ind-db-nav-btn">‹</button>
-            <span id="db-conf-label" class="ind-db-conf-label">—</span>
-            <button id="db-conf-next" class="ind-db-nav-btn">›</button>
+            <button id="db-conf-prev" class="ind-db-nav-btn" title="Previous config">‹</button>
+            <span id="db-conf-label" class="ind-db-conf-label" title="Indicator config being browsed">—</span>
+            <button id="db-conf-next" class="ind-db-nav-btn" title="Next config">›</button>
           </div>
           <div class="ind-db-ctrl-group">
             <button id="db-ticker-prev" class="ind-db-nav-btn" title="Previous ticker">‹</button>
-            <input type="text" id="comp-db-ticker" class="ind-db-ticker-input" placeholder="ticker" autocomplete="off" spellcheck="false">
+            <input type="text" id="comp-db-ticker" class="ind-db-ticker-input" placeholder="ticker" autocomplete="off" spellcheck="false" title="Type a ticker and press Enter to jump to it">
             <button id="db-ticker-next" class="ind-db-nav-btn" title="Next ticker">›</button>
           </div>
           <div class="ind-db-ctrl-group">
-            <button id="db-tf-prev" class="ind-db-nav-btn">‹</button>
-            <span id="db-tf-display" class="ind-db-tf-display">—</span>
-            <button id="db-tf-next" class="ind-db-nav-btn">›</button>
+            <button id="db-tf-prev" class="ind-db-nav-btn" title="Previous timeframe">‹</button>
+            <span id="db-tf-display" class="ind-db-tf-display" title="Timeframe being browsed">—</span>
+            <button id="db-tf-next" class="ind-db-nav-btn" title="Next timeframe">›</button>
           </div>
         </div>
 
         <div class="ind-db-info-row">
           <div id="comp-db-stats" class="ind-db-stats"></div>
           <div class="ind-db-row-ctrl">
-            <button id="db-rows-older" class="ind-db-nav-btn">‹ older</button>
+            <button id="db-rows-older" class="ind-db-nav-btn" title="Load older rows">‹ older</button>
             <span id="db-rows-label" class="ind-db-rows-label"></span>
-            <button id="db-rows-newer" class="ind-db-nav-btn">newer ›</button>
+            <button id="db-rows-newer" class="ind-db-nav-btn" title="Load newer rows">newer ›</button>
           </div>
         </div>
 

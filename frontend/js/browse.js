@@ -55,6 +55,11 @@ export async function initBrowse() {
 
   _wireNav();
 
+  if (!tickers.length) {
+    document.getElementById('chart-empty').style.display = 'flex';
+    return;
+  }
+
   // Load from URL hash or first ticker
   const hashTicker = decodeURIComponent(location.hash.slice(1)).toUpperCase();
   const startIdx   = tickers.indexOf(hashTicker);
@@ -285,7 +290,7 @@ function _wireNav() {
     if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; return; }
-    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       tickerInput.focus();
       tickerInput.value = e.key.toUpperCase();

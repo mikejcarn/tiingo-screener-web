@@ -145,7 +145,7 @@ function _renderConfigList() {
   el.innerHTML = _configList.map(c => {
     const queued = _runCheckedIds.has(c.id);
     return `
-    <div class="ind-config-item${c.id === _selectedId ? ' active' : ''}${queued ? ' queued' : ''}" data-id="${c.id}">
+    <div class="ind-config-item${c.id === _selectedId ? ' active' : ''}${queued ? ' queued' : ''}" data-id="${c.id}" title="Open this config in the editor">
       <div class="ind-config-info">
         <span class="ind-config-name">${_esc(c.name)}</span>
         <span class="ind-config-date">${_fmtDate(c.updated_at || c.created_at)}</span>
@@ -274,8 +274,8 @@ function _renderIndicatorCard(ind, enabled, params) {
     : '';
   const arrow = enabled ? '<span class="ind-expand-arrow">▾</span>' : '';
   return `<div class="ind-card${enabled ? ' enabled' : ''}" data-indicator="${_esc(ind)}">
-    <div class="ind-card-head">
-      <label class="ind-toggle-wrap">
+    <div class="ind-card-head"${enabled ? ' title="Click to expand/collapse parameters"' : ''}>
+      <label class="ind-toggle-wrap" title="Enable/disable this indicator">
         <input type="checkbox" class="ind-toggle"${enabled ? ' checked' : ''}>
       </label>
       <span class="ind-name">${_esc(_displayNames[ind] ?? ind)}</span>
@@ -379,7 +379,7 @@ function _renderParamValue(key, val) {
       ? _renderParamTree(val)
       : '<span class="param-none">no additional parameters</span>';
     return `<div class="param-group${isInline ? ' param-inline' : ''}" data-key="${_esc(key)}" data-type="object">
-      <div class="param-group-head">
+      <div class="param-group-head" title="Click to expand/collapse this parameter group">
         <span class="param-group-arrow">▾</span>${_esc(label)}
       </div>
       <div class="param-group-body">${body}</div>
@@ -509,7 +509,7 @@ async function _renderRunConfigs() {
       <div class="run-queue-header">
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(c.name)}</span>
-        <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''}>×</button>
+        <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''} title="Remove ${_esc(c.name)} from the run queue">×</button>
       </div>
       <div class="run-queue-detail">${detail}</div>
       <div class="rq-status" data-id="${c.id}"></div>

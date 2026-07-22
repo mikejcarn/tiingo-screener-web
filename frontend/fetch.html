@@ -11,9 +11,9 @@
 <div id="dash-header">
   <span id="dash-title">Tiingo Screener</span>
   <div class="page-nav">
-    <a class="page-nav-item" href="/">chart</a>
-    <span class="page-nav-item active">tickers</span>
-    <a class="page-nav-item" href="/indicators">indicators</a>
+    <span class="page-nav-item active" title="Tickers page (T)">tickers</span>
+    <a class="page-nav-item" href="/indicators" title="Go to indicators page (I)">indicators</a>
+    <a class="page-nav-item" href="/" title="Go to chart page (C)">chart</a>
   </div>
 </div>
 
@@ -24,87 +24,106 @@
 
     <!-- API Key -->
     <div class="dash-section">
-      <div class="dash-section-head"><span>API Key</span></div>
+      <div class="dash-section-head">
+        <span>API Key</span>
+        <div class="dash-section-actions">
+          <button id="btn-apikey-add" class="dash-btn-sm dash-btn-sm-add" style="display:none;" title="Add your Tiingo API key">+ Add Key</button>
+        </div>
+      </div>
       <div style="padding:14px 16px;">
-        <div class="dash-field" style="margin-bottom:0;">
+        <div class="dash-field">
           <label><a href="https://www.tiingo.com" target="_blank" class="label-link">Tiingo</a> key</label>
           <div class="dash-field-right" style="flex:1; gap:8px;">
             <span id="apikey-masked" class="apikey-masked"></span>
             <input id="apikey-input" class="apikey-input" type="password"
-                   placeholder="Paste key…" style="display:none; flex:1;">
-            <button id="btn-apikey-edit"   class="dash-btn-sm">Edit</button>
-            <button id="btn-apikey-save"   class="dash-btn-sm" style="display:none;">Save</button>
-            <button id="btn-apikey-cancel" class="dash-btn-sm" style="display:none;">Cancel</button>
-            <button id="btn-apikey-verify" class="dash-btn-sm">Verify</button>
-            <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del">Delete</button>
+                   placeholder="Paste key…" style="display:none; flex:1;" title="Paste your Tiingo API key, then press Enter or Save">
+            <button id="btn-apikey-edit"   class="dash-btn-sm" style="display:none;" title="Edit the saved API key">Edit</button>
+            <button id="btn-apikey-save"   class="dash-btn-sm" style="display:none;" title="Save this key">Save</button>
+            <button id="btn-apikey-cancel" class="dash-btn-sm" style="display:none;" title="Discard changes (Esc)">Cancel</button>
+            <button id="btn-apikey-verify" class="dash-btn-sm" style="display:none;" title="Check that this key works with Tiingo">Verify</button>
+            <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del" style="display:none;" title="Remove the saved API key">Delete</button>
             <span   id="apikey-status"></span>
           </div>
         </div>
+
+        <div class="dash-divider"></div>
+
+        <div class="tiingo-ref-row">
+          <span class="tiingo-ref-label">Tiingo supported tickers</span>
+          <button id="btn-update-tickers" class="dash-btn-sm" title="Re-download the full Tiingo supported-tickers list used for search">Update</button>
+          <a href="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
+             target="_blank" class="tiingo-ref-link" title="Download supported_tickers.zip from Tiingo">&#x2197; download list</a>
+        </div>
+        <div id="tiingo-list-meta" class="tiingo-ref-meta"></div>
       </div>
     </div>
 
     <!-- Single Ticker -->
     <div class="dash-section">
-      <div class="dash-section-head"><span>Single Ticker</span></div>
+      <div class="dash-section-head">
+        <span>Single Ticker</span>
+        <div class="dash-section-actions">
+          <button id="btn-single-fetch" class="dash-btn-sm dash-btn-sm-launch" title="Fetch all queued tickers below">Fetch</button>
+        </div>
+      </div>
       <div style="padding:16px;">
         <div class="fetch-add-row">
           <div id="single-ticker-wrap">
             <input id="single-ticker" class="dash-ticker-input" type="text"
-                   placeholder="Add ticker…" autocomplete="off" spellcheck="false">
+                   placeholder="Type to select ticker…" autocomplete="off" spellcheck="false"
+                   title="Type any lowercase letter to search tickers, ↑↓ to navigate suggestions, Enter to add">
             <div id="single-ticker-dd"></div>
           </div>
+          <button id="btn-single-add" class="dash-btn-sm dash-btn-sm-add" title="Add this ticker to the queue below (or press Enter in the box)">+ Add to Queue</button>
         </div>
         <div class="dash-field">
           <label>Timeframes</label>
           <div id="single-tfs" class="dash-checks"></div>
         </div>
         <div id="single-queue" class="run-queue-list"></div>
-        <div class="dash-btn-row">
-          <button id="btn-single-fetch" class="dash-btn">Fetch</button>
-        </div>
       </div>
     </div>
 
     <!-- Batch Fetch -->
     <div class="dash-section">
-      <div class="dash-section-head"><span>Batch Fetch</span></div>
+      <div class="dash-section-head">
+        <span>Batch Fetch</span>
+        <div class="dash-section-actions">
+          <button id="btn-fetch" class="dash-btn-sm dash-btn-sm-launch" title="Fetch all queued lists below">Fetch</button>
+          <button id="btn-fetch-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running fetch">Cancel</button>
+        </div>
+      </div>
       <div style="padding:16px;">
-        <div class="fetch-add-row">
-          <select id="fetch-list" title="Ticker list to fetch"></select>
-          <span id="fetch-list-count" class="dash-count"></span>
-          <button id="btn-batch-add" class="dash-btn-sm dash-btn-sm-add">+ Add to Queue</button>
+        <div class="dash-field">
+          <label>List</label>
+          <div class="dash-field-right">
+            <select id="fetch-list" title="Choose a ticker list to fetch"></select>
+            <span id="fetch-list-count" class="dash-count" title="Number of tickers in this list"></span>
+            <button id="btn-batch-add" class="dash-btn-sm dash-btn-sm-add" title="Add this list to the queue below">+ Add to Queue</button>
+          </div>
         </div>
         <div class="dash-field">
           <label>Timeframes</label>
           <div id="fetch-tfs" class="dash-checks"></div>
         </div>
         <div id="batch-queue" class="run-queue-list"></div>
-        <div class="dash-btn-row">
-          <button id="btn-fetch" class="dash-btn">Fetch</button>
-          <button id="btn-fetch-cancel" class="dash-btn-cancel" style="display:none">Cancel</button>
-        </div>
       </div>
     </div>
 
     <!-- Ticker Lists -->
     <div class="dash-section">
-      <div class="dash-section-head"><span>Ticker Lists</span></div>
+      <div class="dash-section-head">
+        <span>Ticker Lists</span>
+        <div class="dash-section-actions">
+          <button id="btn-add-list" class="dash-btn-sm dash-btn-sm-add" title="Upload a CSV to create a new ticker list">+ Add List</button>
+        </div>
+      </div>
       <div style="padding:12px 16px 14px;">
 
-        <div class="tiingo-ref-row">
-          <span class="tiingo-ref-label">Tiingo supported tickers</span>
-          <a href="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
-             target="_blank" class="tiingo-ref-link">&#x2197; tiingo.com</a>
-          <button id="btn-update-tickers" class="dash-btn-sm">Update</button>
-        </div>
-        <div id="tiingo-list-meta" class="tiingo-ref-meta"></div>
-
-        <div class="dash-divider"></div>
-
         <div id="ticker-list-items" class="ticker-list-items"></div>
-        <div id="drop-zone" class="drop-zone">
+        <div id="drop-zone" class="drop-zone" title="Drag a CSV file here, or click to browse">
           <input id="file-input" type="file" accept=".csv" style="display:none">
-          <span class="drop-zone-text">Drop CSV here or <button id="btn-browse" class="drop-zone-browse">browse</button></span>
+          <span class="drop-zone-text">Drop CSV here or <button id="btn-browse" class="drop-zone-browse" title="Choose a CSV file to upload">browse</button></span>
           <span id="upload-status" class="upload-status"></span>
         </div>
 
@@ -121,8 +140,8 @@
       <div class="dash-section-head">
         <span>Database</span>
         <div class="dash-section-actions">
-          <button id="btn-refresh-stats" title="Refresh">&#x21BB;</button>
-          <button id="btn-clear-all" class="dash-btn-sm dash-btn-sm-del">Clear All</button>
+          <button id="btn-refresh-stats" title="Refresh the database stats">&#x21BB;</button>
+          <button id="btn-clear-all" class="dash-btn-sm dash-btn-sm-del" title="Delete ALL fetched data from the database">Clear All</button>
         </div>
       </div>
       <div id="stats-summary"></div>

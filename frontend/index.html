@@ -11,25 +11,25 @@
 
 <!-- ── Nav bar ──────────────────────────────────────────────── -->
 <div id="nav">
-  <button id="btn-prev-ticker">&#9664;</button>
+  <button id="btn-prev-ticker" title="Previous ticker (=)">&#9664;</button>
   <div id="ticker-wrap">
     <input id="ticker-input" type="text" autocomplete="off" spellcheck="false" placeholder="ticker"
-      title="Search and select a ticker (type any letter, or press /)">
+      title="Search and select a ticker (type any lowercase letter, or press /)">
     <div id="dropdown"></div>
   </div>
-  <button id="btn-next-ticker">&#9654;</button>
+  <button id="btn-next-ticker" title="Next ticker (-)">&#9654;</button>
   <span id="ticker-count" title="Position in ticker list"></span>
   <div class="nav-sep"></div>
   <span class="nav-label">list</span>
-  <select id="list-select"></select>
+  <select id="list-select" title="Ticker list (_ previous / + next)"></select>
   <span class="nav-label">timeframe</span>
-  <select id="tf-select" title="Timeframe"></select>
+  <select id="tf-select" title="Timeframe ([ previous / ] next)"></select>
   <span class="nav-label">indicators</span>
-  <select id="conf-select" title="Indicator configuration"></select>
+  <select id="conf-select" title="Indicator configuration ({ previous / } next)"></select>
   <div class="page-nav">
-    <span class="page-nav-item active">chart</span>
-    <a class="page-nav-item" href="/fetch">tickers</a>
-    <a class="page-nav-item" href="/indicators">indicators</a>
+    <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
+    <a class="page-nav-item" href="/indicators" title="Go to indicators page (I)">indicators</a>
+    <span class="page-nav-item active" title="Chart page (C)">chart</span>
   </div>
 </div>
 
@@ -37,6 +37,13 @@
 <div id="chart-container">
   <div id="chart"></div>
   <div id="status"></div>
+  <div id="chart-empty" style="display:none;">
+    <div>
+      <p>No chart data yet.</p>
+      <p>Head to the <a href="/fetch">Tickers</a> page, add a ticker, and hit <strong>Fetch</strong>.</p>
+      <p>Once it's fetched — and indicators are computed on the <a href="/indicators">Indicators</a> page — the chart will show up here.</p>
+    </div>
+  </div>
 </div>
 
 <!-- ── Replay controls ──────────────────────────────────────── -->
@@ -48,11 +55,11 @@
   <button id="btn-last"      title="Jump to last bar (End)">&#x23ED;</button>
   <div class="nav-sep"></div>
   <input id="scrubber" type="range" min="0" max="1000" value="0" step="1"
-    title="Drag to scrub to any bar">
+    title="Click to jump, or drag to scrub to any bar (double-click the chart to jump there too)">
   <div class="nav-sep"></div>
-  <label title="Current bar — type a number and press Enter to jump">bar
+  <label title="Current bar — type a number and press Enter to jump (press any digit key to focus this field)">bar
     <input id="bar-input" type="text" class="ctrl-inp" autocomplete="off"
-      title="Type a bar number and press Enter to jump"> / <span id="bar-total" title="Total bars in dataset">—</span></label>
+      title="Type a bar number and press Enter to jump (any digit key focuses this field)"> / <span id="bar-total" title="Total bars in dataset">—</span></label>
   <span class="ctrl-dot">·</span>
   <label title="Current date — type YYYY-MM-DD and press Enter to jump">date
     <input id="date-input" type="text" class="ctrl-inp" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false"
@@ -102,9 +109,10 @@
           <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
           <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>
           <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next indicator conf</td></tr>
-          <tr><td>Any letter key</td><td>Focus ticker search</td></tr>
+          <tr><td>Any lowercase letter</td><td>Focus ticker search</td></tr>
 
           <tr class="help-section"><td colspan="2">Jump Inputs (press Enter)</td></tr>
+          <tr><td>Any digit key</td><td>Focus the bar # input and start typing</td></tr>
           <tr><td>Bar # input</td><td>Jump to bar number</td></tr>
           <tr><td>Date input</td><td>Jump to date (YYYY-MM-DD)</td></tr>
           <tr><td>FPS input</td><td>Set playback speed (1–60)</td></tr>

@@ -75,7 +75,7 @@ function _renderSingleQueue() {
   const el = document.getElementById('single-queue');
   if (!el) return;
   if (!_singleQueue.length) {
-    el.innerHTML = '<div class="run-queue-empty">No tickers queued — type below to add</div>';
+    el.innerHTML = '<div class="run-queue-empty">No tickers queued — type above to add</div>';
     return;
   }
   el.innerHTML = _singleQueue.map((ticker, i) => {
@@ -96,7 +96,7 @@ function _renderSingleQueue() {
       <div class="run-queue-header">
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(ticker)}</span>
-        <button class="run-queue-remove" data-ticker="${_esc(ticker)}"${_singleRunning ? ' disabled' : ''}>×</button>
+        <button class="run-queue-remove" data-ticker="${_esc(ticker)}"${_singleRunning ? ' disabled' : ''} title="Remove ${_esc(ticker)} from the queue">×</button>
       </div>
       ${statusHtml ? `<div class="run-queue-detail">${statusHtml}</div>` : ''}
     </div>`;
@@ -116,7 +116,7 @@ function _renderBatchQueue() {
   const el = document.getElementById('batch-queue');
   if (!el) return;
   if (!_batchQueue.length) {
-    el.innerHTML = '<div class="run-queue-empty">No lists queued — select one below to add</div>';
+    el.innerHTML = '<div class="run-queue-empty">No lists queued — select one above to add</div>';
     return;
   }
   el.innerHTML = _batchQueue.map((listName, i) => {
@@ -127,7 +127,7 @@ function _renderBatchQueue() {
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(listName)}</span>
         ${countStr ? `<span class="fetch-list-count-tag">${countStr}</span>` : ''}
-        <button class="run-queue-remove" data-list="${_esc(listName)}"${_batchRunning ? ' disabled' : ''}>×</button>
+        <button class="run-queue-remove" data-list="${_esc(listName)}"${_batchRunning ? ' disabled' : ''} title="Remove ${_esc(listName)} from the queue">×</button>
       </div>
       <div class="rq-status" data-list="${_esc(listName)}"></div>
     </div>`;
@@ -399,19 +399,24 @@ function _getChecked(containerId) {
 
 // ── API key ───────────────────────────────────────────────────
 
+let _hasApiKey = false;
+
 async function _loadApiKey() {
   const data = await fetch('/api/settings/api-key').then(r => r.json());
+  _hasApiKey = !!data.masked;
   document.getElementById('apikey-masked').textContent = data.masked || '(not set)';
+  _setApiKeyEditMode(false);
 }
 
 function _setApiKeyEditMode(on) {
   document.getElementById('apikey-masked').style.display     = on ? 'none' : '';
   document.getElementById('apikey-input').style.display      = on ? '' : 'none';
-  document.getElementById('btn-apikey-edit').style.display   = on ? 'none' : '';
+  document.getElementById('btn-apikey-add').style.display    = (!on && !_hasApiKey) ? '' : 'none';
+  document.getElementById('btn-apikey-edit').style.display   = (!on && _hasApiKey) ? '' : 'none';
   document.getElementById('btn-apikey-save').style.display   = on ? '' : 'none';
   document.getElementById('btn-apikey-cancel').style.display = on ? '' : 'none';
-  document.getElementById('btn-apikey-verify').style.display = on ? 'none' : '';
-  document.getElementById('btn-apikey-delete').style.display = on ? 'none' : '';
+  document.getElementById('btn-apikey-verify').style.display = (!on && _hasApiKey) ? '' : 'none';
+  document.getElementById('btn-apikey-delete').style.display = (!on && _hasApiKey) ? '' : 'none';
   if (on) {
     document.getElementById('apikey-input').value = '';
     document.getElementById('apikey-input').focus();
@@ -427,7 +432,8 @@ async function _saveApiKey() {
     body: JSON.stringify({ key }),
   });
   const data = await res.json();
-  document.getElementById('apikey-masked').textContent = data.masked || '';
+  _hasApiKey = !!data.masked;
+  document.getElementById('apikey-masked').textContent = data.masked || '(not set)';
   document.getElementById('apikey-status').textContent = '';
   document.getElementById('apikey-status').className = 'apikey-status';
   _setApiKeyEditMode(false);
@@ -576,16 +582,24 @@ function _wireButtons() {
     fetch('/api/jobs/fetch/cancel', { method: 'POST' });
   });
   document.getElementById('btn-batch-add').addEventListener('click', _addBatchList);
+  document.getElementById('btn-single-add').addEventListener('click', () => {
+    const dd = document.getElementById('single-ticker-dd');
+    const hi = dd.querySelector('.hi');
+    _addSingleTicker(hi ? hi.dataset.ticker : document.getElementById('single-ticker').value);
+  });
 
+  document.getElementById('btn-apikey-add').addEventListener('click', () => _setApiKeyEditMode(true));
   document.getElementById('btn-apikey-edit').addEventListener('click', () => _setApiKeyEditMode(true));
   document.getElementById('btn-apikey-cancel').addEventListener('click', () => _setApiKeyEditMode(false));
   document.getElementById('btn-apikey-save').addEventListener('click', _saveApiKey);
   document.getElementById('btn-apikey-verify').addEventListener('click', _verifyApiKey);
   document.getElementById('btn-apikey-delete').addEventListener('click', async () => {
     const data = await fetch('/api/settings/api-key', { method: 'DELETE' }).then(r => r.json());
+    _hasApiKey = !!data.masked;
     document.getElementById('apikey-masked').textContent = data.masked || '(not set)';
     document.getElementById('apikey-status').textContent = '';
     document.getElementById('apikey-status').className = 'apikey-status';
+    _setApiKeyEditMode(false);
   });
   document.getElementById('apikey-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') _saveApiKey();
@@ -708,6 +722,7 @@ function _initDropZone() {
   const browse = document.getElementById('btn-browse');
 
   browse.addEventListener('click', () => input.click());
+  document.getElementById('btn-add-list').addEventListener('click', () => input.click());
   input.addEventListener('change', () => {
     if (input.files[0]) _uploadFile(input.files[0]);
     input.value = '';
@@ -783,6 +798,13 @@ document.addEventListener('keydown', e => {
   if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; }
   if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
   if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }
+  if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    const input = document.getElementById('single-ticker');
+    input.focus();
+    input.value = e.key.toUpperCase();
+    input.dispatchEvent(new Event('input'));
+  }
 });
 
 init();
