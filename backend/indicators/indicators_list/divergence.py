@@ -17,6 +17,8 @@ param_separators = ['RSI']  # visual divider before the type toggles
 param_labels = {
     'show_regular':     'Show Regular',
     'show_hidden':      'Show Hidden',
+    'show_labels':      'Show Labels',
+    'show_pivots':      'Show Pivot Lines',
     'RSI':              'RSI',
     'MACD':             'MACD',
     'OBV':              'OBV',
@@ -42,7 +44,7 @@ param_labels = {
 
 
 def calculate_divergence(df,
-    show_regular=True, show_hidden=True,
+    show_regular=True, show_hidden=True, show_labels=True, show_pivots=False,
     RSI=True, MACD=False, OBV=False, ATR=False, Fisher=False,
     Fractal=False, MFI=False, Momentum=False, Stochastic=False,
     Volume=False, Vortex=False,

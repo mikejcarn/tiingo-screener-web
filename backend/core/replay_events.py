@@ -561,11 +561,31 @@ def _extract_poc_segments(df: pd.DataFrame) -> dict | None:
     return {'starts': starts, 'prices': prices} if starts else None
 
 
-def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> list:
-    import re
-    right = int((params or {}).get('right', 5))
+def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> dict:
+    import re, numpy as _np
+    params      = params or {}
+    right       = int(params.get('right', 5))
+    left        = int(params.get('left',  5))
+    show_labels = bool(params.get('show_labels', True))
+    show_pivots = bool(params.get('show_pivots', False))
+
+    # Re-derive price pivot indices so we can identify prev_b for each signal
+    high_pivot_bars = low_pivot_bars = high_vals = low_vals = None
+    if show_pivots and 'Close' in df.columns:
+        try:
+            from backend.indicators.indicators_list._divergence_core import find_price_pivots
+            high_arr, low_arr = find_price_pivots(df['Close'], left, right)
+            high_pivot_bars = _np.where(high_arr)[0]
+            low_pivot_bars  = _np.where(low_arr)[0]
+            high_vals       = df['High'].values
+            low_vals        = df['Low'].values
+        except Exception:
+            show_pivots = False
+
     pattern = re.compile(r'^(.+?)_(Regular|Hidden)_(Bullish|Bearish)$')
     markers = []
+    line_map = {}  # (prev_b, b, kind) -> line entry — deduplicated, count = confirmations
+
     for col in df.columns:
         m = pattern.match(col)
         if not m:
@@ -576,7 +596,34 @@ def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> list:
         true_bars = [int(i) for i, v in enumerate(df[col]) if v]
         for b in true_bars:
             markers.append({'b': b, 'vf': b + right, 'kind': kind, 'hidden': hidden, 'label': label})
-    return markers
+            if show_pivots and low_vals is not None:
+                bull      = kind == 'bull'
+                pivot_arr = low_pivot_bars if bull else high_pivot_bars
+                price_arr = low_vals       if bull else high_vals
+                if pivot_arr is not None:
+                    idx = int(_np.searchsorted(pivot_arr, b))
+                    if idx > 0:
+                        prev_b = int(pivot_arr[idx - 1])
+                        key = (prev_b, b, kind)
+                        if key not in line_map:
+                            line_map[key] = {
+                                's':      prev_b,
+                                'e':      b,
+                                'p0':     float(price_arr[prev_b]),
+                                'p1':     float(price_arr[b]),
+                                'vf':     b + right,
+                                'kind':   kind,
+                                'hidden': hidden,
+                                'count':  0,
+                            }
+                        line_map[key]['count'] += 1
+
+    return {
+        'show_labels': show_labels,
+        'show_pivots': show_pivots,
+        'markers':     markers,
+        'lines':       list(line_map.values()),
+    }
 
 
 def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:

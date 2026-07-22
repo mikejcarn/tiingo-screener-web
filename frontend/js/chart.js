@@ -16,6 +16,12 @@ import { DynamicVWAPEngine } from './avwap_replay.js';
 const C_UP   = 'rgba(38,166,154,1)';
 const C_DOWN = 'rgba(239,83,80,1)';
 
+// Divergence colours — aqua / strong red, distinct from candle teal/salmon
+const DIV_BULL         = 'rgba(0,229,255,1)';
+const DIV_BULL_HIDDEN  = 'rgba(0,229,255,0.55)';
+const DIV_BEAR         = 'rgba(255,50,50,1)';
+const DIV_BEAR_HIDDEN  = 'rgba(255,50,50,0.55)';
+
 // Segment colours
 const SEG_COLORS = {
   fvg_bull:   'rgba(38,166,154,0.7)',
@@ -47,9 +53,13 @@ export class ChartManager {
     this._segSeries = {};      // type -> LineSeries[]
     this._segEvents = {};      // type -> event[]
     this._segKeys   = {};      // type -> number[] (dirty-check)
-    this._pocSeries  = [];      // LineSeries[] — one per POC level
-    this._pocData    = null;    // {starts, prices} from events
-    this._divMarkers = [];      // [{b, kind, hidden, label}] from events
+    this._pocSeries    = [];    // LineSeries[] — one per POC level
+    this._pocData      = null;  // {starts, prices} from events
+    this._divMarkers    = [];   // [{b, vf, kind, hidden, label}] from events
+    this._divShowLabels = true; // arrows+text vs circles
+    this._divLineSeries = [];   // LineSeries[] for pivot comparison lines
+    this._divLineData   = [];   // [{s, e, p0, p1, vf}]
+    this._divLineKeys   = [];   // dirty-check per line
     this._bars      = [];
     this._N         = 0;
     this._curN      = -1;
@@ -133,12 +143,17 @@ export class ChartManager {
     this._buildSegments(events);
     this._destroyPoc();
     this._buildPoc(events.poc);
-    this._divMarkers = events.divergences || [];
+    const div = events.divergences || {};
+    this._divMarkers    = div.markers    || [];
+    this._divShowLabels = div.show_labels ?? true;
+    this._destroyDivLines();
+    this._buildDivLines(div.lines || [], div.show_pivots ?? false);
     if (this._curN >= 0) {
       this._engine.reveal(this._curN);
       this._revealSegments(this._curN);
       this._revealPoc(this._curN);
       this._revealDivMarkers(this._curN);
+      this._revealDivLines(this._curN);
     }
   }
 
@@ -211,6 +226,7 @@ export class ChartManager {
     this._revealSegments(n);
     this._revealPoc(n);
     this._revealDivMarkers(n);
+    this._revealDivLines(n);
   }
 
   // ── Segment helpers ──────────────────────────────────────────────────────
@@ -332,6 +348,55 @@ export class ChartManager {
     this._pocData   = null;
   }
 
+  _buildDivLines(lines, showPivots) {
+    this._divLineData   = [];
+    this._divLineSeries = [];
+    this._divLineKeys   = [];
+    if (!showPivots) return;
+    for (const ln of lines) {
+      const bull  = ln.kind === 'bull';
+      const color = bull ? DIV_BULL : DIV_BEAR;
+      this._divLineData.push({ s: ln.s, e: ln.e, p0: ln.p0, p1: ln.p1, vf: ln.vf });
+      this._divLineKeys.push(-2);
+      this._divLineSeries.push(this._chart.addLineSeries({
+        color,
+        lineWidth:              Math.min(ln.count, 3),
+        lineStyle:              0,
+        priceLineVisible:       false,
+        lastValueVisible:       false,
+        crosshairMarkerVisible: false,
+      }));
+    }
+  }
+
+  _revealDivLines(n) {
+    for (let i = 0; i < this._divLineData.length; i++) {
+      const d   = this._divLineData[i];
+      const key = d.vf <= n ? 1 : -1;
+      if (key === this._divLineKeys[i]) continue;
+      this._divLineKeys[i] = key;
+      if (key < 0) {
+        this._divLineSeries[i].setData([]);
+      } else {
+        const t0 = (this._bars[d.s].Date || this._bars[d.s].date || '').slice(0, 10);
+        const t1 = (this._bars[d.e].Date || this._bars[d.e].date || '').slice(0, 10);
+        this._divLineSeries[i].setData([
+          { time: t0, value: d.p0 },
+          { time: t1, value: d.p1 },
+        ]);
+      }
+    }
+  }
+
+  _destroyDivLines() {
+    for (const s of this._divLineSeries) {
+      try { this._chart.removeSeries(s); } catch (_) {}
+    }
+    this._divLineSeries = [];
+    this._divLineData   = [];
+    this._divLineKeys   = [];
+  }
+
   _revealDivMarkers(n) {
     if (!this._divMarkers.length) {
       this._candles.setMarkers([]);
@@ -344,14 +409,14 @@ export class ChartManager {
       const time = (bar.Date || bar.date || '').slice(0, 10);
       const bull = m.kind === 'bull';
       const color = bull
-        ? (m.hidden ? 'rgba(38,166,154,0.45)' : 'rgba(38,166,154,1)')
-        : (m.hidden ? 'rgba(239,83,80,0.45)'  : 'rgba(239,83,80,1)');
+        ? (m.hidden ? DIV_BULL_HIDDEN  : DIV_BULL)
+        : (m.hidden ? DIV_BEAR_HIDDEN  : DIV_BEAR);
       markers.push({
         time,
         position: bull ? 'belowBar' : 'aboveBar',
         color,
-        shape:    bull ? 'arrowUp' : 'arrowDown',
-        text:     m.label,
+        shape:    this._divShowLabels ? (bull ? 'arrowUp' : 'arrowDown') : 'circle',
+        text:     this._divShowLabels ? m.label : '',
         size:     1,
       });
     }
@@ -392,7 +457,9 @@ export class ChartManager {
   }
 
   destroy() {
-    this._divMarkers = [];
+    this._divMarkers    = [];
+    this._divShowLabels = true;
+    this._destroyDivLines();
     this._destroyPoc();
     this._destroySegments();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }
