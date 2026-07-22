@@ -33,8 +33,8 @@ const SEG_COLORS = {
 };
 
 // Segment line widths and styles (match original app)
-const SEG_WIDTH  = { fvg: 1, ob: 8, bos: 1, liq: 1, gap: 1, poc: 4 };
-const SEG_LSTYLE = { fvg: 2, ob: 0, bos: 0, liq: 0, gap: 0, poc: 0 };  // 0=solid, 2=dashed
+const SEG_WIDTH  = { fvg: 1, ob: 8, bos: 1, liq: 1, gap: 1 };
+const SEG_LSTYLE = { fvg: 2, ob: 0, bos: 0, liq: 0, gap: 0 };  // 0=solid, 2=dashed
 
 export class ChartManager {
   constructor(container) {
@@ -47,6 +47,8 @@ export class ChartManager {
     this._segSeries = {};      // type -> LineSeries[]
     this._segEvents = {};      // type -> event[]
     this._segKeys   = {};      // type -> number[] (dirty-check)
+    this._pocSeries = [];      // LineSeries[] — one per POC level
+    this._pocData   = null;    // {starts, prices} from events
     this._bars      = [];
     this._N         = 0;
     this._curN      = -1;
@@ -128,10 +130,13 @@ export class ChartManager {
     // Destroy any previous segment series and rebuild from new events
     this._destroySegments();
     this._buildSegments(events);
+    this._destroyPoc();
+    this._buildPoc(events.poc);
 
     if (this._curN >= 0) {
       this._engine.reveal(this._curN);
       this._revealSegments(this._curN);
+      this._revealPoc(this._curN);
     }
   }
 
@@ -202,6 +207,7 @@ export class ChartManager {
 
     // Segment indicators
     this._revealSegments(n);
+    this._revealPoc(n);
   }
 
   // ── Segment helpers ──────────────────────────────────────────────────────
@@ -211,7 +217,6 @@ export class ChartManager {
     if (type === 'ob')   return ev.dir === 'bull' ? SEG_COLORS.ob_bull   : SEG_COLORS.ob_bear;
     if (type === 'liq')  return ev.dir === 'bull' ? SEG_COLORS.liq_bull  : SEG_COLORS.liq_bear;
     if (type === 'gap')  return ev.dir === 'bull' ? SEG_COLORS.gap_bull  : SEG_COLORS.gap_bear;
-    if (type === 'poc')  return `rgba(255,165,0,${ev.opacity ?? 0.9})`;
     if (type === 'bos')  {
       const isBos = ev.sig === 'bos' || ev.sig === undefined;
       return ev.dir === 'bull'
@@ -226,7 +231,7 @@ export class ChartManager {
     this._segEvents = {};
     this._segKeys   = {};
 
-    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap', 'poc']) {
+    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap']) {
       const evts = events[type] || [];
       this._segEvents[type] = evts;
       this._segSeries[type] = [];
@@ -246,7 +251,7 @@ export class ChartManager {
   }
 
   _revealSegments(n) {
-    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap', 'poc']) {
+    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap']) {
       const evts   = this._segEvents[type];
       const series = this._segSeries[type];
       const keys   = this._segKeys[type];
@@ -283,6 +288,47 @@ export class ChartManager {
     }
   }
 
+  // ── POC dynamic flat segments ────────────────────────────────────────────
+
+  _buildPoc(poc) {
+    if (!poc || !poc.starts) return;
+    this._pocData = poc;
+    this._pocSeries = poc.starts.map(() => this._chart.addLineSeries({
+      color:                  'rgba(255,165,0,0.35)',
+      lineWidth:              4,
+      lineStyle:              0,
+      priceLineVisible:       false,
+      lastValueVisible:       false,
+      crosshairMarkerVisible: false,
+    }));
+  }
+
+  _revealPoc(n) {
+    if (!this._pocData || !this._pocSeries.length) return;
+    const { starts, prices } = this._pocData;
+    for (let i = 0; i < this._pocSeries.length; i++) {
+      const start = starts[i];
+      if (n < start) { this._pocSeries[i].setData([]); continue; }
+      const price = prices[i][n];
+      if (price == null) { this._pocSeries[i].setData([]); continue; }
+      const startTime = (this._bars[start].Date || this._bars[start].date || '').slice(0, 10);
+      const endTime   = (this._bars[n].Date   || this._bars[n].date   || '').slice(0, 10);
+      this._pocSeries[i].setData(
+        startTime === endTime
+          ? [{ time: startTime, value: price }]
+          : [{ time: startTime, value: price }, { time: endTime, value: price }]
+      );
+    }
+  }
+
+  _destroyPoc() {
+    for (const s of this._pocSeries) {
+      try { this._chart.removeSeries(s); } catch (_) {}
+    }
+    this._pocSeries = [];
+    this._pocData   = null;
+  }
+
   _destroySegments() {
     for (const seriesList of Object.values(this._segSeries)) {
       for (const s of seriesList) {
@@ -316,6 +362,7 @@ export class ChartManager {
   }
 
   destroy() {
+    this._destroyPoc();
     this._destroySegments();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }
     if (this._stLine)  { try { this._chart.removeSeries(this._stLine); } catch (_) {} this._stLine = null; }

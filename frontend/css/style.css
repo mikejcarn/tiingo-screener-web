@@ -846,8 +846,8 @@ body.ind-page {
 .btn-destructive {
   color: rgba(239,83,80,0.6);
   border-color: rgba(239,83,80,0.2);
-  font-size: 12px;
-  padding: 4px 10px;
+  font-size: 13px;
+  padding: 5px 10px;
 }
 .btn-destructive:hover {
   color: rgba(239,83,80,0.9);

@@ -8,15 +8,18 @@ _NUM_BINS = 500
 
 def calculate_poc(df, num_levels=4, lookback_bars=None, **_):
     num_levels = max(1, int(num_levels))
-    fractions  = [1.0 - i / num_levels for i in range(num_levels)]
 
     high   = df['High'].values
     low    = df['Low'].values
     volume = df['Volume'].fillna(0).values
     n      = len(df)
 
-    base = min(n, int(lookback_bars)) if lookback_bars else n
-    high_w, low_w, vol_w = high[-base:], low[-base:], volume[-base:]
+    base   = min(n, int(lookback_bars)) if lookback_bars else n
+    offset = n - base
+
+    high_w = high[-base:]
+    low_w  = low[-base:]
+    vol_w  = volume[-base:]
 
     real_mask = vol_w > 0
     if not real_mask.any():
@@ -38,26 +41,26 @@ def calculate_poc(df, num_levels=4, lookback_bars=None, **_):
             span = hi_bins[i] - lo_bins[i] + 1
             bar_profile[i, lo_bins[i]:hi_bins[i] + 1] = vol_w[i] / span
 
-    cumsum       = np.cumsum(bar_profile, axis=0)
-    full_profile = cumsum[-1]
+    cumsum = np.cumsum(bar_profile, axis=0)
 
     result = {}
-    for i, frac in enumerate(fractions):
-        window     = max(1, int(base * frac))
-        start_in_w = base - window
-        start_bar  = n - base + start_in_w
+    for level in range(num_levels):
+        frac       = 1.0 - level / num_levels
+        start_in_w = int((1.0 - frac) * base)
+        start_bar  = offset + start_in_w
 
-        profile = full_profile - cumsum[start_in_w - 1] if start_in_w > 0 else full_profile
+        lag     = cumsum[start_in_w - 1] if start_in_w > 0 else np.zeros(_NUM_BINS)
+        rolling = cumsum[start_in_w:] - lag
 
-        poc_bin   = int(np.argmax(profile))
-        poc_price = price_min + (poc_bin + 0.5) * bin_size
+        valid     = rolling.sum(axis=1) > 0
+        poc_bins  = np.argmax(rolling, axis=1)
+        poc_slice = (price_min + (poc_bins + 0.5) * bin_size).astype(float)
+        poc_slice[~valid] = np.nan
 
         series = pd.Series(np.nan, index=df.index, dtype=float)
-        if 0 <= start_bar < n:
-            series.iloc[start_bar] = poc_price
+        series.iloc[start_bar:] = poc_slice
 
-        label = f'POC_{i}'
-        result[label] = series
+        result[f'POC_{level}'] = series
 
     return result
 

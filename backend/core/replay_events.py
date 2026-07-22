@@ -522,35 +522,33 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
     return pools
 
 
-def _extract_poc_segments(df: pd.DataFrame) -> list:
+
+def _extract_poc_segments(df: pd.DataFrame) -> dict | None:
     """
-    Extract POC horizontal segment events.  Each POC_N column carries a single
-    non-NaN value at the window start bar; the segment runs flat to the last bar.
-    Opacity fades from 0.9 (longest window) to 0.25 (shortest).
+    Extract POC dynamic segment data.  Each POC_N column holds a rolling price
+    value per bar (NaN before the window's start bar).  Returns {starts, prices}
+    so the JS engine can render a flat horizontal segment at each replay step
+    using only data seen so far — no look-ahead.
     """
     import re as _re
     poc_cols = sorted(
         [c for c in df.columns if _re.fullmatch(r'POC_\d+', c)],
         key=lambda c: int(c.split('_')[1]),
     )
-    n      = len(df)
-    total  = len(poc_cols)
-    events = []
-    for i, col in enumerate(poc_cols):
-        non_nan = df[col].dropna()
-        if non_nan.empty:
+    if not poc_cols:
+        return None
+
+    starts = []
+    prices = []
+    for col in poc_cols:
+        vals  = df[col].values
+        start = next((int(i) for i, v in enumerate(vals) if v == v), None)
+        if start is None:
             continue
-        start_bar = int(df.index.get_loc(non_nan.index[0]))
-        price     = float(non_nan.iloc[0])
-        opacity   = round(0.9 - (i / max(total - 1, 1)) * 0.65, 3) if total > 1 else 0.9
-        events.append({
-            's':       start_bar,
-            'e':       n - 1,
-            'p':       price,
-            'vf':      start_bar,
-            'opacity': opacity,
-        })
-    return events
+        starts.append(start)
+        prices.append([None if v != v else float(v) for v in vals])
+
+    return {'starts': starts, 'prices': prices} if starts else None
 
 
 def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
