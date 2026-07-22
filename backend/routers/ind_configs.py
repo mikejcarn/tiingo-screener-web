@@ -142,6 +142,14 @@ def _get_param_labels(name: str) -> dict:
         return {}
 
 
+def _get_param_separators(name: str) -> list:
+    try:
+        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
+        return getattr(mod, 'param_separators', [])
+    except ImportError:
+        return []
+
+
 def _get_display_name(name: str) -> str | None:
     try:
         mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
@@ -151,7 +159,13 @@ def _get_display_name(name: str) -> str | None:
 
 
 # Utility modules that exist as indicators but should not appear in the UI
-_HIDDEN_INDICATORS = {'aVWAP'}
+_HIDDEN_INDICATORS = {
+    'aVWAP',
+    # Individual divergence types — consolidated into the single 'divergence' indicator
+    'divergence_ATR', 'divergence_Fisher', 'divergence_Fractal', 'divergence_MACD',
+    'divergence_MFI', 'divergence_Momentum', 'divergence_OBV', 'divergence_RSI',
+    'divergence_Stochastic', 'divergence_Volume', 'divergence_Vortex',
+}
 
 @router.get("/indicator-defaults")
 def indicator_defaults():
@@ -164,8 +178,10 @@ def indicator_defaults():
                      if (opts := _get_param_options(name))}
     param_labels = {name: lbls for name in available
                     if (lbls := _get_param_labels(name))}
-    display_names = {name: dn for name in available
-                     if (dn := _get_display_name(name))}
+    display_names     = {name: dn for name in available
+                         if (dn := _get_display_name(name))}
+    param_separators  = {name: s for name in available
+                         if (s := _get_param_separators(name))}
     return {"available": available, "defaults": defaults,
             "param_options": param_options, "param_labels": param_labels,
-            "display_names": display_names}
+            "display_names": display_names, "param_separators": param_separators}

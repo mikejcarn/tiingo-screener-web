@@ -47,8 +47,9 @@ export class ChartManager {
     this._segSeries = {};      // type -> LineSeries[]
     this._segEvents = {};      // type -> event[]
     this._segKeys   = {};      // type -> number[] (dirty-check)
-    this._pocSeries = [];      // LineSeries[] — one per POC level
-    this._pocData   = null;    // {starts, prices} from events
+    this._pocSeries  = [];      // LineSeries[] — one per POC level
+    this._pocData    = null;    // {starts, prices} from events
+    this._divMarkers = [];      // [{b, kind, hidden, label}] from events
     this._bars      = [];
     this._N         = 0;
     this._curN      = -1;
@@ -132,10 +133,12 @@ export class ChartManager {
     this._buildSegments(events);
     this._destroyPoc();
     this._buildPoc(events.poc);
+    this._divMarkers = events.divergences || [];
     if (this._curN >= 0) {
       this._engine.reveal(this._curN);
       this._revealSegments(this._curN);
       this._revealPoc(this._curN);
+      this._revealDivMarkers(this._curN);
     }
   }
 
@@ -207,6 +210,7 @@ export class ChartManager {
     // Segment indicators
     this._revealSegments(n);
     this._revealPoc(n);
+    this._revealDivMarkers(n);
   }
 
   // ── Segment helpers ──────────────────────────────────────────────────────
@@ -328,6 +332,33 @@ export class ChartManager {
     this._pocData   = null;
   }
 
+  _revealDivMarkers(n) {
+    if (!this._divMarkers.length) {
+      this._candles.setMarkers([]);
+      return;
+    }
+    const markers = [];
+    for (const m of this._divMarkers) {
+      if ((m.vf ?? m.b) > n) continue;
+      const bar  = this._bars[m.b];
+      const time = (bar.Date || bar.date || '').slice(0, 10);
+      const bull = m.kind === 'bull';
+      const color = bull
+        ? (m.hidden ? 'rgba(38,166,154,0.45)' : 'rgba(38,166,154,1)')
+        : (m.hidden ? 'rgba(239,83,80,0.45)'  : 'rgba(239,83,80,1)');
+      markers.push({
+        time,
+        position: bull ? 'belowBar' : 'aboveBar',
+        color,
+        shape:    bull ? 'arrowUp' : 'arrowDown',
+        text:     m.label,
+        size:     1,
+      });
+    }
+    markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+    this._candles.setMarkers(markers);
+  }
+
   _destroySegments() {
     for (const seriesList of Object.values(this._segSeries)) {
       for (const s of seriesList) {
@@ -361,6 +392,7 @@ export class ChartManager {
   }
 
   destroy() {
+    this._divMarkers = [];
     this._destroyPoc();
     this._destroySegments();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }

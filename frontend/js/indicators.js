@@ -24,10 +24,12 @@ let _configList  = [];   // [{id, name, created_at}]
 let _selectedId  = null;
 let _configData  = null; // {id, name, indicators: {tf: {ind: params}}}
 let _defaults    = null; // {available: [...], defaults: {ind: params}}
-let _paramOptions = {}; // {ind: {param_key: {option_val: sub_params}}}
-let _paramLabels  = {}; // {ind: {param_key: display_label}}
-let _displayNames = {}; // {ind: display_name} — optional long name for UI
-let _currentParamLabels = {}; // active indicator's labels during rendering
+let _paramOptions     = {}; // {ind: {param_key: {option_val: sub_params}}}
+let _paramLabels      = {}; // {ind: {param_key: display_label}}
+let _displayNames     = {}; // {ind: display_name} — optional long name for UI
+let _paramSeparators  = {}; // {ind: [key, ...]} — insert divider before these keys
+let _currentParamLabels     = {}; // active indicator's labels during rendering
+let _currentParamSeparators = []; // active indicator's separator keys during rendering
 let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
 let _dirty       = false;
@@ -86,9 +88,10 @@ async function _loadConfigList() {
 
 async function _loadDefaults() {
   _defaults = await fetch('/api/indicator-defaults').then(r => r.json());
-  _paramOptions = _defaults.param_options  || {};
-  _paramLabels  = _defaults.param_labels   || {};
-  _displayNames = _defaults.display_names  || {};
+  _paramOptions    = _defaults.param_options    || {};
+  _paramLabels     = _defaults.param_labels     || {};
+  _displayNames    = _defaults.display_names    || {};
+  _paramSeparators = _defaults.param_separators || {};
 }
 
 async function _selectConfig(id, { toggleQueue = true } = {}) {
@@ -262,7 +265,8 @@ function _normalizeParams(ind, params) {
 
 function _renderIndicatorCard(ind, enabled, params) {
   const normalized = _normalizeParams(ind, params);
-  _currentParamLabels = _paramLabels[ind] || {};
+  _currentParamLabels     = _paramLabels[ind]     || {};
+  _currentParamSeparators = _paramSeparators[ind] || [];
   const bodyHtml = enabled
     ? `<div class="ind-card-body">
          <div class="param-tree">${_renderParamTree(normalized)}</div>
@@ -285,7 +289,11 @@ function _renderIndicatorCard(ind, enabled, params) {
 
 function _renderParamTree(params) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return '';
-  return Object.entries(params).map(([k, v]) => _renderParamValue(k, v)).join('');
+  return Object.entries(params).map(([k, v]) => {
+    const sep = _currentParamSeparators.includes(k)
+      ? '<div class="param-separator"></div>' : '';
+    return sep + _renderParamValue(k, v);
+  }).join('');
 }
 
 function _renderNullableNum(key, val) {

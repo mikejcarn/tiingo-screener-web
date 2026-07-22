@@ -34,6 +34,17 @@ def col_styles_for_columns(columns: list) -> dict:
     for col in columns:
         cfg = _cfg_idx(col)
 
+        # Divergence signals rendered as candle markers; oscillator values are
+        # subplot indicators — neither belongs on the price chart as a line.
+        if (col.endswith('_Regular_Bullish') or col.endswith('_Regular_Bearish')
+                or col.endswith('_Hidden_Bullish') or col.endswith('_Hidden_Bearish')):
+            continue
+        if col in ('RSI', 'MACD', 'Signal', 'Histogram', 'OBV', 'OBV_Smoothed',
+                   'ATR', 'Fisher', 'Fisher_Signal', 'Fractal_Energy',
+                   'MFI', 'Momentum', 'Momentum_Smoothed',
+                   'Stoch_%K', 'Stoch_%D', 'VI_plus', 'VI_minus', 'Volume_MA'):
+            continue
+
         # These column types are all handled by the client-side DynamicVWAPEngine
         # via replay_events — skip static rendering entirely.
         if (col.startswith('aVWAP_QQEMOD_')

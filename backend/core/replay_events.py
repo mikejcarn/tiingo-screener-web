@@ -561,6 +561,24 @@ def _extract_poc_segments(df: pd.DataFrame) -> dict | None:
     return {'starts': starts, 'prices': prices} if starts else None
 
 
+def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> list:
+    import re
+    right = int((params or {}).get('right', 5))
+    pattern = re.compile(r'^(.+?)_(Regular|Hidden)_(Bullish|Bearish)$')
+    markers = []
+    for col in df.columns:
+        m = pattern.match(col)
+        if not m:
+            continue
+        label, regularity, direction = m.group(1), m.group(2), m.group(3)
+        kind   = 'bull' if direction == 'Bullish' else 'bear'
+        hidden = regularity == 'Hidden'
+        true_bars = [int(i) for i, v in enumerate(df[col]) if v]
+        for b in true_bars:
+            markers.append({'b': b, 'vf': b + right, 'kind': kind, 'hidden': hidden, 'label': label})
+    return markers
+
+
 def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     """
     Build the replay_events payload to send over WebSocket.
@@ -618,4 +636,6 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'poc': _extract_poc_segments(df),
         # Dynamic aVWAP anchor pools (OB, BoS/CHoCH, gaps, price_maxima_minima)
         'avwap_anchors': _extract_dynamic_avwap_anchors(df, ind_params),
+        # Divergence arrow markers
+        'divergences': _extract_divergence_markers(df, ind_params.get('divergence', {})),
     }

@@ -1,90 +1,29 @@
-import pandas as pd
 import numpy as np
-from typing import Dict
+import pandas as pd
+from backend.indicators.indicators_list._divergence_core import detect_divergences
 
-def calculate_fisher_divergence(df: pd.DataFrame, 
-                                period: int = 10,
-                                lookback: int = 5) -> Dict[str, pd.Series]:
-    """
-    Calculates Fisher Transform regular and hidden divergences.
-    
-    Returns:
-    {
-        'Fisher': Fisher Transform values,
-        'Fisher_Signal': Smoothed Fisher line,
-        'Fisher_Regular_Bullish': True at bullish divergence points,
-        'Fisher_Regular_Bearish': True at bearish divergence points,
-        'Fisher_Hidden_Bullish': True at hidden bullish points,
-        'Fisher_Hidden_Bearish': True at hidden bearish points
-    }
-    """
-    results = {}
-    
-    # 1. Calculate Fisher Transform
-    hl2 = (df['High'] + df['Low']) / 2  # Typical price
+
+def calculate_fisher_divergence(df: pd.DataFrame, period: int = 10,
+                                 left: int = 5, right: int = 5, **_):
+    hl2     = (df['High'] + df['Low']) / 2
     max_hl2 = hl2.rolling(period).max()
     min_hl2 = hl2.rolling(period).min()
-    
-    # Normalize and smooth
-    val = 0.33 * 2 * ((hl2 - min_hl2) / (max_hl2 - min_hl2 + 1e-7) - 0.5)
-    val = val.clip(-0.999, 0.999)  # Avoid infinity in log calculation
-    
-    results['Fisher'] = fisher = 0.5 * np.log((1 + val) / (1 - val))
-    results['Fisher_Signal'] = fisher.ewm(span=3, adjust=False).mean()  # Signal line
-    
-    # 2. Find peaks and valleys (using smoothed Fisher)
-    price_peaks = _find_peaks(df['Close'], lookback)
-    price_valleys = _find_valleys(df['Close'], lookback)
-    fisher_peaks = _find_peaks(results['Fisher'], lookback)
-    fisher_valleys = _find_valleys(results['Fisher'], lookback)
-    
-    # 3. Detect divergences
-    results.update({
-        'Fisher_Regular_Bullish': _detect_bullish_divergence(
-            df['Close'], results['Fisher'], price_valleys, fisher_valleys, lookback),
-        'Fisher_Regular_Bearish': _detect_bearish_divergence(
-            df['Close'], results['Fisher'], price_peaks, fisher_peaks, lookback),
-        'Fisher_Hidden_Bullish': _detect_hidden_bullish_divergence(
-            df['Close'], results['Fisher'], price_valleys, fisher_valleys, lookback),
-        'Fisher_Hidden_Bearish': _detect_hidden_bearish_divergence(
-            df['Close'], results['Fisher'], price_peaks, fisher_peaks, lookback)
-    })
-    
-    return results
 
-def _find_peaks(series: pd.Series, lookback: int) -> pd.Series:
-    return (series.rolling(lookback, center=True).max() == series)
+    val    = (0.33 * 2 * ((hl2 - min_hl2) / (max_hl2 - min_hl2 + 1e-7) - 0.5)).clip(-0.999, 0.999)
+    fisher = 0.5 * np.log((1 + val) / (1 - val))
+    signal = fisher.ewm(span=3, adjust=False).mean()
 
-def _find_valleys(series: pd.Series, lookback: int) -> pd.Series:
-    return (series.rolling(lookback, center=True).min() == series)
+    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
+        df['Close'], fisher, left, right)
+    return {
+        'Fisher':                  fisher,
+        'Fisher_Signal':           signal,
+        'Fisher_Regular_Bullish':  reg_bull,
+        'Fisher_Regular_Bearish':  reg_bear,
+        'Fisher_Hidden_Bullish':   hid_bull,
+        'Fisher_Hidden_Bearish':   hid_bear,
+    }
 
-def _detect_bullish_divergence(price: pd.Series, fisher: pd.Series, 
-                              price_valleys: pd.Series, fisher_valleys: pd.Series,
-                              lookback: int) -> pd.Series:
-    return (price_valleys & 
-            (price < price.shift(lookback)) & 
-            (fisher > fisher.shift(lookback)))
 
-def _detect_bearish_divergence(price: pd.Series, fisher: pd.Series,
-                              price_peaks: pd.Series, fisher_peaks: pd.Series,
-                              lookback: int) -> pd.Series:
-    return (price_peaks & 
-            (price > price.shift(lookback)) & 
-            (fisher < fisher.shift(lookback)))
-
-def _detect_hidden_bullish_divergence(price: pd.Series, fisher: pd.Series,
-                                    price_valleys: pd.Series, fisher_valleys: pd.Series,
-                                    lookback: int) -> pd.Series:
-    return (price_valleys & 
-            (price > price.shift(lookback)) & 
-            (fisher < fisher.shift(lookback)))
-
-def _detect_hidden_bearish_divergence(price: pd.Series, fisher: pd.Series,
-                                    price_peaks: pd.Series, fisher_peaks: pd.Series,
-                                    lookback: int) -> pd.Series:
-    return (price_peaks & 
-            (price < price.shift(lookback)) & 
-            (fisher > fisher.shift(lookback)))
-
-def calculate_indicator(df, **params):
+def calculate_indicator(df: pd.DataFrame, **params):
     return calculate_fisher_divergence(df, **params)
