@@ -132,7 +132,6 @@ export class ChartManager {
     this._buildSegments(events);
     this._destroyPoc();
     this._buildPoc(events.poc);
-
     if (this._curN >= 0) {
       this._engine.reveal(this._curN);
       this._revealSegments(this._curN);

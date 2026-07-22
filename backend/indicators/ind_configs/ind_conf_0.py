@@ -260,7 +260,7 @@ params = {
                 'range_percent': 0.1,
                 'max_swept': 0,
                 'max_unswept': None,
-                'extend_lines': True,
+                'extend_lines': False,
             },
             'candle_colors': {
                 'indicator_color': 'QQEMOD',
@@ -312,7 +312,7 @@ params = {
                 'range_percent': 0.1,
                 'max_swept': 0,
                 'max_unswept': None,
-                'extend_lines': True,
+                'extend_lines': False,
             },
             'TTM_squeeze': {
                 'bb_length': 18, 'bb_std_dev': 1.9,

@@ -294,6 +294,7 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
         params = {}
     swing_length = int(params.get('swing_length', 0))
     max_swept    = params.get('max_swept', None)
+    extend_lines = bool(params.get('extend_lines', False))
     n = len(df)
     events = []
     for idx in df[df['Liquidity'] != 0].index:
@@ -307,13 +308,22 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
         else:
             end, is_swept = int(swept), True
         if is_swept and max_swept == 0:
-            continue  # never show swept levels when max_swept=0
+            continue
         s = int(idx)
         events.append({
             's': s, 'e': end, 'p': float(level),
             'm': is_swept, 'dir': 'bull' if v > 0 else 'bear',
             'vf': s + swing_length,
         })
+
+    if not extend_lines:
+        # Cap each unswept event's end at the next same-direction swing start
+        for direction in ('bull', 'bear'):
+            group = sorted([ev for ev in events if ev['dir'] == direction], key=lambda e: e['s'])
+            for i, ev in enumerate(group):
+                if not ev['m'] and i + 1 < len(group):
+                    ev['e'] = min(ev['e'], group[i + 1]['s'])
+
     return events
 
 

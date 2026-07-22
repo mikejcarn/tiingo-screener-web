@@ -468,6 +468,7 @@ function _wireStaticButtons() {
       _selectFirstFilteredIndicator();
     }
   });
+
 }
 
 async function _renderRunConfigs() {
@@ -1284,10 +1285,13 @@ document.addEventListener('keydown', e => {
     if (e.key === 'C') { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I') { e.preventDefault(); window.location.href = '/indicators'; return; }
+    if (e.key === 'S') { e.preventDefault(); _saveConfig(); return; }
+    if (e.key === 'R') { e.preventDefault(); _startCompute(); return; }
   }
   if (
     e.key.length === 1 &&
     !e.ctrlKey && !e.metaKey && !e.altKey &&
+    e.key === e.key.toLowerCase() &&   // ignore uppercase — reserved for shortcuts
     tag !== 'INPUT' && tag !== 'TEXTAREA' &&
     document.getElementById('ind-editor')?.style.display !== 'none'
   ) {
