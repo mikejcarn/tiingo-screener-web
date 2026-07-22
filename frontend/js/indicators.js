@@ -296,15 +296,26 @@ function _renderParamTree(params) {
   }).join('');
 }
 
+function _numSpin(disabled) {
+  const dis = disabled ? ' disabled' : '';
+  return `<span class="param-num-spin">
+    <button type="button" class="param-num-up" tabindex="-1" title="Increment"${dis}>&#9650;</button>
+    <button type="button" class="param-num-down" tabindex="-1" title="Decrement"${dis}>&#9660;</button>
+  </span>`;
+}
+
 function _renderNullableNum(key, val) {
   const enabled = val !== null && val !== undefined;
   const label = _currentParamLabels[key] ?? key;
   return `<div class="param-field param-nullable" data-key="${_esc(key)}" data-type="nullable_num">
     <input type="checkbox" class="param-checkbox param-nullable-toggle"${enabled ? ' checked' : ''}>
     <span class="param-key">${_esc(label)}</span>
-    <input type="number" value="${enabled ? val : ''}" step="1" min="0"
-      class="param-input param-num param-nullable-value"${enabled ? '' : ' disabled'}
-      placeholder="∞">
+    <span class="param-num-wrap">
+      <input type="number" value="${enabled ? val : ''}" step="1" min="0"
+        class="param-input param-num param-nullable-value"${enabled ? '' : ' disabled'}
+        placeholder="∞">
+      ${_numSpin(!enabled)}
+    </span>
   </div>`;
 }
 
@@ -343,7 +354,10 @@ function _renderParamValue(key, val) {
     const isInt = Number.isInteger(val);
     return `<div class="param-field" data-key="${_esc(key)}" data-type="${isInt ? 'int' : 'float'}">
       <span class="param-key">${_esc(label)}</span>
-      <input type="number" value="${val}" step="${isInt ? '1' : 'any'}" min="0" class="param-input param-num">
+      <span class="param-num-wrap">
+        <input type="number" value="${val}" step="${isInt ? '1' : 'any'}" min="0" class="param-input param-num">
+        ${_numSpin()}
+      </span>
     </div>`;
   }
   if (typeof val === 'string') {
@@ -548,11 +562,14 @@ function _wireListEvents() {
 
     // Nullable-number toggle: enable/disable the number input
     if (e.target.classList.contains('param-nullable-toggle')) {
-      const numEl = e.target.closest('.param-nullable')?.querySelector('.param-nullable-value');
+      const wrap = e.target.closest('.param-nullable')?.querySelector('.param-num-wrap');
+      const numEl = wrap?.querySelector('.param-nullable-value');
       if (numEl) {
         numEl.disabled = !e.target.checked;
         if (e.target.checked && !numEl.value) numEl.value = '5';
       }
+      wrap?.querySelectorAll('.param-num-up, .param-num-down')
+        .forEach(btn => { btn.disabled = !e.target.checked; });
     }
 
     // Nullable-list toggle: enable/disable the text input
@@ -601,6 +618,24 @@ function _wireListEvents() {
     if (gh) {
       const group = gh.closest('.param-group');
       group.classList.toggle('collapsed');
+    }
+
+    // Custom number-input spinner buttons
+    const spinBtn = e.target.closest('.param-num-up, .param-num-down');
+    if (spinBtn) {
+      const input = spinBtn.closest('.param-num-wrap')?.querySelector('input[type="number"]');
+      if (input && !input.disabled) {
+        const step = parseFloat(input.step) || 1;
+        const min  = input.min !== '' ? parseFloat(input.min) : -Infinity;
+        const max  = input.max !== '' ? parseFloat(input.max) : Infinity;
+        let cur = parseFloat(input.value);
+        if (isNaN(cur)) cur = min !== -Infinity ? min : 0;
+        const dir  = spinBtn.classList.contains('param-num-up') ? 1 : -1;
+        let next = Math.round((cur + dir * step) * 1e6) / 1e6;
+        next = Math.max(min, Math.min(max, next));
+        input.value = next;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
     }
   });
 }

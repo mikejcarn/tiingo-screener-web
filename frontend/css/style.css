@@ -1039,6 +1039,39 @@ body.ind-page {
   min-width: 0;
 }
 .param-input:focus { outline: none; border-color: #666; }
+.param-num::-webkit-outer-spin-button,
+.param-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.param-num { -moz-appearance: textfield; padding-right: 20px; }
+
+.param-num-wrap { position: relative; display: flex; flex: 1; min-width: 0; }
+.param-num-wrap .param-num { flex: 1; min-width: 0; }
+.param-num-spin {
+  position: absolute;
+  top: 1px; bottom: 1px; right: 1px;
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.param-num-up, .param-num-down {
+  flex: 1;
+  min-height: 0;
+  background: #111;
+  border: none;
+  border-left: 1px solid #222;
+  color: #666;
+  font-size: 6px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.param-num-up   { border-radius: 0 2px 0 0; border-bottom: 1px solid #1a1a1a; }
+.param-num-down { border-radius: 0 0 2px 0; }
+.param-num-up:hover,   .param-num-down:hover   { background: #1a1a1a; color: #aaa; }
+.param-num-up:active,  .param-num-down:active  { background: #222; color: rgba(38,166,154,0.9); }
+.param-num-up:disabled, .param-num-down:disabled { opacity: 0.3; cursor: not-allowed; background: #111; color: #666; }
 .param-input:disabled { opacity: 0.25; cursor: not-allowed; }
 .param-none { font-size: 11px; color: #333; font-style: italic; padding: 2px 0; }
 .param-group.param-inline > .param-group-head { display: none; }
