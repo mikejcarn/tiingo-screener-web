@@ -3,6 +3,8 @@ import pandas as pd
 from backend.indicators.indicators_list.aVWAP import calculate_avwap
 
 
+
+display_name = "aVWAP — Min / Max"
 def _greedy_extrema(values, n, spacing, mode):
     """Pick up to n non-clustered extrema from values using a greedy mask approach."""
     mask = np.ones(len(values), dtype=bool)

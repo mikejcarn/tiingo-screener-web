@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 
 
+
+display_name = "Price Gaps"
 def calculate_gaps(df, max_mitigated=5, max_unmitigated=5):
     df = df.copy()
     prev_high = df['High'].shift(1)

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-display_name = "Point of Control (Volume Profile)"
+display_name = "Point of Control (POC)"
 
 _NUM_BINS = 500
 

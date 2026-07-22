@@ -194,6 +194,8 @@ from backend.core.color_palette import get_color_palette
 
 # Sub-params shown per centreline mode. Keys must match the **kwargs names that
 # ZScore / StDev forward to their sub-indicators.
+
+display_name = "Candlestick Colors"
 _CENTRELINE_SUB_DEFAULTS = {
     'peaks_valleys_avg': {'periods': 20, 'max_aVWAPs': None},
     'gaps_avg':          {'max_aVWAPs': 10},
@@ -205,11 +207,6 @@ _CENTRELINE_SUB_DEFAULTS = {
 _SUB_DEFAULTS = {
     'ZScore': {
         'std_lookback': 75, 'avg_lookback': 20,
-        'centreline': 'peaks_valleys_avg',
-        'centreline_params': dict(_CENTRELINE_SUB_DEFAULTS['peaks_valleys_avg']),
-    },
-    'StDev': {
-        'stdev_lookback': 100, 'avg_lookback': 10,
         'centreline': 'peaks_valleys_avg',
         'centreline_params': dict(_CENTRELINE_SUB_DEFAULTS['peaks_valleys_avg']),
     },
@@ -226,8 +223,8 @@ _SUB_DEFAULTS = {
 
 # Consumed by _get_indicator_defaults: top-level param defaults shown in editor.
 defaults = {
-    'indicator_color': 'StDev',
-    'custom_params':   dict(_SUB_DEFAULTS['StDev']),
+    'indicator_color': 'QQEMOD',
+    'custom_params':   dict(_SUB_DEFAULTS['QQEMOD']),
 }
 
 # Consumed by _get_param_options: tells the UI which sub-params to swap
@@ -238,37 +235,26 @@ param_options = {
 }
 
 
-def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
+def calculate_candle_colors(df, indicator_color='QQEMOD', custom_params=None):
     """
     Enhanced candle color calculator with customizable parameters
-    
+
     Parameters:
         df (pd.DataFrame): Input price data
         indicator_color (str): Indicator to use for coloring
-        custom_params (dict): Optional parameter overrides by indicator
-            Example: {'StDev': {'std_lookback': 60}, 'TTM_squeeze': {'bb_std_dev': 1.5}}
-            
+            Options: 'ZScore', 'RSI', 'QQEMOD', 'banker_RSI', 'WAE', 'supertrend', 'TTM_squeeze'
+        custom_params (dict): Optional parameter overrides for the selected indicator
+
     Returns:
         dict: {'color': pd.Series of colors matching df index}
     """
 
-    # Indicator Color Options: 
-    # 'ZScore', 'StDev', 'RSI', 'QQEMOD', 'banker_RSI', 'WAE', 'supertrend', 
-    # 'TTM_squeeze'
-
-    # Default parameters for supported indicators
     default_params = {
         'ZScore': {
             'centreline': 'peaks_valleys_avg',
             'peaks_valleys_params': {'periods': 20, 'max_aVWAPs': None},
             'std_lookback': 75,
             'avg_lookback': 20
-        },
-        'StDev': {
-            'centreline': 'peaks_valleys_avg',
-            'peaks_valleys_params': {'periods': 100, 'max_aVWAPs': None},
-            'stdev_lookback': 100,
-            'avg_lookback': 10,
         },
         'TTM_squeeze': {
             'bb_length': 20,
@@ -336,24 +322,6 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
         elif  3.0 < zscore:         return colors['neon']
         return colors['black']
 
-    def map_stdev(row):
-        devs = (row['Close'] - row['StDev_Mean']) / row['StDev']
-        if devs >= 3.0: return colors['neon']
-        elif 2.5 <= devs < 3.0: return colors['neon']
-        elif 2.0 <= devs < 2.5: return colors['neon']
-        elif 1.5 <= devs < 2.0: return colors['aqua']
-        elif 1.0 <= devs < 1.5: return colors['teal']
-        elif 0.5 <= devs < 1.0: return colors['teal_trans_2']
-        elif 0.0 <= devs < 0.5: return colors['black']
-        elif devs <= -3.0: return colors['magenta']
-        elif -3.0 < devs <= -2.5: return colors['magenta']
-        elif -2.5 < devs <= -2.0: return colors['magenta']
-        elif -2.0 < devs <= -1.5: return colors['red_dark']
-        elif -1.5 < devs <= -1.0: return colors['red']
-        elif -1.0 < devs <= -0.5: return colors['red_trans_2']
-        elif -0.5 < devs < 0.0: return colors['black']
-        return colors['black']
-
     def map_banker_RSI(banker_RSI):
         if    15 <= banker_RSI <=   20: return colors['neon']
         elif  11 <= banker_RSI <= 14.9: return colors['aqua']
@@ -412,7 +380,6 @@ def calculate_candle_colors(df, indicator_color='StDev', custom_params=None):
         'ZScore': lambda df: df['ZScore'].apply(map_zscore),
         'RSI': lambda df: df['RSI'].apply(map_RSI),
         'banker_RSI': lambda df: df['banker_RSI'].apply(map_banker_RSI),
-        'StDev': lambda df: df.apply(map_stdev, axis=1),
         'QQEMOD': lambda df: df.apply(map_QQEMOD, axis=1),
         'WAE': lambda df: df.apply(map_WAE, axis=1),
         'supertrend': lambda df: df.apply(map_supertrend, axis=1),

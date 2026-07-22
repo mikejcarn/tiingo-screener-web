@@ -1,6 +1,8 @@
 import pandas as pd
 from smartmoneyconcepts import smc
 
+
+display_name = "Break of Structure / Change of Character (BoS/CHoCH)"
 def _to_list(val):
     if val is None or val == []:
         return None

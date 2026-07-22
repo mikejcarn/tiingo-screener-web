@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+
+display_name = "Quantitative Qualitative Estimation — Modified (QQE Mod)"
 def calculate_qqemod(
     df,
     rsi_period=6,

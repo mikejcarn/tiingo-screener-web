@@ -10,7 +10,7 @@ _CENTRELINE_DEFAULTS = {
     'SMA':               {'sma_periods': 75},
 }
 
-display_name = "Z-Scores (Normalized Standard Deviation)"
+display_name = "Z-Score Bands"
 
 param_options = {
     'centreline': _CENTRELINE_DEFAULTS,

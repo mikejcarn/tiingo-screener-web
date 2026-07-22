@@ -1,5 +1,7 @@
 import pandas as pd
 
+
+display_name = "Simple Moving Average (SMA)"
 def calculate_simple_moving_averages(df, periods=[200], **params):
     sma_dict = {}
     

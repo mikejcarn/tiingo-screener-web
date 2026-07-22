@@ -27,6 +27,7 @@ let _defaults    = null; // {available: [...], defaults: {ind: params}}
 let _paramOptions     = {}; // {ind: {param_key: {option_val: sub_params}}}
 let _paramLabels      = {}; // {ind: {param_key: display_label}}
 let _displayNames     = {}; // {ind: display_name} — optional long name for UI
+let _descriptions     = {}; // {ind: description} — hover tooltip text
 let _paramSeparators  = {}; // {ind: [key, ...]} — insert divider before these keys
 let _currentParamLabels     = {}; // active indicator's labels during rendering
 let _currentParamSeparators = []; // active indicator's separator keys during rendering
@@ -61,6 +62,7 @@ function _loadRunQueue() {
 
 async function init() {
   _wireDbNav();
+  _wireTooltip();
   await Promise.all([_loadConfigList(), _loadDefaults()]);
   _loadRunQueue();   // restore queued confs before first render
   _wireStaticButtons();
@@ -91,6 +93,7 @@ async function _loadDefaults() {
   _paramOptions    = _defaults.param_options    || {};
   _paramLabels     = _defaults.param_labels     || {};
   _displayNames    = _defaults.display_names    || {};
+  _descriptions    = _defaults.descriptions     || {};
   _paramSeparators = _defaults.param_separators || {};
 }
 
@@ -272,13 +275,17 @@ function _renderIndicatorCard(ind, enabled, params) {
          <div class="param-tree">${_renderParamTree(normalized)}</div>
        </div>`
     : '';
-  const arrow = enabled ? '<span class="ind-expand-arrow">▾</span>' : '';
+  const arrow   = enabled ? '<span class="ind-expand-arrow">▾</span>' : '';
+  const hasTip  = !!_descriptions[ind];
+  const headTitle = enabled ? 'Click to deselect' : 'Click to select';
   return `<div class="ind-card${enabled ? ' enabled' : ''}" data-indicator="${_esc(ind)}">
-    <div class="ind-card-head"${enabled ? ' title="Click to expand/collapse parameters"' : ''}>
+    <div class="ind-card-head" title="${headTitle}">
       <label class="ind-toggle-wrap" title="Enable/disable this indicator">
         <input type="checkbox" class="ind-toggle"${enabled ? ' checked' : ''}>
       </label>
-      <span class="ind-name">${_esc(_displayNames[ind] ?? ind)}</span>
+      <span class="ind-name">${hasTip
+        ? `<span data-has-tip data-ind="${_esc(ind)}" title="">${_esc(_displayNames[ind] ?? ind)}</span>`
+        : _esc(_displayNames[ind] ?? ind)}</span>
       ${arrow}
     </div>
     ${bodyHtml}
@@ -602,15 +609,15 @@ function _wireListEvents() {
   list.addEventListener('input', () => { _dirty = true; });
 
   list.addEventListener('click', e => {
-    // Toggle card body open/close via header click (but not on the checkbox)
+    // Header click: enable if not yet enabled; collapse/expand if already enabled
     const head = e.target.closest('.ind-card-head');
     if (head && !e.target.closest('.ind-toggle-wrap')) {
-      const card = head.closest('.ind-card');
-      const body = card.querySelector('.ind-card-body');
-      if (body) {
-        body.classList.toggle('collapsed');
-        const arrow = card.querySelector('.ind-expand-arrow');
-        if (arrow) arrow.textContent = body.classList.contains('collapsed') ? '▸' : '▾';
+      const card     = head.closest('.ind-card');
+      const checkbox = card.querySelector('.ind-toggle');
+      if (checkbox) {
+        checkbox.checked = !card.classList.contains('enabled');
+        _onToggle(checkbox);
+        _dirty = true;
       }
     }
     // Toggle nested param group
@@ -637,6 +644,35 @@ function _wireListEvents() {
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
     }
+  });
+}
+
+function _wireTooltip() {
+  const tip  = document.getElementById('ind-tooltip');
+  const list = document.getElementById('ind-list');
+  if (!tip || !list) return;
+
+  list.addEventListener('mouseover', e => {
+    const nameEl = e.target.closest('[data-has-tip]');
+    if (!nameEl) { tip.style.display = 'none'; return; }
+    const desc = _descriptions[nameEl.dataset.ind];
+    if (!desc) return;
+    tip.textContent = desc;
+    tip.style.display = 'block';
+  });
+
+  list.addEventListener('mousemove', e => {
+    if (tip.style.display === 'none') return;
+    const x = e.clientX + 14;
+    const y = e.clientY + 14;
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    tip.style.left = (x + tw > window.innerWidth  ? e.clientX - tw - 8 : x) + 'px';
+    tip.style.top  = (y + th > window.innerHeight ? e.clientY - th - 8 : y) + 'px';
+  });
+
+  list.addEventListener('mouseout', e => {
+    if (!e.relatedTarget?.closest?.('[data-has-tip]')) tip.style.display = 'none';
   });
 }
 

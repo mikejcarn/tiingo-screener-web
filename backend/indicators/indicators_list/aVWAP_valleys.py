@@ -3,6 +3,8 @@ from backend.indicators.indicators import get_indicators
 from backend.indicators.indicators_list.aVWAP import calculate_avwap
 
 
+
+display_name = "aVWAP — Valleys"
 def calculate_aVWAP_valleys(df, periods=[25], max_aVWAPs=None):
     """
     Anchor aVWAPs at detected swing valleys.

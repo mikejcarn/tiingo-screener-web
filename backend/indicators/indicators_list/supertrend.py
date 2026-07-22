@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+
+display_name = "Supertrend"
 def calculate_supertrend(df, periods=14, multiplier=3, **params):
     """
     Calculate Supertrend indicator with both upper and lower bands.

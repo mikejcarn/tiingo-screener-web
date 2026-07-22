@@ -128,10 +128,6 @@ def col_styles_for_columns(columns: list) -> dict:
             mc = [c for c in columns if c.startswith('All_avg')]
             _add(col, colors['gray_trans'], 5 if (col == 'All_avg' and len(mc) > 1) else 3)
 
-        # ── StDev centreline ─────────────────────────────────────────────────
-        elif col == 'StDev_Mean':
-            _add(col, colors['orange_aVWAP'], 2, 'dashed')
-
         # ── ZScore bands ─────────────────────────────────────────────────────
         elif col == 'ZScore_Mean':
             _add(col, 'rgba(250,250,0,0.75)', 2, 'solid')

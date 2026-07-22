@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+
+display_name = "Waddah Attar Explosion (WAE)"
 def calculate_ema(series, window):
     """Calculate Exponential Moving Average"""
     return series.ewm(span=window, adjust=False).mean()

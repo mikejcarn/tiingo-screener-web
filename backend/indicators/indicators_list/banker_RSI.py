@@ -1,6 +1,8 @@
 import pandas as pd
 from ta.momentum import RSIIndicator
 
+
+display_name = "Banker RSI"
 def calculate_banker_RSI(df, rsi_period=50, rsi_base=50, sensitivity=1.5):
 
     rsi = RSIIndicator(df['Close'], window=rsi_period).rsi() # Calculate RSI

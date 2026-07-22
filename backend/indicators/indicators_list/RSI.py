@@ -1,5 +1,7 @@
 import pandas as pd
 
+
+display_name = "Relative Strength Index (RSI)"
 def calculate_rsi(df, periods=14):
 
     delta = df['Close'].diff()

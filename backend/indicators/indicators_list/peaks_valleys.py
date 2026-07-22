@@ -1,5 +1,7 @@
 import pandas as pd
 
+
+display_name = "Peaks & Valleys"
 def calculate_peaks_valleys(df, periods=25, **params):
     valleys = df['Low'].rolling(periods, center=True).min() / df['Low']
     peaks = df['High'].rolling(periods, center=True).max() / df['High']

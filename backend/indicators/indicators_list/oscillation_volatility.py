@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from backend.indicators.indicators import get_indicators
 
+
+display_name = "Oscillation Volatility Measure"
 def calculate_oscillation_volatility(
     df,
     lookback=100,

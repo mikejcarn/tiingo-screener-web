@@ -2,6 +2,8 @@ import pandas as pd
 from backend.indicators.indicators_list.aVWAP import calculate_avwap
 
 
+
+display_name = "aVWAP — Gaps"
 def calculate_aVWAP_gaps(df, max_aVWAPs=None, show_up=True, show_down=True):
     """
     Anchor aVWAPs at price gaps (bars where Low > prior High, or High < prior Low).

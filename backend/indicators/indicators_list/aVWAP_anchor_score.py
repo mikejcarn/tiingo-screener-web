@@ -22,6 +22,7 @@ import numpy as np
 from scipy.signal import find_peaks
 from scipy.stats import rankdata
 
+display_name = "Anchor Score"
 
 # ---------------------------------------------------------------------------
 # Main entry point
