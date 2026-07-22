@@ -566,8 +566,11 @@ def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> dict:
     params      = params or {}
     right       = int(params.get('right', 5))
     left        = int(params.get('left',  5))
-    show_labels = bool(params.get('show_labels', True))
-    show_pivots = bool(params.get('show_pivots', False))
+    show_labels  = bool(params.get('show_labels',  True))
+    show_markers = bool(params.get('show_markers', True))
+    show_wicks   = bool(params.get('show_wicks',   True))
+    show_candles = bool(params.get('show_candles', False))
+    show_pivots  = bool(params.get('show_pivots',  False))
 
     # Re-derive price pivot indices so we can identify prev_b for each signal
     high_pivot_bars = low_pivot_bars = high_vals = low_vals = None
@@ -619,10 +622,13 @@ def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> dict:
                         line_map[key]['count'] += 1
 
     return {
-        'show_labels': show_labels,
-        'show_pivots': show_pivots,
-        'markers':     markers,
-        'lines':       list(line_map.values()),
+        'show_labels':  show_labels,
+        'show_markers': show_markers,
+        'show_wicks':   show_wicks,
+        'show_candles': show_candles,
+        'show_pivots':  show_pivots,
+        'markers':      markers,
+        'lines':        list(line_map.values()),
     }
 
 

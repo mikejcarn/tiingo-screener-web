@@ -55,11 +55,15 @@ export class ChartManager {
     this._segKeys   = {};      // type -> number[] (dirty-check)
     this._pocSeries    = [];    // LineSeries[] — one per POC level
     this._pocData      = null;  // {starts, prices} from events
-    this._divMarkers    = [];   // [{b, vf, kind, hidden, label}] from events
-    this._divShowLabels = true; // arrows+text vs circles
+    this._divMarkers     = [];   // [{b, vf, kind, hidden, label}] from events
+    this._divShowLabels  = true;
+    this._divShowMarkers = true;
+    this._divShowWicks   = true;
+    this._divShowCandles = false;
     this._divLineSeries = [];   // LineSeries[] for pivot comparison lines
     this._divLineData   = [];   // [{s, e, p0, p1, vf}]
     this._divLineKeys   = [];   // dirty-check per line
+    this._divCandleSeries = null; // overlay series — thick wicks at divergence bars
     this._bars      = [];
     this._N         = 0;
     this._curN      = -1;
@@ -79,6 +83,20 @@ export class ChartManager {
       upColor:        C_UP,   downColor:       C_DOWN,
       borderUpColor:  C_UP,   borderDownColor: C_DOWN,
       wickUpColor:    C_UP,   wickDownColor:   C_DOWN,
+    });
+
+    // Overlay series — transparent body, thick wicks/borders at divergence pivot bars
+    this._divCandleSeries = this._chart.addCandlestickSeries({
+      upColor:          'rgba(0,0,0,0)',
+      downColor:        'rgba(0,0,0,0)',
+      borderUpColor:    'rgba(0,0,0,0)',
+      borderDownColor:  'rgba(0,0,0,0)',
+      wickUpColor:      'rgba(0,0,0,0)',
+      wickDownColor:    'rgba(0,0,0,0)',
+      wickWidth:        2,
+      priceLineVisible:       false,
+      lastValueVisible:       false,
+      crosshairMarkerVisible: false,
     });
 
     window.addEventListener('resize', () => {
@@ -144,8 +162,11 @@ export class ChartManager {
     this._destroyPoc();
     this._buildPoc(events.poc);
     const div = events.divergences || {};
-    this._divMarkers    = div.markers    || [];
-    this._divShowLabels = div.show_labels ?? true;
+    this._divMarkers     = div.markers      || [];
+    this._divShowLabels  = div.show_labels  ?? true;
+    this._divShowMarkers = div.show_markers ?? true;
+    this._divShowWicks   = div.show_wicks   ?? true;
+    this._divShowCandles = div.show_candles ?? false;
     this._destroyDivLines();
     this._buildDivLines(div.lines || [], div.show_pivots ?? false);
     if (this._curN >= 0) {
@@ -398,30 +419,41 @@ export class ChartManager {
   }
 
   _revealDivMarkers(n) {
-    if (!this._divMarkers.length) {
-      this._candles.setMarkers([]);
-      return;
-    }
-    const markers = [];
+    const markers     = [];
+    const overlayData = [];
     for (const m of this._divMarkers) {
       if ((m.vf ?? m.b) > n) continue;
-      const bar  = this._bars[m.b];
-      const time = (bar.Date || bar.date || '').slice(0, 10);
-      const bull = m.kind === 'bull';
-      const color = bull
-        ? (m.hidden ? DIV_BULL_HIDDEN  : DIV_BULL)
-        : (m.hidden ? DIV_BEAR_HIDDEN  : DIV_BEAR);
-      markers.push({
-        time,
-        position: bull ? 'belowBar' : 'aboveBar',
-        color,
-        shape:    this._divShowLabels ? (bull ? 'arrowUp' : 'arrowDown') : 'circle',
-        text:     this._divShowLabels ? m.label : '',
-        size:     1,
-      });
+      const bar   = this._bars[m.b];
+      const time  = (bar.Date || bar.date || '').slice(0, 10);
+      const bull  = m.kind === 'bull';
+      const color = bull ? DIV_BULL : DIV_BEAR;
+      if (this._divShowMarkers) {
+        markers.push({
+          time,
+          position: bull ? 'belowBar' : 'aboveBar',
+          color,
+          shape:    this._divShowLabels ? (bull ? 'arrowUp' : 'arrowDown') : (m.hidden ? 'circle' : 'square'),
+          text:     this._divShowLabels ? m.label : '',
+          size:     1,
+        });
+      }
+      if (this._divShowWicks || this._divShowCandles) {
+        const entry = {
+          time,
+          open:  bar.Open  ?? bar.open,
+          high:  bar.High  ?? bar.high,
+          low:   bar.Low   ?? bar.low,
+          close: bar.Close ?? bar.close,
+        };
+        if (this._divShowWicks)   { entry.borderColor = color; entry.wickColor = color; }
+        if (this._divShowCandles) { entry.color = color; }
+        overlayData.push(entry);
+      }
     }
-    markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+    markers.sort((a, b)     => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+    overlayData.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     this._candles.setMarkers(markers);
+    this._divCandleSeries.setData(overlayData);
   }
 
   _destroySegments() {

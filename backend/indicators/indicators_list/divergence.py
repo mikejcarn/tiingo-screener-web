@@ -18,6 +18,9 @@ param_labels = {
     'show_regular':     'Show Regular',
     'show_hidden':      'Show Hidden',
     'show_labels':      'Show Labels',
+    'show_markers':     'Show Markers',
+    'show_wicks':       'Show Wick Highlights',
+    'show_candles':     'Show Candle Colors',
     'show_pivots':      'Show Pivot Lines',
     'RSI':              'RSI',
     'MACD':             'MACD',
@@ -44,7 +47,8 @@ param_labels = {
 
 
 def calculate_divergence(df,
-    show_regular=True, show_hidden=True, show_labels=True, show_pivots=False,
+    show_regular=True, show_hidden=True,
+    show_labels=True, show_markers=True, show_wicks=True, show_candles=False, show_pivots=False,
     RSI=True, MACD=False, OBV=False, ATR=False, Fisher=False,
     Fractal=False, MFI=False, Momentum=False, Stochastic=False,
     Volume=False, Vortex=False,
