@@ -3,16 +3,21 @@ import { initHelp }  from './help.js';
 import { initTheme } from './theme.js';
 
 // ── State ─────────────────────────────────────────────────────
-let _configs     = [];
-let _criteria    = [];
-let _confs       = [];
-let _timeframes  = [];
-let _activeId    = null;
-let _dirty       = false;
+let _configs    = [];
+let _criteria   = [];
+let _confs      = [];
+let _timeframes = [];
+let _activeId   = null;
+let _dirty      = false;
 let _lastResults = null;
-// { criteria_name: [{timeframe, params}, ...] }
-let _instances   = {};
-let _focusedIdx  = -1;
+let _activeTf   = '';
+// _enabled[tf]  = Set<criteria_name>
+// _params[tf][criteria_name] = {key: val}  (persisted even when unchecked)
+// _critLogic[criteria_name]  = 'AND' | 'OR'
+let _enabled    = {};
+let _params     = {};
+let _critLogic  = {};
+let _focusedIdx = -1;
 
 // ── Init ──────────────────────────────────────────────────────
 (async function init() {
@@ -25,6 +30,7 @@ let _focusedIdx  = -1;
   _confs      = tickerData.ind_confs  || [];
   _timeframes = tickerData.timeframes || [];
   _criteria   = criteriaData.criteria || [];
+  _activeTf   = _timeframes[0] || 'daily';
   _populateIndConfs();
   _wireGlobal();
   await Promise.all([_loadConfigs(), _loadHistory()]);
@@ -38,6 +44,33 @@ function _populateIndConfs() {
     o.value = c.id; o.textContent = c.name;
     sel.appendChild(o);
   }
+}
+
+// ── Timeframe tabs ────────────────────────────────────────────
+function _buildTfTabs() {
+  const container = document.getElementById('scan-tf-tabs');
+  container.innerHTML = '';
+  for (const tf of _timeframes) {
+    const btn = document.createElement('button');
+    btn.className   = 'tf-tab' + (tf === _activeTf ? ' active' : '');
+    btn.dataset.tf  = tf;
+    btn.textContent = tf;
+    btn.addEventListener('click', () => _setActiveTf(tf));
+    container.appendChild(btn);
+  }
+  const hint = document.createElement('span');
+  hint.className   = 'scan-tf-hint';
+  hint.textContent = 'tabs reflect fetched timeframes';
+  hint.title       = 'Fetch additional timeframes on the Tickers page to add more tabs here.';
+  container.appendChild(hint);
+}
+
+function _setActiveTf(tf) {
+  _activeTf = tf;
+  document.querySelectorAll('#scan-tf-tabs .tf-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tf === tf)
+  );
+  document.querySelectorAll('.scan-crit-card').forEach(card => card._update?.(tf));
 }
 
 // ── Config list ───────────────────────────────────────────────
@@ -62,18 +95,12 @@ function _renderList() {
     const item = document.createElement('div');
     item.className = 'ind-config-item' + (cfg.id === _activeId ? ' active' : '');
     item.dataset.id = cfg.id;
-
     const info = document.createElement('div');
     info.className = 'ind-config-info';
-
     const name = document.createElement('div');
-    name.className = 'ind-config-name';
-    name.textContent = cfg.name;
-
+    name.className = 'ind-config-name'; name.textContent = cfg.name;
     const sub = document.createElement('div');
-    sub.className = 'ind-config-date';
-    sub.textContent = (cfg.logic || 'AND').toLowerCase();
-
+    sub.className = 'ind-config-date'; sub.textContent = cfg.updated_at ? cfg.updated_at.slice(0, 10) : '';
     info.append(name, sub);
     item.appendChild(info);
     item.addEventListener('click', () => _selectConfig(cfg.id));
@@ -88,9 +115,18 @@ async function _selectConfig(id) {
   const cfg = await api.get(`/api/scan-configs/${id}`);
   _showEmpty(false);
   document.getElementById('scan-name').value     = cfg.name;
-  document.getElementById('scan-logic').value    = cfg.logic || 'AND';
   document.getElementById('scan-ind-conf').value = cfg.ind_conf_id || '';
-  _loadInstances(cfg.criteria || []);
+  const created = (cfg.created_at || '').slice(0, 10);
+  const updated = (cfg.updated_at || '').slice(0, 10);
+  const datesEl = document.getElementById('scan-conf-dates');
+  if (updated && updated !== created) {
+    datesEl.textContent = `created ${created} · updated ${updated}`;
+  } else if (created) {
+    datesEl.textContent = `created ${created}`;
+  } else {
+    datesEl.textContent = '';
+  }
+  _loadFromConfig(cfg.criteria || []);
   _clearResults();
 }
 
@@ -99,16 +135,20 @@ function _showEmpty(yes) {
   document.getElementById('scan-editor').style.display = yes ? 'none' : 'flex';
 }
 
-// ── Instances state ───────────────────────────────────────────
-function _loadInstances(entries) {
-  _instances = {};
+// ── Load criteria state from config ──────────────────────────
+function _loadFromConfig(entries) {
+  _enabled   = {};
+  _params    = {};
+  _critLogic = {};
   for (const e of entries) {
-    if (!_instances[e.criteria_name]) _instances[e.criteria_name] = [];
-    _instances[e.criteria_name].push({
-      timeframe: e.timeframe,
-      params:    { ...(e.params || {}) },
-    });
+    const { criteria_name, timeframe: tf, params, logic } = e;
+    if (!_enabled[tf]) _enabled[tf] = new Set();
+    _enabled[tf].add(criteria_name);
+    if (!_params[tf])  _params[tf]  = {};
+    _params[tf][criteria_name] = { ...(params || {}) };
+    _critLogic[criteria_name]  = logic || 'AND';
   }
+  _buildTfTabs();
   _rebuildCards();
 }
 
@@ -124,10 +164,8 @@ function _rebuildCards() {
 }
 
 function _buildCard(crit, idx) {
-  const isEnabled = !!(_instances[crit.name]?.length);
-
   const card = document.createElement('div');
-  card.className = 'ind-card scan-crit-card' + (isEnabled ? ' enabled' : '');
+  card.className = 'ind-card scan-crit-card';
   card.dataset.idx = idx;
 
   // ── Head ──────────────────────────────────────────────────
@@ -137,7 +175,7 @@ function _buildCard(crit, idx) {
   const cbxWrap = document.createElement('div');
   cbxWrap.className = 'ind-toggle-wrap';
   const cbx = document.createElement('input');
-  cbx.type = 'checkbox'; cbx.className = 'param-checkbox'; cbx.checked = isEnabled;
+  cbx.type = 'checkbox'; cbx.className = 'param-checkbox';
   cbxWrap.appendChild(cbx);
 
   const nameSpan = document.createElement('span');
@@ -146,14 +184,26 @@ function _buildCard(crit, idx) {
 
   const countBadge = document.createElement('span');
   countBadge.className = 'scan-count-badge';
-  const n0 = _instances[crit.name]?.length || 0;
-  countBadge.textContent = n0 > 1 ? `×${n0}` : '';
+
+  const logicToggle = document.createElement('button');
+  logicToggle.className = 'scan-logic-toggle';
+  const _updateToggle = () => {
+    const l = _critLogic[crit.name] || 'AND';
+    logicToggle.textContent = l;
+    logicToggle.classList.toggle('or', l === 'OR');
+  };
+  _updateToggle();
+  logicToggle.addEventListener('click', e => {
+    e.stopPropagation();
+    _critLogic[crit.name] = (_critLogic[crit.name] || 'AND') === 'AND' ? 'OR' : 'AND';
+    _updateToggle();
+    _markDirty();
+  });
 
   const arrow = document.createElement('span');
-  arrow.className = 'ind-expand-arrow';
-  arrow.textContent = '▸';
+  arrow.className = 'ind-expand-arrow'; arrow.textContent = '▸';
 
-  head.append(cbxWrap, nameSpan, countBadge, arrow);
+  head.append(cbxWrap, logicToggle, nameSpan, countBadge, arrow);
   card.appendChild(head);
 
   // ── Body ──────────────────────────────────────────────────
@@ -161,28 +211,61 @@ function _buildCard(crit, idx) {
   body.className = 'ind-card-body collapsed';
   card.appendChild(body);
 
-  _renderBody(crit, body, cbx, countBadge, arrow, card);
+  // ── Helpers ────────────────────────────────────────────────
+  function _getParams(tf) {
+    if (!_params[tf])              _params[tf]              = {};
+    if (!_params[tf][crit.name])   _params[tf][crit.name]   = {};
+    return _params[tf][crit.name];
+  }
 
-  // Checkbox: enable/disable
+  function _isEnabled(tf) {
+    return !!(_enabled[tf]?.has(crit.name));
+  }
+
+  function _tfCount() {
+    return Object.values(_enabled).filter(s => s.has(crit.name)).length;
+  }
+
+  function _refreshHead(tf) {
+    const en = _isEnabled(tf);
+    cbx.checked = en;
+    card.classList.toggle('enabled', en);
+    const n = _tfCount();
+    countBadge.textContent = n > 1 ? `×${n}` : '';
+  }
+
+  function _refreshBody(tf) {
+    body.innerHTML = '';
+    _renderParamFields(crit.param_schema, _getParams(tf), body);
+  }
+
+  // ── card._update — called on tab switch ───────────────────
+  card._update = (tf) => {
+    _refreshHead(tf);
+    _refreshBody(tf);
+  };
+
+  // Initial render for _activeTf
+  _refreshHead(_activeTf);
+  _refreshBody(_activeTf);
+
+  // ── Checkbox ──────────────────────────────────────────────
   cbx.addEventListener('change', () => {
+    const tf = _activeTf;
     if (cbx.checked) {
-      if (!_instances[crit.name]?.length) {
-        _instances[crit.name] = [{ timeframe: _timeframes[0] || 'daily', params: {} }];
-      }
+      if (!_enabled[tf]) _enabled[tf] = new Set();
+      _enabled[tf].add(crit.name);
       card.classList.add('enabled');
-      body.classList.remove('collapsed');
-      arrow.textContent = '▾';
     } else {
-      delete _instances[crit.name];
+      _enabled[tf]?.delete(crit.name);
       card.classList.remove('enabled');
-      body.classList.add('collapsed');
-      arrow.textContent = '▸';
     }
-    _renderBody(crit, body, cbx, countBadge, arrow, card);
+    const n = _tfCount();
+    countBadge.textContent = n > 1 ? `×${n}` : '';
     _markDirty();
   });
 
-  // Head click: expand/collapse
+  // ── Head click: expand/collapse ───────────────────────────
   head.addEventListener('click', e => {
     if (cbxWrap.contains(e.target)) return;
     _setCritFocus(idx);
@@ -190,83 +273,24 @@ function _buildCard(crit, idx) {
     arrow.textContent = body.classList.contains('collapsed') ? '▸' : '▾';
   });
 
-  card._collect = () =>
-    (_instances[crit.name] || []).map(inst => ({
-      criteria_name: crit.name,
-      timeframe:     inst.timeframe,
-      params:        { ...inst.params },
-    }));
+  // ── Collect for save ──────────────────────────────────────
+  card._collect = () => {
+    const logic = _critLogic[crit.name] || 'AND';
+    const results = [];
+    for (const [tf, names] of Object.entries(_enabled)) {
+      if (names.has(crit.name)) {
+        results.push({
+          criteria_name: crit.name,
+          timeframe:     tf,
+          logic,
+          params:        { ...(_params[tf]?.[crit.name] || {}) },
+        });
+      }
+    }
+    return results;
+  };
 
   return card;
-}
-
-// Re-renders only the body content; keeps head intact
-function _renderBody(crit, body, cbx, countBadge, arrow, card) {
-  body.innerHTML = '';
-  const instances = _instances[crit.name] || [];
-  const multi = instances.length > 1;
-
-  countBadge.textContent = multi ? `×${instances.length}` : '';
-
-  instances.forEach((inst, iIdx) => {
-    const block = document.createElement('div');
-    block.className = 'scan-instance' + (multi ? ' scan-instance-multi' : '');
-
-    // Timeframe row + ✕ remove
-    const tfRow = document.createElement('div');
-    tfRow.className = 'scan-instance-head';
-
-    const tfLabel = document.createElement('span');
-    tfLabel.className = 'param-key'; tfLabel.textContent = 'Timeframe';
-
-    const tfSel = document.createElement('select');
-    tfSel.className = 'param-input scan-crit-tf';
-    for (const tf of _timeframes) {
-      const o = document.createElement('option');
-      o.value = tf; o.textContent = tf;
-      o.selected = tf === inst.timeframe;
-      tfSel.appendChild(o);
-    }
-    tfSel.addEventListener('change', () => { inst.timeframe = tfSel.value; _markDirty(); });
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'scan-instance-remove btn-destructive';
-    removeBtn.title = 'Remove this instance';
-    removeBtn.textContent = '✕';
-    removeBtn.addEventListener('click', () => {
-      _instances[crit.name].splice(iIdx, 1);
-      if (!_instances[crit.name].length) {
-        delete _instances[crit.name];
-        cbx.checked = false;
-        card.classList.remove('enabled');
-        body.classList.add('collapsed');
-        arrow.textContent = '▸';
-      }
-      _markDirty();
-      _renderBody(crit, body, cbx, countBadge, arrow, card);
-    });
-
-    tfRow.append(tfLabel, tfSel, removeBtn);
-    block.appendChild(tfRow);
-
-    // Param fields — live-update inst.params
-    _renderParamFields(crit.param_schema, inst.params, block);
-
-    body.appendChild(block);
-  });
-
-  // + Add instance button
-  if (instances.length > 0) {
-    const addBtn = document.createElement('button');
-    addBtn.className = 'scan-add-instance';
-    addBtn.textContent = '+ Add instance';
-    addBtn.addEventListener('click', () => {
-      _instances[crit.name].push({ timeframe: _timeframes[0] || 'daily', params: {} });
-      _markDirty();
-      _renderBody(crit, body, cbx, countBadge, arrow, card);
-    });
-    body.appendChild(addBtn);
-  }
 }
 
 function _renderParamFields(schema, params, container) {
@@ -292,7 +316,8 @@ function _renderParamFields(schema, params, container) {
       }
     } else if (s.type === 'bool') {
       inp = document.createElement('input');
-      inp.type = 'checkbox'; inp.className = 'param-checkbox'; inp.checked = val === true || val === 'true';
+      inp.type = 'checkbox'; inp.className = 'param-checkbox';
+      inp.checked = val === true || val === 'true';
     } else if (s.type === 'list_int' || s.type === 'list_str') {
       inp = document.createElement('input');
       inp.type = 'text'; inp.className = 'param-input';
@@ -307,7 +332,6 @@ function _renderParamFields(schema, params, container) {
       if (s.type === 'int') inp.step = '1';
     }
 
-    // Live-write back to the params object so _collect() never needs to read DOM
     inp.addEventListener('change', () => {
       const t = s.type;
       if (t === 'bool')          params[key] = inp.checked;
@@ -366,17 +390,30 @@ function _collectAllEntries() {
 // ── Save ──────────────────────────────────────────────────────
 async function _saveScan() {
   if (!_activeId) return;
+  const btn = document.getElementById('btn-save-scan');
   const body = {
     name:        document.getElementById('scan-name').value.trim() || 'Unnamed',
-    logic:       document.getElementById('scan-logic').value,
+    logic:       'AND',
     ind_conf_id: parseInt(document.getElementById('scan-ind-conf').value) || null,
     criteria:    _collectAllEntries(),
   };
-  await api.put(`/api/scan-configs/${_activeId}`, body);
-  _dirty = false;
-  const listData = await api.get('/api/scan-configs');
-  _configs = listData.configs || [];
-  _renderList();
+  try {
+    const saved = await api.put(`/api/scan-configs/${_activeId}`, body);
+    _dirty = false;
+    const listData = await api.get('/api/scan-configs');
+    _configs = listData.configs || [];
+    _renderList();
+    const datesEl = document.getElementById('scan-conf-dates');
+    const today = (saved.updated_at || '').slice(0, 10);
+    if (today) datesEl.textContent = datesEl.textContent.replace(/· updated \S+$/, '').trimEnd() + ` · updated ${today}`;
+    btn.textContent = 'Saved ✓';
+    btn.classList.add('ind-btn-save-ok');
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
+  } catch (err) {
+    btn.textContent = 'Error';
+    btn.classList.add('ind-btn-save-err');
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-err'); }, 2000);
+  }
 }
 
 // ── Run ───────────────────────────────────────────────────────
@@ -402,7 +439,7 @@ async function _runScan() {
 }
 
 function _clearResults() {
-  document.getElementById('scan-results-label').textContent  = '';
+  document.getElementById('scan-results-label').textContent   = '';
   document.getElementById('scan-results-empty').style.display = 'flex';
   document.getElementById('scan-table-wrap').style.display    = 'none';
   document.getElementById('btn-open-chart').style.display     = 'none';
@@ -420,9 +457,9 @@ function _renderResults(data) {
   document.getElementById('btn-open-chart').style.display = results.length ? '' : 'none';
 
   if (!results.length) {
-    empty.textContent    = 'No tickers matched.';
-    empty.style.display  = 'flex';
-    wrap.style.display   = 'none';
+    empty.textContent   = 'No tickers matched.';
+    empty.style.display = 'flex';
+    wrap.style.display  = 'none';
     return;
   }
 
@@ -472,8 +509,9 @@ function _renderResults(data) {
   _rebuild();
 }
 
+// ── History ───────────────────────────────────────────────────
 async function _loadHistory() {
-  const data = await api.get('/api/scan/history');
+  const data  = await api.get('/api/scan/history');
   const tbody = document.getElementById('scan-history-body');
   const rows  = data.history || [];
   if (!rows.length) {
@@ -524,7 +562,6 @@ function _wireGlobal() {
   });
 
   document.getElementById('scan-name').addEventListener('input', _markDirty);
-  document.getElementById('scan-logic').addEventListener('change', _markDirty);
   document.getElementById('scan-ind-conf').addEventListener('change', _markDirty);
 
   document.addEventListener('keydown', e => {
@@ -553,6 +590,16 @@ function _wireGlobal() {
     if (e.key === '-') {
       const i = _configs.findIndex(c => c.id === _activeId);
       if (i >= 0 && i < _configs.length - 1) _selectConfig(_configs[i + 1].id);
+    }
+
+    // [ / ] cycle timeframe tabs
+    if (e.key === '[') {
+      const i = _timeframes.indexOf(_activeTf);
+      if (i > 0) _setActiveTf(_timeframes[i - 1]);
+    }
+    if (e.key === ']') {
+      const i = _timeframes.indexOf(_activeTf);
+      if (i < _timeframes.length - 1) _setActiveTf(_timeframes[i + 1]);
     }
 
     if (e.key === 'ArrowUp')   { e.preventDefault(); _moveCritFocus(-1); }

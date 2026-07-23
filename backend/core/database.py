@@ -143,6 +143,10 @@ def init_db() -> None:
             con.execute("ALTER TABLE ind_configs ADD COLUMN updated_at TEXT")
         except Exception:
             pass
+        try:
+            con.execute("ALTER TABLE scan_criteria ADD COLUMN logic TEXT NOT NULL DEFAULT 'AND'")
+        except Exception:
+            pass
 
 
 # ── OHLCV ────────────────────────────────────────────────────

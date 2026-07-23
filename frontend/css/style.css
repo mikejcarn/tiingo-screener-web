@@ -201,8 +201,8 @@ button:hover { background: var(--c-hover); }
 .btn-help-nav { background: var(--c-hover); color: var(--t8); border: 1px solid var(--b6); }
 .btn-help-nav:hover { background: var(--c-raised); border-color: var(--t4); color: var(--t9); }
 .btn-help-nav.active { color: var(--t10); border-color: var(--t5); background: var(--c-raised); }
-.btn-theme-toggle { background: var(--c-hover); color: var(--t5); border: 1px solid var(--b4); }
-.btn-theme-toggle:hover { background: var(--c-raised); border-color: var(--t4); color: var(--t8); }
+.btn-theme-toggle { background: var(--c-hover); color: var(--t8); border: 1px solid var(--b6); }
+.btn-theme-toggle:hover { background: var(--c-raised); border-color: var(--t4); color: var(--t9); }
 
 /* ── Chart area ───────────────────────────────────────────── */
 #chart-container {
@@ -831,7 +831,7 @@ body.dash {
 #chart-empty a:hover { color: rgba(var(--teal-rgb),1); text-decoration: underline; }
 
 /* ── Page header shared styles ────────────────────────────── */
-#dash-title, #ind-title {
+#dash-title, #ind-title, #scan-title {
   font-size: 13px;
   color: var(--t4);
 }
@@ -1668,7 +1668,7 @@ body.scan-page {
   border-bottom: 1px solid var(--c-raised);
   flex-shrink: 0;
 }
-#scan-title { font-size: 14px; font-weight: 600; color: var(--t7); letter-spacing: 0.02em; }
+
 
 .scan-layout {
   display: flex;
@@ -1933,21 +1933,43 @@ body.scan-page {
 .scan-no-match { padding: 18px; color: var(--t3); font-size: 13px; }
 .scan-row { cursor: pointer; }
 
-/* ── Scanner criteria section head ────────────────────────── */
-.scan-section-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 7px 14px;
-  background: var(--c-surface);
-  border-top: 1px solid var(--b2);
-  border-bottom: 1px solid var(--b1);
-  font-size: 11px; font-weight: 600; color: var(--t5);
-  flex-shrink: 0;
+.scan-tf-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--t2);
+  align-self: center;
+  padding-right: 4px;
+  cursor: default;
+  white-space: nowrap;
 }
 
 /* ── Scanner criteria cards ───────────────────────────────── */
 #scan-criteria-list { padding: 6px 10px; }
 
-/* ×N instance count badge in card head */
+/* AND / OR per-criteria toggle in card head */
+.scan-logic-toggle {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--t3);
+  background: none;
+  border: 1px solid var(--b2);
+  border-radius: 3px;
+  padding: 1px 5px;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1.6;
+}
+.scan-logic-toggle:hover { color: var(--t5); border-color: var(--b4); }
+.scan-logic-toggle.or {
+  color: rgba(var(--teal-rgb), 0.85);
+  border-color: rgba(var(--teal-rgb), 0.35);
+  background: rgba(var(--teal-rgb), 0.07);
+}
+.scan-logic-toggle.or:hover {
+  color: rgba(var(--teal-rgb), 1);
+  border-color: rgba(var(--teal-rgb), 0.6);
+}
+
+/* ×N timeframe count badge in card head */
 .scan-count-badge {
   font-size: 10px; font-weight: 700;
   color: rgba(var(--teal-rgb), 0.85);
@@ -1956,37 +1978,6 @@ body.scan-page {
   padding: 1px 5px;
   flex-shrink: 0;
 }
-
-/* Instance block within card body */
-.scan-instance { margin-bottom: 4px; }
-.scan-instance-multi {
-  border: 1px solid var(--b2);
-  border-radius: 3px;
-  padding: 6px 8px;
-  background: var(--c-surface);
-  margin-bottom: 6px;
-}
-
-/* Timeframe row inside each instance (tf select + ✕) */
-.scan-instance-head {
-  display: flex; align-items: center; gap: 6px;
-  margin-bottom: 2px;
-}
-.scan-instance-head .param-key { flex-shrink: 0; }
-.scan-instance-head .scan-crit-tf { flex: 1; min-width: 0; }
-.scan-instance-remove {
-  flex-shrink: 0; padding: 1px 6px; font-size: 11px;
-  border-radius: 3px; line-height: 1.4;
-}
-
-/* + Add instance button */
-.scan-add-instance {
-  display: block; width: 100%; margin-top: 4px;
-  font-size: 11px; color: var(--t4);
-  background: none; border: 1px dashed var(--b3); border-radius: 3px;
-  padding: 4px 0; text-align: center; cursor: pointer;
-}
-.scan-add-instance:hover { color: var(--t6); border-color: var(--b5); background: var(--c-hover); }
 
 /* Results */
 .scan-signal-cell { font-size: 11px; color: var(--t5); }

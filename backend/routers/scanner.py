@@ -60,9 +60,9 @@ def delete_criteria(name: str):
 def list_scan_configs():
     with db._conn() as con:
         rows = con.execute(
-            "SELECT id, name, logic, ind_conf_id FROM scan_configs ORDER BY id"
+            "SELECT id, name, logic, ind_conf_id, updated_at FROM scan_configs ORDER BY id"
         ).fetchall()
-    return {"configs": [{"id": r[0], "name": r[1], "logic": r[2], "ind_conf_id": r[3]} for r in rows]}
+    return {"configs": [{"id": r[0], "name": r[1], "logic": r[2], "ind_conf_id": r[3], "updated_at": r[4]} for r in rows]}
 
 
 @router.post("/scan-configs")
@@ -80,18 +80,19 @@ def create_scan_config():
 def get_scan_config(config_id: int):
     with db._conn() as con:
         row = con.execute(
-            "SELECT id, name, logic, ind_conf_id FROM scan_configs WHERE id=?", (config_id,)
+            "SELECT id, name, logic, ind_conf_id, created_at, updated_at FROM scan_configs WHERE id=?", (config_id,)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Scan config not found")
         crit_rows = con.execute(
-            "SELECT id, criteria_name, timeframe, params_json FROM scan_criteria "
+            "SELECT id, criteria_name, timeframe, params_json, logic FROM scan_criteria "
             "WHERE config_id=? ORDER BY sort_order, id", (config_id,)
         ).fetchall()
     return {
         "id": row[0], "name": row[1], "logic": row[2], "ind_conf_id": row[3],
+        "created_at": row[4], "updated_at": row[5],
         "criteria": [{"id": r[0], "criteria_name": r[1], "timeframe": r[2],
-                      "params": json.loads(r[3])} for r in crit_rows],
+                      "params": json.loads(r[3]), "logic": r[4] or "AND"} for r in crit_rows],
     }
 
 
@@ -99,6 +100,7 @@ class CriteriaEntry(BaseModel):
     criteria_name: str
     timeframe: str
     params: dict = {}
+    logic: str = "AND"
 
 
 class SaveScanBody(BaseModel):
@@ -121,10 +123,11 @@ def save_scan_config(config_id: int, body: SaveScanBody):
         )
         con.execute("DELETE FROM scan_criteria WHERE config_id=?", (config_id,))
         for i, c in enumerate(body.criteria):
+            logic = c.logic.upper() if c.logic.upper() in ("AND", "OR") else "AND"
             con.execute(
-                "INSERT INTO scan_criteria (config_id, criteria_name, timeframe, params_json, sort_order) "
-                "VALUES (?,?,?,?,?)",
-                (config_id, c.criteria_name, c.timeframe, json.dumps(c.params), i)
+                "INSERT INTO scan_criteria (config_id, criteria_name, timeframe, params_json, logic, sort_order) "
+                "VALUES (?,?,?,?,?,?)",
+                (config_id, c.criteria_name, c.timeframe, json.dumps(c.params), logic, i)
             )
     return {"saved": config_id, "updated_at": now}
 
@@ -186,14 +189,14 @@ def run_scan(req: RunScanRequest):
         if not ind_conf_id:
             raise HTTPException(status_code=400, detail="Scan config has no indicator config selected")
         crit_rows = con.execute(
-            "SELECT criteria_name, timeframe, params_json FROM scan_criteria "
+            "SELECT criteria_name, timeframe, params_json, logic FROM scan_criteria "
             "WHERE config_id=? ORDER BY sort_order, id", (req.config_id,)
         ).fetchall()
 
     if not crit_rows:
         raise HTTPException(status_code=400, detail="Add at least one criteria entry before running")
 
-    criteria_list = [{"name": r[0], "timeframe": r[1], "params": json.loads(r[2])} for r in crit_rows]
+    criteria_list = [{"name": r[0], "timeframe": r[1], "params": json.loads(r[2]), "logic": r[3] or "AND"} for r in crit_rows]
     needed_tfs    = list({c["timeframe"] for c in criteria_list})
 
     # Tickers with indicator data for this conf
@@ -210,26 +213,27 @@ def run_scan(req: RunScanRequest):
         for tf in needed_tfs:
             dfs[tf] = db.load_indicators(ticker, tf, ind_conf_id)
 
-        signals: dict[str, dict] = {}
-        passes:  list[bool]      = []
+        signals:     dict[str, dict] = {}
+        and_passes:  list[bool]      = []
+        or_passes:   list[bool]      = []
 
         for c in criteria_list:
             tf  = c["timeframe"]
             key = f'{c["name"]}_{tf}'
             df  = dfs.get(tf)
             if df is None or df.empty:
-                passes.append(False)
+                (or_passes if c["logic"] == "OR" else and_passes).append(False)
                 continue
             result_df = _apply_criteria(df, c["name"], c["params"])
             passed    = not result_df.empty
-            passes.append(passed)
             if passed:
                 signals[key] = _summarize_result(result_df)
+            (or_passes if c["logic"] == "OR" else and_passes).append(passed)
 
-        if logic == "OR":
-            overall = any(passes)
-        else:
-            overall = all(passes)
+        overall = (
+            all(and_passes) and
+            (not or_passes or any(or_passes))
+        )
 
         if overall:
             # Latest date from any loaded timeframe

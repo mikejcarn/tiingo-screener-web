@@ -56,21 +56,16 @@
         <button id="btn-delete-scan" class="btn-destructive" title="Delete (D)">Delete</button>
       </div>
 
-      <!-- Global settings: ind conf + logic -->
+      <div id="scan-conf-dates" class="conf-dates"></div>
+
+      <!-- Global settings: ind conf -->
       <div class="scan-selectors">
         <label class="scan-sel-label">Indicator config</label>
         <select id="scan-ind-conf" class="scan-sel"></select>
-        <label class="scan-sel-label">Logic</label>
-        <select id="scan-logic" class="scan-sel" title="AND = all criteria must pass · OR = any criteria passes">
-          <option value="AND">AND — all must pass</option>
-          <option value="OR">OR — any must pass</option>
-        </select>
       </div>
 
-      <!-- Criteria section head -->
-      <div class="scan-section-head">
-        <span>Criteria</span>
-      </div>
+      <!-- Timeframe tabs (populate dynamically) -->
+      <div id="scan-tf-tabs" class="tf-tabs"></div>
 
       <!-- Criteria cards (scrollable) -->
       <div id="scan-criteria-list" class="scan-criteria-scroll"></div>
