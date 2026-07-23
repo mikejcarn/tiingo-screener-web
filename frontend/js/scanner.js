@@ -222,25 +222,32 @@ function _buildCard(crit, idx) {
   const countBadge = document.createElement('span');
   countBadge.className = 'scan-count-badge';
 
-  const logicToggle = document.createElement('button');
-  logicToggle.className = 'scan-logic-toggle';
+  const logicSwitch = document.createElement('div');
+  logicSwitch.className = 'scan-logic-switch';
+  const btnAnd = document.createElement('button'); btnAnd.textContent = 'AND';
+  const btnOr  = document.createElement('button'); btnOr.textContent  = 'OR';
+  logicSwitch.append(btnAnd, btnOr);
+
   const _updateToggle = () => {
     const l = _critLogic[crit.name] || 'AND';
-    logicToggle.textContent = l;
-    logicToggle.classList.toggle('or', l === 'OR');
+    btnAnd.className = l === 'AND' ? 'active-and' : '';
+    btnOr.className  = l === 'OR'  ? 'active-or'  : '';
   };
   _updateToggle();
-  logicToggle.addEventListener('click', e => {
+
+  const _setLogic = (val, e) => {
     e.stopPropagation();
-    _critLogic[crit.name] = (_critLogic[crit.name] || 'AND') === 'AND' ? 'OR' : 'AND';
+    _critLogic[crit.name] = val;
     _updateToggle();
     _markDirty();
-  });
+  };
+  btnAnd.addEventListener('click', e => _setLogic('AND', e));
+  btnOr.addEventListener('click',  e => _setLogic('OR',  e));
 
   const arrow = document.createElement('span');
   arrow.className = 'ind-expand-arrow'; arrow.textContent = '▸';
 
-  head.append(cbxWrap, logicToggle, nameWrap, countBadge, arrow);
+  head.append(cbxWrap, logicSwitch, nameWrap, countBadge, arrow);
   card.appendChild(head);
 
   // ── Body ──────────────────────────────────────────────────

@@ -1947,26 +1947,34 @@ body.scan-page {
 #scan-criteria-list { padding: 6px 10px; }
 
 /* AND / OR per-criteria toggle in card head */
-.scan-logic-toggle {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
-  color: var(--t3);
-  background: none;
-  border: 1px solid var(--b2);
-  border-radius: 3px;
-  padding: 1px 5px;
-  cursor: pointer;
+.scan-logic-switch {
+  display: inline-flex;
   flex-shrink: 0;
+  border: 1px solid var(--b3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.scan-logic-switch button {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: var(--t2);
+  cursor: pointer;
   line-height: 1.6;
+  transition: background 0.1s, color 0.1s;
 }
-.scan-logic-toggle:hover { color: var(--t5); border-color: var(--b4); }
-.scan-logic-toggle.or {
-  color: rgba(var(--teal-rgb), 0.85);
-  border-color: rgba(var(--teal-rgb), 0.35);
-  background: rgba(var(--teal-rgb), 0.07);
+.scan-logic-switch button:first-child {
+  border-right: 1px solid var(--b3);
 }
-.scan-logic-toggle.or:hover {
-  color: rgba(var(--teal-rgb), 1);
-  border-color: rgba(var(--teal-rgb), 0.6);
+.scan-logic-switch button:hover { color: var(--t5); background: var(--b2); }
+.scan-logic-switch button.active-and {
+  background: var(--b3);
+  color: var(--t7);
+}
+.scan-logic-switch button.active-or {
+  background: rgba(var(--teal-rgb), 0.15);
+  color: rgba(var(--teal-rgb), 0.95);
 }
 
 /* ×N timeframe count badge in card head */
