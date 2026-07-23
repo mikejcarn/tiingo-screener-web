@@ -11,6 +11,7 @@ from backend.routers.fetch import router as fetch_router
 from backend.routers.indicators_router import router as indicators_router
 from backend.routers.jobs import router as jobs_router
 from backend.routers.ind_configs import router as ind_configs_router
+from backend.routers.scanner import router as scanner_router
 from backend.core import database as db
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
@@ -44,6 +45,7 @@ app.include_router(fetch_router)
 app.include_router(indicators_router)
 app.include_router(jobs_router)
 app.include_router(ind_configs_router)
+app.include_router(scanner_router)
 
 
 # ---------------------------------------------------------------------------
@@ -140,3 +142,7 @@ def fetch_page():
 @app.get("/indicators")
 def indicators_page():
     return FileResponse(str(FRONTEND_DIR / "indicators.html"))
+
+@app.get("/scanner")
+def scanner_page():
+    return FileResponse(str(FRONTEND_DIR / "scanner.html"))

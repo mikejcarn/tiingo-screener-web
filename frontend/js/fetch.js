@@ -858,6 +858,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; }
   if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
   if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }
+  if (e.key === 'A' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; }
   if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     const input = document.getElementById('single-ticker');

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scanner — Tiingo Screener</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<script>try{if(localStorage.getItem('theme')==='light')document.documentElement.classList.add('light')}catch{}</script>
+</head>
+<body class="scan-page">
+
+<div id="scan-header">
+  <span id="scan-title">Tiingo Screener</span>
+  <div class="nav-right">
+    <div class="page-nav">
+      <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
+      <a class="page-nav-item" href="/indicators" title="Go to indicators page (I)">indicators</a>
+      <span class="page-nav-item active" title="Scanner page (A)">scanner</span>
+      <a class="page-nav-item" href="/" title="Go to chart page (C)">chart</a>
+    </div>
+    <button class="btn-theme-toggle" title="Switch to light mode">☀</button>
+    <button class="btn-help-nav" title="Keyboard shortcuts (?)">?</button>
+  </div>
+</div>
+
+<div class="scan-layout">
+
+  <!-- ── Left: scan config list ────────────────────────────── -->
+  <div class="scan-sidebar">
+    <div class="scan-sidebar-head">
+      <span>Scans</span>
+      <button id="btn-new-scan" class="dash-btn-sm dash-btn-sm-add" title="Create new scan (N)">+ New</button>
+    </div>
+    <div id="scan-list">
+      <div class="ind-loading">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Centre: criteria editor ───────────────────────────── -->
+  <div class="scan-main">
+
+    <div id="scan-empty" class="ind-empty">
+      <div>
+        <p>No scans yet.</p>
+        <p>Click <strong>+ New</strong> to create one.</p>
+      </div>
+    </div>
+
+    <div id="scan-editor" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
+
+      <!-- Name + actions -->
+      <div class="ind-editor-top">
+        <span class="ind-editor-label">Scan</span>
+        <input type="text" id="scan-name" class="config-name-input" placeholder="Scan name">
+        <button id="btn-save-scan" class="ind-btn-save" title="Save (S)">Save</button>
+        <button id="btn-delete-scan" class="btn-destructive" title="Delete (D)">Delete</button>
+      </div>
+
+      <!-- Global settings: ind conf + logic -->
+      <div class="scan-selectors">
+        <label class="scan-sel-label">Indicator config</label>
+        <select id="scan-ind-conf" class="scan-sel"></select>
+        <label class="scan-sel-label">Logic</label>
+        <select id="scan-logic" class="scan-sel" title="AND = all criteria must pass · OR = any criteria passes">
+          <option value="AND">AND — all must pass</option>
+          <option value="OR">OR — any must pass</option>
+        </select>
+      </div>
+
+      <!-- Criteria section head -->
+      <div class="scan-section-head">
+        <span>Criteria</span>
+      </div>
+
+      <!-- Criteria cards (scrollable) -->
+      <div id="scan-criteria-list" class="scan-criteria-scroll"></div>
+      <div id="scan-no-crit" class="scan-no-match" style="padding:10px 14px; display:none;">
+        No criteria modules found.
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Right: run + results + history ────────────────────── -->
+  <div class="scan-right">
+
+    <!-- Run card -->
+    <div class="scan-run-card">
+      <div class="ind-run-head">
+        <span>Run</span>
+        <button id="btn-run-scan" class="dash-btn-sm dash-btn-sm-launch" title="Run scan (R)">&#9654; Run</button>
+      </div>
+      <div class="scan-run-body">
+        <span id="scan-run-status" class="scan-run-status-text"></span>
+        <span id="scan-run-summary" class="scan-run-summary"></span>
+      </div>
+    </div>
+
+    <!-- Results card -->
+    <div class="scan-results-card">
+      <div class="ind-run-head">
+        <span>Results <span id="scan-results-label" class="scan-results-count"></span></span>
+        <button id="btn-open-chart" class="dash-btn-sm" title="Load results into chart page" style="display:none">Open in chart ↗</button>
+      </div>
+      <div class="scan-results-body">
+        <div id="scan-results-empty" class="scan-results-empty">Run a scan to see results.</div>
+        <div class="scan-table-wrap" id="scan-table-wrap" style="display:none;">
+          <table id="scan-table" class="scan-table"></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- History card -->
+    <div class="scan-history">
+      <div class="ind-run-head">Run History</div>
+      <div class="scan-history-wrap">
+        <table class="scan-history-table">
+          <thead>
+            <tr>
+              <th>Scan</th>
+              <th>Matched</th>
+              <th>Total</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="scan-history-body">
+            <tr><td colspan="4" class="stats-empty">No history yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- .scan-right -->
+
+</div>
+
+<script type="module" src="/static/js/scanner.js"></script>
+</body>
+</html>

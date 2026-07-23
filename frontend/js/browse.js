@@ -18,6 +18,7 @@ let dropIdx    = -1;
 let tickerIdx  = 0;
 let _lists     = ['ALL'];
 let _listIdx   = 0;
+let _scanListName = null;  // name of the virtual scan-results list, if present
 
 const tickerInput  = document.getElementById('ticker-input');
 const tickerCount  = document.getElementById('ticker-count');
@@ -36,8 +37,23 @@ export async function initBrowse() {
   tickers    = data.tickers    || [];
   timeframes = data.timeframes || [];
   confs      = data.ind_confs  || [];
-  _lists = ['All', ...(data.lists || [])];
+  // Check for scan results stored by the scanner page
+  const _scanTickers = (() => { try { const t = localStorage.getItem('scan_tickers'); return t ? JSON.parse(t) : null; } catch { return null; } })();
+  const _scanLabel   = (() => { try { return localStorage.getItem('scan_label') || 'Scan Results'; } catch { return 'Scan Results'; } })();
+  if (_scanTickers?.length) {
+    _scanListName = `⊕ ${_scanLabel}`;
+    _lists = [_scanListName, 'All', ...(data.lists || [])];
+  } else {
+    _lists = ['All', ...(data.lists || [])];
+  }
   _buildListSelect();
+
+  // Auto-select scan results list if navigating from scanner page
+  const fromScan = new URLSearchParams(location.search).get('from_scan');
+  if (fromScan && _scanListName) {
+    listSelect.value = _scanListName;
+    tickers = _scanTickers;
+  }
 
   // Populate timeframe select
   for (const tf of timeframes) {
@@ -119,7 +135,13 @@ async function _selectList() {
   const selected      = listSelect.value;
   _listIdx            = _lists.indexOf(selected);
   const currentTicker = tickers[tickerIdx];
-  const url           = selected === 'All'
+  if (_scanListName && selected === _scanListName) {
+    try { tickers = JSON.parse(localStorage.getItem('scan_tickers') || '[]'); } catch { tickers = []; }
+    const newIdx = tickers.indexOf(currentTicker);
+    _loadTicker(newIdx >= 0 ? newIdx : 0);
+    return;
+  }
+  const url  = selected === 'All'
     ? '/api/tickers'
     : `/api/tickers?ticker_list=${encodeURIComponent(selected)}`;
   const data = await api.get(url);
@@ -280,6 +302,7 @@ function _wireNav() {
     if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; return; }
+    if (e.key === 'A' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; return; }
     if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       tickerInput.focus();

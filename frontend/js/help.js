@@ -1,7 +1,28 @@
-// Shared keyboard-shortcuts help overlay — used by all three pages.
-// Call initHelp('chart' | 'tickers' | 'indicators') once per page.
+// Shared keyboard-shortcuts help overlay — used by all pages.
+// Call initHelp('chart' | 'tickers' | 'indicators' | 'scanner') once per page.
 
 const _PAGES = [
+  {
+    id: 'scanner',
+    label: 'scanner',
+    html: `<table class="help-table"><tbody>
+      <tr class="help-section"><td colspan="2">Scan Configs</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate scan configs</td></tr>
+      <tr><td><kbd>N</kbd></td><td>New scan config</td></tr>
+      <tr><td><kbd>S</kbd></td><td>Save scan config</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Delete scan config</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run scan</td></tr>
+
+      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
+      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
+      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
+
+      <tr class="help-section"><td colspan="2">This Panel</td></tr>
+      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
+    </tbody></table>`,
+  },
   {
     id: 'tickers',
     label: 'tickers',
@@ -17,8 +38,8 @@ const _PAGES = [
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next list in Batch Fetch select</td></tr>
 
       <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages: chart → tickers → indicators</td></tr>
-      <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
+      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
+      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
 
       <tr class="help-section"><td colspan="2">This Panel</td></tr>
       <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
@@ -51,8 +72,8 @@ const _PAGES = [
       <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Toggle focused indicator in / out of run queue</td></tr>
 
       <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages: chart → tickers → indicators</td></tr>
-      <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
+      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
+      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
 
       <tr class="help-section"><td colspan="2">This Panel</td></tr>
       <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
@@ -97,8 +118,8 @@ const _PAGES = [
 
       <tr class="help-section"><td colspan="2">View</td></tr>
       <tr><td><kbd>F</kbd></td><td>Toggle fullscreen (hides nav &amp; controls bars)</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages: chart → tickers → indicators</td></tr>
-      <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
+      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
+      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
 
       <tr class="help-section"><td colspan="2">This Panel</td></tr>
       <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>

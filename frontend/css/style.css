@@ -1646,3 +1646,348 @@ body.ind-page {
   border-color: rgba(var(--red-rgb),0.35);
   color: rgba(var(--red-rgb),0.9);
 }
+
+/* ── Scanner page ─────────────────────────────────────────── */
+body.scan-page {
+  background: var(--c-bg);
+  color: var(--t8);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#scan-header {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-raised);
+  flex-shrink: 0;
+}
+#scan-title { font-size: 14px; font-weight: 600; color: var(--t7); letter-spacing: 0.02em; }
+
+.scan-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px;
+  gap: 12px;
+}
+
+/* ── Left sidebar ─────────────────────────────────────────── */
+#scan-list { flex: 1; overflow-y: auto; }
+
+.scan-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.scan-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--b3);
+  font-size: 11px;
+  color: var(--t4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+.scan-sidebar-head button {
+  font-size: 11px;
+  padding: 3px 8px;
+  color: var(--t6);
+  border-color: var(--b5);
+}
+.scan-sidebar-head button:hover { color: var(--t10); border-color: var(--t4); }
+
+/* ── Centre main ──────────────────────────────────────────── */
+.scan-main {
+  flex: 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+}
+
+#scan-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Criteria list: fills remaining space and scrolls */
+.scan-criteria-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ── Right column ─────────────────────────────────────────── */
+.scan-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Run card */
+.scan-run-card {
+  flex-shrink: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+}
+.scan-run-body {
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+}
+.scan-run-status-text { font-size: 12px; color: rgba(var(--red-rgb),0.8); flex: 1; }
+.scan-run-summary { font-size: 12px; color: var(--t5); }
+
+/* Results card */
+.scan-results-card {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.scan-results-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.scan-results-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--t2);
+}
+
+/* History card */
+.scan-history {
+  height: 200px;
+  flex-shrink: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.scan-history-wrap {
+  flex: 1;
+  overflow-y: auto;
+}
+.scan-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.scan-history-table th {
+  padding: 5px 12px;
+  text-align: left;
+  color: var(--t3);
+  font-weight: normal;
+  position: sticky;
+  top: 0;
+  background: var(--c-card);
+  border-bottom: 1px solid var(--b3);
+}
+.scan-history-table td { padding: 4px 12px; color: var(--t4); border-bottom: 1px solid var(--c-card); }
+.scan-history-table td:first-child { color: var(--t7); }
+.scan-history-table tbody tr:hover td { background: var(--c-surface); }
+
+/* Selectors row */
+.scan-selectors {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--b1);
+  flex-shrink: 0;
+}
+.scan-sel-label { font-size: 11px; color: var(--t5); white-space: nowrap; }
+.scan-sel {
+  background: var(--c-ctrl); color: var(--t7); border: 1px solid var(--b5);
+  padding: 3px 8px; border-radius: 3px; font-size: 12px; cursor: pointer;
+}
+.scan-sel:focus { outline: none; border-color: var(--t4); }
+
+/* Conditions section */
+.scan-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 18px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--t5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--b1);
+  flex-shrink: 0;
+}
+.scan-conditions {
+  padding: 6px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.scan-cond-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.scan-cond-col {
+  background: var(--c-ctrl); color: var(--t7); border: 1px solid var(--b5);
+  padding: 3px 6px; border-radius: 3px; font-size: 11px; cursor: pointer;
+  flex: 1; min-width: 0;
+}
+.scan-cond-col:focus { outline: none; border-color: var(--t4); }
+.scan-cond-op {
+  background: var(--c-ctrl); color: var(--t7); border: 1px solid var(--b5);
+  padding: 3px 5px; border-radius: 3px; font-size: 11px; cursor: pointer;
+  width: 86px; flex-shrink: 0;
+}
+.scan-cond-op:focus { outline: none; }
+.scan-cond-val {
+  background: var(--c-ctrl); color: var(--t8); border: 1px solid var(--b5);
+  padding: 3px 7px; border-radius: 3px; font-size: 11px; width: 80px; flex-shrink: 0;
+}
+.scan-cond-val:focus { outline: none; border-color: var(--t4); }
+.scan-cond-del { padding: 2px 7px; font-size: 12px; flex-shrink: 0; }
+.scan-no-conds { padding: 8px 18px; font-size: 12px; color: var(--t3); }
+
+.scan-results-count { font-size: 11px; color: var(--t5); margin-left: 4px; }
+.scan-table-wrap {
+  flex: 1;
+  overflow: auto;
+}
+.scan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.scan-table thead th {
+  position: sticky; top: 0;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--b3);
+  padding: 6px 12px;
+  text-align: left;
+  color: var(--t5);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.scan-table thead th:hover { color: var(--t8); }
+.scan-table tbody tr { border-bottom: 1px solid var(--b0); }
+.scan-table tbody tr:hover { background: var(--c-hover); }
+.scan-ticker {
+  font-weight: 600;
+  color: var(--t9);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.scan-ticker:hover { color: rgba(var(--teal-rgb),1); }
+.scan-date { color: var(--t4); white-space: nowrap; }
+.scan-table td { padding: 5px 12px; color: var(--t7); }
+.scan-no-match { padding: 18px; color: var(--t3); font-size: 13px; }
+.scan-row { cursor: pointer; }
+
+/* ── Scanner criteria section head ────────────────────────── */
+.scan-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 14px;
+  background: var(--c-surface);
+  border-top: 1px solid var(--b2);
+  border-bottom: 1px solid var(--b1);
+  font-size: 11px; font-weight: 600; color: var(--t5);
+  flex-shrink: 0;
+}
+
+/* ── Scanner criteria cards ───────────────────────────────── */
+#scan-criteria-list { padding: 6px 10px; }
+
+/* ×N instance count badge in card head */
+.scan-count-badge {
+  font-size: 10px; font-weight: 700;
+  color: rgba(var(--teal-rgb), 0.85);
+  background: rgba(var(--teal-rgb), 0.1);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+/* Instance block within card body */
+.scan-instance { margin-bottom: 4px; }
+.scan-instance-multi {
+  border: 1px solid var(--b2);
+  border-radius: 3px;
+  padding: 6px 8px;
+  background: var(--c-surface);
+  margin-bottom: 6px;
+}
+
+/* Timeframe row inside each instance (tf select + ✕) */
+.scan-instance-head {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 2px;
+}
+.scan-instance-head .param-key { flex-shrink: 0; }
+.scan-instance-head .scan-crit-tf { flex: 1; min-width: 0; }
+.scan-instance-remove {
+  flex-shrink: 0; padding: 1px 6px; font-size: 11px;
+  border-radius: 3px; line-height: 1.4;
+}
+
+/* + Add instance button */
+.scan-add-instance {
+  display: block; width: 100%; margin-top: 4px;
+  font-size: 11px; color: var(--t4);
+  background: none; border: 1px dashed var(--b3); border-radius: 3px;
+  padding: 4px 0; text-align: center; cursor: pointer;
+}
+.scan-add-instance:hover { color: var(--t6); border-color: var(--b5); background: var(--c-hover); }
+
+/* Results */
+.scan-signal-cell { font-size: 11px; color: var(--t5); }
+.scan-result-row  { cursor: pointer; }

@@ -69,6 +69,34 @@ CREATE TABLE IF NOT EXISTS ind_log (
     status      TEXT NOT NULL DEFAULT 'done',
     ran_at      TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scan_configs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    logic       TEXT NOT NULL DEFAULT 'AND',
+    ind_conf_id INTEGER,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS scan_criteria (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_id     INTEGER NOT NULL,
+    criteria_name TEXT NOT NULL,
+    timeframe     TEXT NOT NULL,
+    params_json   TEXT NOT NULL DEFAULT '{}',
+    sort_order    INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (config_id) REFERENCES scan_configs(id)
+);
+
+CREATE TABLE IF NOT EXISTS scan_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_id   INTEGER NOT NULL,
+    config_name TEXT NOT NULL DEFAULT '',
+    matched     INTEGER NOT NULL DEFAULT 0,
+    total       INTEGER NOT NULL DEFAULT 0,
+    ran_at      TEXT NOT NULL
+);
 """
 
 
@@ -80,11 +108,37 @@ def _conn() -> sqlite3.Connection:
 def init_db() -> None:
     with _conn() as con:
         con.executescript(SCHEMA)
-        # Migrations: add columns introduced after initial schema
+        # Migrations
         try:
             con.execute("ALTER TABLE fetch_log ADD COLUMN ticker_list TEXT")
         except Exception:
             pass
+        # Migrate old scan schema (scan_conditions) to new (scan_criteria)
+        tables = {r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        if 'scan_conditions' in tables:
+            con.executescript("""
+                DROP TABLE IF EXISTS scan_conditions;
+                DROP TABLE IF EXISTS scan_configs;
+                CREATE TABLE IF NOT EXISTS scan_configs (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name        TEXT NOT NULL,
+                    logic       TEXT NOT NULL DEFAULT 'AND',
+                    ind_conf_id INTEGER,
+                    created_at  TEXT NOT NULL,
+                    updated_at  TEXT
+                );
+                CREATE TABLE IF NOT EXISTS scan_criteria (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    config_id     INTEGER NOT NULL,
+                    criteria_name TEXT NOT NULL,
+                    timeframe     TEXT NOT NULL,
+                    params_json   TEXT NOT NULL DEFAULT '{}',
+                    sort_order    INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (config_id) REFERENCES scan_configs(id)
+                );
+            """)
         try:
             con.execute("ALTER TABLE ind_configs ADD COLUMN updated_at TEXT")
         except Exception:
@@ -276,6 +330,27 @@ def get_indicator_history(limit: int = 30) -> list:
     return [
         {'config_id': r[0], 'config_name': r[1], 'timeframes': json.loads(r[2]),
          'tickers': r[3], 'errors': r[4], 'status': r[5], 'ran_at': r[6][:10]}
+        for r in rows
+    ]
+
+
+def log_scan_run(config_id: int, config_name: str, matched: int, total: int) -> None:
+    from datetime import datetime
+    with _conn() as con:
+        con.execute(
+            "INSERT INTO scan_log (config_id, config_name, matched, total, ran_at) VALUES (?,?,?,?,?)",
+            (config_id, config_name, matched, total, datetime.utcnow().isoformat())
+        )
+
+
+def get_scan_history(limit: int = 30) -> list:
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT config_id, config_name, matched, total, ran_at FROM scan_log ORDER BY ran_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    return [
+        {'config_id': r[0], 'config_name': r[1], 'matched': r[2], 'total': r[3], 'ran_at': r[4][:10]}
         for r in rows
     ]
 
