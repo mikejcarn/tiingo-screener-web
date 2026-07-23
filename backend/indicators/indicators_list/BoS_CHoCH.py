@@ -1,8 +1,7 @@
 import pandas as pd
-from smartmoneyconcepts import smc
-
 
 display_name = "Break of Structure / Change of Character (BoS/CHoCH)"
+
 def _to_list(val):
     if val is None or val == []:
         return None
@@ -12,6 +11,7 @@ def _to_list(val):
 def calculate_BoS_CHoCH(df, swing_lengths=[25],
                          show_bos=True, show_choch=True,
                          BoS_swing_lengths=[], CHoCH_swing_lengths=[]):
+    from smartmoneyconcepts import smc
     BoS_swing_lengths   = _to_list(BoS_swing_lengths)
     CHoCH_swing_lengths = _to_list(CHoCH_swing_lengths)
 

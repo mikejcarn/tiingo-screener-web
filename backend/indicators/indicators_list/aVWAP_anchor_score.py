@@ -19,8 +19,6 @@ and/or aVWAP_peak_q1, aVWAP_peak_q2, ...
 
 import pandas as pd
 import numpy as np
-from scipy.signal import find_peaks
-from scipy.stats import rankdata
 
 display_name = "Anchor Score"
 
@@ -76,6 +74,9 @@ def calculate_avwap_quality(
         max_atr_distance  — discard any candidate whose aVWAP is more than N ATRs
                             from current close. None = no filter.
     """
+    from scipy.signal import find_peaks
+    from scipy.stats import rankdata
+
     if not valleys and not peaks:
         return pd.DataFrame(index=df.index)
 

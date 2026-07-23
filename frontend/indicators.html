@@ -24,7 +24,7 @@
     <div class="ind-sidebar-head">
       <span>Configs</span>
       <div class="dash-section-actions">
-        <button id="btn-new-config" class="dash-btn-sm dash-btn-sm-add" title="Create new config">+ New</button>
+        <button id="btn-new-config" class="dash-btn-sm dash-btn-sm-add" title="Create new config (N)">+ New</button>
       </div>
     </div>
     <div id="config-list">
@@ -46,23 +46,23 @@
 
       <div class="ind-editor-top">
         <span class="ind-editor-label">Config</span>
-        <input type="text" id="config-name" class="config-name-input" placeholder="Config name" title="Name for this indicator config">
-        <button id="btn-save" class="ind-btn-save" title="Save config to database">Save</button>
+        <input type="text" id="config-name" class="config-name-input" placeholder="Config name" title="Config name — Shift+Enter to focus, Enter to save">
+        <button id="btn-save" class="ind-btn-save" title="Save config (S)">Save</button>
         <button id="btn-clear-results" class="btn-destructive" title="Delete computed indicator results for this config">Clear Results</button>
-        <button id="btn-delete-config" class="btn-destructive" title="Delete this config and its results">Delete</button>
+        <button id="btn-delete-config" class="btn-destructive" title="Delete this config and its results (D)">Delete</button>
       </div>
       <div id="conf-dates" class="conf-dates"></div>
 
       <div class="tf-tabs" id="tf-tabs">
-        <button class="tf-tab active" data-tf="daily" title="Edit indicators for the daily timeframe">daily</button>
-        <button class="tf-tab" data-tf="weekly" title="Edit indicators for the weekly timeframe">weekly</button>
-        <button class="tf-tab" data-tf="1hour" title="Edit indicators for the 1hour timeframe">1hour</button>
-        <button class="tf-tab" data-tf="4hour" title="Edit indicators for the 4hour timeframe">4hour</button>
-        <button class="tf-tab" data-tf="5min" title="Edit indicators for the 5min timeframe">5min</button>
+        <button class="tf-tab active" data-tf="daily" title="Daily timeframe — [ prev · ] next">daily</button>
+        <button class="tf-tab" data-tf="weekly" title="Weekly timeframe — [ prev · ] next">weekly</button>
+        <button class="tf-tab" data-tf="1hour" title="1-hour timeframe — [ prev · ] next">1hour</button>
+        <button class="tf-tab" data-tf="4hour" title="4-hour timeframe — [ prev · ] next">4hour</button>
+        <button class="tf-tab" data-tf="5min" title="5-minute timeframe — [ prev · ] next">5min</button>
       </div>
 
       <div class="ind-search-bar">
-        <input type="text" id="ind-search" class="ind-search-input" placeholder="Type to find indicators…" autocomplete="off" spellcheck="false" title="Filter the indicator list below by name">
+        <input type="text" id="ind-search" class="ind-search-input" placeholder="Type to find indicators…" autocomplete="off" spellcheck="false" title="Search indicators — ↓/↑ or −/= to navigate · Space to toggle selected">
       </div>
 
       <div id="ind-list" class="ind-list"></div>
@@ -78,7 +78,7 @@
       <div class="ind-run-head">
         <span>Run</span>
         <div class="dash-section-actions">
-          <button id="btn-compute" class="dash-btn-sm dash-btn-sm-launch" title="Run indicator computation for the queued configs below">Run</button>
+          <button id="btn-compute" class="dash-btn-sm dash-btn-sm-launch" title="Run indicator computation for queued configs (R)">Run</button>
           <button id="btn-compute-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running computation">Cancel</button>
         </div>
       </div>

@@ -28,6 +28,7 @@ let _paramOptions     = {}; // {ind: {param_key: {option_val: sub_params}}}
 let _paramLabels      = {}; // {ind: {param_key: display_label}}
 let _displayNames     = {}; // {ind: display_name} — optional long name for UI
 let _descriptions     = {}; // {ind: description} — hover tooltip text
+let _paramDescriptions = {}; // {param_key: description} — hover tooltip text for params
 let _paramSeparators  = {}; // {ind: [key, ...]} — insert divider before these keys
 let _currentParamLabels     = {}; // active indicator's labels during rendering
 let _currentParamSeparators = []; // active indicator's separator keys during rendering
@@ -35,7 +36,8 @@ let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
 let _dirty       = false;
 let _pollTimer   = null;
-let _searchQuery = '';
+let _searchQuery    = '';
+let _focusedIndKey  = null; // keyboard-navigated indicator
 
 // Multi-config run queue
 let _runCheckedIds  = new Set();  // which configs are in the run queue
@@ -93,8 +95,9 @@ async function _loadDefaults() {
   _paramOptions    = _defaults.param_options    || {};
   _paramLabels     = _defaults.param_labels     || {};
   _displayNames    = _defaults.display_names    || {};
-  _descriptions    = _defaults.descriptions     || {};
-  _paramSeparators = _defaults.param_separators || {};
+  _descriptions      = _defaults.descriptions      || {};
+  _paramDescriptions = _defaults.param_descriptions || {};
+  _paramSeparators   = _defaults.param_separators  || {};
 }
 
 async function _selectConfig(id, { toggleQueue = true } = {}) {
@@ -148,12 +151,12 @@ function _renderConfigList() {
   el.innerHTML = _configList.map(c => {
     const queued = _runCheckedIds.has(c.id);
     return `
-    <div class="ind-config-item${c.id === _selectedId ? ' active' : ''}${queued ? ' queued' : ''}" data-id="${c.id}" title="Open this config in the editor">
+    <div class="ind-config-item${c.id === _selectedId ? ' active' : ''}${queued ? ' queued' : ''}" data-id="${c.id}" title="Open config — _ prev · + next">
       <div class="ind-config-info">
         <span class="ind-config-name">${_esc(c.name)}</span>
         <span class="ind-config-date">${_fmtDate(c.updated_at || c.created_at)}</span>
       </div>
-      <button class="ind-queue-btn${queued ? ' queued' : ''}" data-id="${c.id}" title="${queued ? 'Remove from run queue' : 'Add to run queue'}">▶</button>
+      <button class="ind-queue-btn${queued ? ' queued' : ''}" data-id="${c.id}" title="${queued ? 'Remove from run queue (Space / \\)' : 'Add to run queue (Space / \\)'}">▶</button>
     </div>`;
   }).join('');
   for (const item of el.querySelectorAll('.ind-config-item')) {
@@ -198,8 +201,23 @@ function _renderConfDates() {
 
 function _setActiveTab(tf) {
   _activeTf = tf;
+  _updateTabCounts();
+}
+
+function _updateTabCounts() {
   for (const tab of document.querySelectorAll('.tf-tab')) {
-    tab.classList.toggle('active', tab.dataset.tf === tf);
+    tab.classList.toggle('active', tab.dataset.tf === _activeTf);
+    const tf    = tab.dataset.tf;
+    const count = tf === _activeTf
+      ? document.querySelectorAll('#ind-list .ind-card.enabled').length
+      : Object.keys(_pending[tf] ?? _configData?.indicators?.[tf] ?? {}).length;
+    let badge = tab.querySelector('.tf-count');
+    if (count > 0) {
+      if (!badge) { badge = document.createElement('span'); badge.className = 'tf-count'; tab.appendChild(badge); }
+      badge.textContent = count;
+    } else {
+      badge?.remove();
+    }
   }
 }
 
@@ -235,6 +253,8 @@ function _renderIndicatorList() {
   }).join('');
 
   _wireListEvents();
+  if (_focusedIndKey) _setKeyboardFocus(_focusedIndKey);
+  _updateTabCounts();
 }
 
 function _normalizeParams(ind, params) {
@@ -277,7 +297,7 @@ function _renderIndicatorCard(ind, enabled, params) {
     : '';
   const arrow   = enabled ? '<span class="ind-expand-arrow">▾</span>' : '';
   const hasTip  = !!_descriptions[ind];
-  const headTitle = enabled ? 'Click to deselect' : 'Click to select';
+  const headTitle = enabled ? 'Click to deselect · Space to toggle' : 'Click to select · Space to toggle';
   return `<div class="ind-card${enabled ? ' enabled' : ''}" data-indicator="${_esc(ind)}">
     <div class="ind-card-head" title="${headTitle}">
       <label class="ind-toggle-wrap" title="Enable/disable this indicator">
@@ -311,12 +331,17 @@ function _numSpin(disabled) {
   </span>`;
 }
 
+function _pdesc(key) {
+  const d = _paramDescriptions[key];
+  return d ? ` title="${_esc(d)}"` : '';
+}
+
 function _renderNullableNum(key, val) {
   const enabled = val !== null && val !== undefined;
   const label = _currentParamLabels[key] ?? key;
   return `<div class="param-field param-nullable" data-key="${_esc(key)}" data-type="nullable_num">
     <input type="checkbox" class="param-checkbox param-nullable-toggle"${enabled ? ' checked' : ''}>
-    <span class="param-key">${_esc(label)}</span>
+    <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
     <span class="param-num-wrap">
       <input type="number" value="${enabled ? val : ''}" step="1" min="0"
         class="param-input param-num param-nullable-value"${enabled ? '' : ' disabled'}
@@ -331,7 +356,7 @@ function _renderNullableList(key, val) {
   const label = _currentParamLabels[key] ?? key;
   return `<div class="param-field param-nullable" data-key="${_esc(key)}" data-type="nullable_list">
     <input type="checkbox" class="param-checkbox param-nullable-list-toggle"${enabled ? ' checked' : ''}>
-    <span class="param-key">${_esc(label)}</span>
+    <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
     <input type="text" value="${enabled ? val.join(', ') : ''}"
       class="param-input param-text param-nullable-list-value"${enabled ? '' : ' disabled'}
       placeholder="e.g. 5, 25">
@@ -353,14 +378,14 @@ function _renderParamValue(key, val) {
   if (typeof val === 'boolean') {
     return `<label class="param-field param-bool" data-key="${_esc(key)}" data-type="bool">
       <input type="checkbox"${val ? ' checked' : ''} class="param-checkbox">
-      <span class="param-key">${_esc(label)}</span>
+      <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
     </label>`;
   }
   if (typeof val === 'number') {
     if (NULLABLE_NUM_KEYS.has(key)) return _renderNullableNum(key, val);
     const isInt = Number.isInteger(val);
     return `<div class="param-field" data-key="${_esc(key)}" data-type="${isInt ? 'int' : 'float'}">
-      <span class="param-key">${_esc(label)}</span>
+      <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
       <span class="param-num-wrap">
         <input type="number" value="${val}" step="${isInt ? '1' : 'any'}" min="0" class="param-input param-num">
         ${_numSpin()}
@@ -372,25 +397,25 @@ function _renderParamValue(key, val) {
     if (opts) {
       const options = opts.map(o => `<option value="${_esc(o)}"${o === val ? ' selected' : ''}>${_esc(o)}</option>`).join('');
       return `<div class="param-field" data-key="${_esc(key)}" data-type="string">
-        <span class="param-key">${_esc(label)}</span>
+        <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
         <select class="param-input param-select">${options}</select>
       </div>`;
     }
     return `<div class="param-field" data-key="${_esc(key)}" data-type="string">
-      <span class="param-key">${_esc(label)}</span>
+      <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
       <input type="text" value="${_esc(val)}" class="param-input param-text">
     </div>`;
   }
   if (Array.isArray(val)) {
     if (val.length === 0 || val.every(v => typeof v === 'number')) {
       return `<div class="param-field" data-key="${_esc(key)}" data-type="list_num">
-        <span class="param-key">${_esc(label)}</span>
+        <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
         <input type="text" value="${val.join(', ')}" class="param-input param-text" placeholder="e.g. 50, 200">
       </div>`;
     }
     // Complex array (list of dicts, etc.) → JSON textarea
     return `<div class="param-field param-wide" data-key="${_esc(key)}" data-type="json">
-      <span class="param-key">${_esc(label)}</span>
+      <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
       <textarea class="param-input param-json">${_esc(JSON.stringify(val, null, 2))}</textarea>
     </div>`;
   }
@@ -399,8 +424,12 @@ function _renderParamValue(key, val) {
     const body = Object.keys(val).length
       ? _renderParamTree(val)
       : '<span class="param-none">no additional parameters</span>';
+    const desc = _paramDescriptions[key];
+    const groupTitle = desc
+      ? `Click to expand/collapse — ${desc}`
+      : 'Click to expand/collapse this parameter group';
     return `<div class="param-group${isInline ? ' param-inline' : ''}" data-key="${_esc(key)}" data-type="object">
-      <div class="param-group-head" title="Click to expand/collapse this parameter group">
+      <div class="param-group-head" title="${_esc(groupTitle)}">
         <span class="param-group-arrow">▾</span>${_esc(label)}
       </div>
       <div class="param-group-body">${body}</div>
@@ -468,6 +497,9 @@ function _readParamTree(container) {
 
 function _wireStaticButtons() {
   document.getElementById('btn-new-config').addEventListener('click', _createConfig);
+  document.getElementById('config-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); _saveConfig(); e.target.blur(); }
+  });
   document.getElementById('btn-clear-results').addEventListener('click', _clearResults);
   document.getElementById('btn-delete-config').addEventListener('click', _deleteConfig);
   document.getElementById('btn-save').addEventListener('click', _saveConfig);
@@ -485,16 +517,22 @@ function _wireStaticButtons() {
 
   const searchEl = document.getElementById('ind-search');
   searchEl.addEventListener('input', e => {
-    _searchQuery = e.target.value.trim().toLowerCase();
+    _searchQuery   = e.target.value.trim().toLowerCase();
+    _focusedIndKey = null;
     _renderIndicatorList();
   });
   searchEl.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      searchEl.blur(); // global handler clears _searchQuery and re-renders
+      searchEl.blur();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault(); _moveFocus(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); _moveFocus(-1);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      _selectFirstFilteredIndicator();
+      if (_focusedIndKey) _toggleFocusedCard();
+      else _selectFirstFilteredIndicator();
     }
   });
 
@@ -561,11 +599,36 @@ function _updateQueueStatus() {
   el.textContent = `Config ${_runQueueIdx + 1} / ${_runQueue.length}  ·  ${conf?.name ?? `#${_runQueue[_runQueueIdx]}`}`;
 }
 
+function _setKeyboardFocus(ind) {
+  document.querySelector('#ind-list .ind-card.kb-focused')?.classList.remove('kb-focused');
+  _focusedIndKey = ind || null;
+  if (!_focusedIndKey) return;
+  const card = document.querySelector(`#ind-list .ind-card[data-indicator="${CSS.escape(_focusedIndKey)}"]`);
+  if (card) { card.classList.add('kb-focused'); card.scrollIntoView({ block: 'nearest' }); }
+}
+
+function _moveFocus(dir) {
+  const cards = [...document.querySelectorAll('#ind-list .ind-card')];
+  if (!cards.length) return;
+  const keys  = cards.map(c => c.dataset.indicator);
+  const cur   = _focusedIndKey ? keys.indexOf(_focusedIndKey) : -1;
+  const next  = (cur + dir + cards.length) % cards.length;
+  _setKeyboardFocus(keys[next]);
+}
+
+function _toggleFocusedCard() {
+  if (!_focusedIndKey) return;
+  const card = document.querySelector(`#ind-list .ind-card[data-indicator="${CSS.escape(_focusedIndKey)}"]`);
+  if (!card) return;
+  const checkbox = card.querySelector('.ind-toggle');
+  if (checkbox) { checkbox.checked = !card.classList.contains('enabled'); _onToggle(checkbox); _dirty = true; }
+}
+
 function _wireListEvents() {
   const list = document.getElementById('ind-list');
 
   list.addEventListener('change', e => {
-    if (e.target.classList.contains('ind-toggle')) { _onToggle(e.target); return; }
+    if (e.target.classList.contains('ind-toggle')) { _onToggle(e.target); e.target.blur(); return; }
 
     // Nullable-number toggle: enable/disable the number input
     if (e.target.classList.contains('param-nullable-toggle')) {
@@ -709,6 +772,7 @@ function _onToggle(checkbox) {
     card.querySelector('.ind-card-body')?.remove();
     arrow?.remove();
   }
+  _updateTabCounts();
 }
 
 // ── Tab switching ──────────────────────────────────────────────
@@ -805,6 +869,7 @@ async function _saveConfig() {
     _renderConfigList();
     _renderRunConfigs();
     _renderConfDates();
+    _updateTabCounts();
     btn.textContent = 'Saved ✓';
     btn.classList.add('ind-btn-save-ok');
     setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
@@ -1348,6 +1413,7 @@ document.addEventListener('keydown', e => {
       _searchQuery = '';
       _renderIndicatorList();
     }
+    _setKeyboardFocus(null);
     if (_dbPreviewTicker) {
       document.getElementById('comp-db-ticker').value = '';
       _dbPreviewTicker = null;
@@ -1360,12 +1426,60 @@ document.addEventListener('keydown', e => {
 
   // Any printable char while nothing interactive is focused → route to indicator search
   const tag = document.activeElement?.tagName;
+  if (e.key === 'Enter' && e.shiftKey) {
+    e.preventDefault();
+    const nameEl = document.getElementById('config-name');
+    if (nameEl) { nameEl.focus(); nameEl.select(); }
+    return;
+  }
+
   if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
+    if (e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); _moveFocus(1);  return; }
+    if (e.key === 'ArrowUp'   || e.key === '=') { e.preventDefault(); _moveFocus(-1); return; }
+    if (e.key === 'Enter') { e.preventDefault(); _toggleFocusedCard(); return; }
+    if (e.key === ' ' || e.key === '\\') {
+      e.preventDefault();
+      if (_selectedId) {
+        if (_runCheckedIds.has(_selectedId)) { _runCheckedIds.delete(_selectedId); delete _runResults[_selectedId]; }
+        else _runCheckedIds.add(_selectedId);
+        _saveRunQueue();
+        _renderConfigList();
+        _renderRunConfigs();
+      }
+      return;
+    }
+    if (e.key === '[' || e.key === ']') {
+      e.preventDefault();
+      const tabs = [...document.querySelectorAll('.tf-tab')];
+      const cur  = tabs.findIndex(t => t.dataset.tf === _activeTf);
+      const dir  = e.key === ']' ? 1 : -1;
+      const next = (cur + dir + tabs.length) % tabs.length;
+      if (tabs[next]) _switchTf(tabs[next].dataset.tf);
+      return;
+    }
+    if (e.key === '_' || e.key === '+') {
+      e.preventDefault();
+      if (!_configList.length) return;
+      const cur  = _configList.findIndex(c => c.id === _selectedId);
+      const dir  = e.key === '_' ? 1 : -1;
+      const next = (cur + dir + _configList.length) % _configList.length;
+      _selectConfig(_configList[next].id);
+      return;
+    }
     if (e.key === 'C') { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I') { e.preventDefault(); window.location.href = '/indicators'; return; }
     if (e.key === 'S') { e.preventDefault(); _saveConfig(); return; }
     if (e.key === 'R') { e.preventDefault(); _startCompute(); return; }
+    if (e.key === 'D') { e.preventDefault(); _deleteConfig(); return; }
+    if (e.key === 'N') {
+      e.preventDefault();
+      _createConfig().then(() => {
+        const nameEl = document.getElementById('config-name');
+        if (nameEl) { nameEl.focus(); nameEl.select(); }
+      });
+      return;
+    }
   }
   if (
     e.key.length === 1 &&

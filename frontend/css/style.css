@@ -958,6 +958,17 @@ body.ind-page {
 }
 .tf-tab:hover { color: #999; background: none; }
 .tf-tab.active { color: #ccc; border-bottom-color: rgba(38,166,154,0.7); }
+.tf-count {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 8px;
+  background: rgba(38,166,154,0.25);
+  color: rgba(38,166,154,0.9);
+  vertical-align: middle;
+  line-height: 1.4;
+}
 
 .ind-search-bar {
   padding: 7px 16px;
@@ -1040,6 +1051,11 @@ body.ind-page {
   cursor: pointer;
 }
 
+.ind-card.kb-focused > .ind-card-head {
+  background: #111;
+  box-shadow: inset 2px 0 0 #444;
+}
+
 .param-field {
   display: flex;
   align-items: center;
@@ -1056,6 +1072,7 @@ body.ind-page {
 
 .param-key { color: #888; min-width: 100px; flex-shrink: 0; }
 .param-bool .param-key { min-width: unset; color: #777; }
+.param-key[title] { cursor: help; }
 
 .param-input {
   background: #0d0d0d;

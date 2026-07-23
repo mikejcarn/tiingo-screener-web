@@ -1,9 +1,9 @@
 import pandas as pd
-from smartmoneyconcepts import smc
-
 
 display_name = "Order Blocks (OB)"
+
 def calculate_ob(df, periods=25, max_mitigated=None, max_unmitigated=None):
+    from smartmoneyconcepts import smc
 
     df = df.rename(columns={
         'Open': 'open',

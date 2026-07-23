@@ -150,6 +150,14 @@ def _get_param_separators(name: str) -> list:
         return []
 
 
+def _get_param_descriptions(name: str) -> dict:
+    try:
+        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
+        return getattr(mod, 'param_descriptions', {})
+    except ImportError:
+        return {}
+
+
 def _get_display_name(name: str) -> str | None:
     try:
         mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
@@ -157,6 +165,144 @@ def _get_display_name(name: str) -> str | None:
     except ImportError:
         return None
 
+
+_PARAM_DESCRIPTIONS = {
+    # ── Core / universal ─────────────────────────────────────────────────────
+    'period':                "Lookback period in bars for the main calculation.",
+    'periods':               "Lookback period(s) in bars. Multiple values produce separate output lines.",
+    'left':                  "Bars to the left of a candidate pivot required to be lower/higher — controls how wide a swing must be before it qualifies.",
+    'right':                 "Bars to the right of a pivot required to confirm it — adds a lag equal to this many bars before a signal appears.",
+    'lookback':              "Rolling window size in bars.",
+    'lookback_bars':         "Number of recent bars to include in the calculation. Leave empty to use the full available history.",
+    'avg_lookback':          "Number of recent lines to average together into a single composite reference line.",
+    'max_aVWAPs':            "Maximum number of aVWAP lines to keep active. When the limit is reached, the oldest line is dropped. Leave empty for no limit.",
+    'extend_to_end':         "Extend each VWAP line forward to the current bar rather than stopping at the next same-type event.",
+    # ── ZScore / bands ───────────────────────────────────────────────────────
+    'std_lookback':          "Rolling window in bars for the standard deviation calculation.",
+    'band_std':              "Standard deviation multiplier(s) for the upper and lower bands. Multiple values produce separate band pairs.",
+    'show_centreline':       "Show the centreline (mean reference line) alongside the deviation bands.",
+    'centreline':            "Method used to compute the mean reference line — e.g. peaks/valleys aVWAP average or SMA.",
+    'centreline_params':     "Optional parameter overrides passed to the centreline calculation. Leave empty to use defaults.",
+    'sma_periods':           "Period for the Simple Moving Average when SMA is selected as the centreline.",
+    # ── aVWAP general ────────────────────────────────────────────────────────
+    'show_up':               "Show VWAP lines anchored at upward pivot points (valley anchors).",
+    'show_down':             "Show VWAP lines anchored at downward pivot points (peak anchors).",
+    'swing_length':          "Number of bars on each side defining a swing high/low used as anchor points.",
+    'min_spacing':           "Minimum number of bars between successive anchor points — prevents clustering.",
+    'include_max':           "Include local high anchors (downward VWAPs from peaks).",
+    'include_min':           "Include local low anchors (upward VWAPs from valleys).",
+    # ── aVWAP OB ─────────────────────────────────────────────────────────────
+    'include_bull':          "Include VWAPs anchored at bullish (demand) order blocks.",
+    'include_bear':          "Include VWAPs anchored at bearish (supply) order blocks.",
+    'include_OB_lines':      "Also draw the raw order block zone boundaries alongside the VWAPs.",
+    'faded':                 "Draw VWAP lines at reduced opacity after they are mitigated.",
+    # ── aVWAP BoS/CHoCH ──────────────────────────────────────────────────────
+    'include_bull_aVWAP':    "Include VWAPs anchored at bullish BoS/CHoCH structural events.",
+    'include_bear_aVWAP':    "Include VWAPs anchored at bearish BoS/CHoCH structural events.",
+    'include_BoS':           "Anchor VWAPs at Break of Structure events (trend continuation confirmation).",
+    'include_CHoCH':         "Anchor VWAPs at Change of Character events (potential trend reversal signal).",
+    # ── aVWAP QQEMOD ─────────────────────────────────────────────────────────
+    'max_anchors':           "Maximum number of anchor points to output, kept in descending order of significance.",
+    'peak_to_valley':        "Anchor VWAPs at QQE transitions from bullish to bearish momentum.",
+    'valley_to_peak':        "Anchor VWAPs at QQE transitions from bearish to bullish momentum.",
+    'peak_to_peak':          "Anchor VWAPs at QQE bullish local peaks (local high-momentum bars).",
+    'valley_to_valley':      "Anchor VWAPs at QQE bearish local valleys (local low-momentum bars).",
+    # ── aVWAP pinch ──────────────────────────────────────────────────────────
+    'anchor_type':           "The primary VWAP type used as the main reference for pinch detection.",
+    'anchor_periods':        "Lookback period used to find the primary anchor VWAP.",
+    'anchor_max_aVWAPs':     "Maximum number of primary (anchor) VWAPs to consider.",
+    'counterpart_periods':   "Lookback period for the opposing VWAPs that must converge toward the primary.",
+    'counterpart_max_aVWAPs':"Maximum number of opposing VWAPs to track for convergence detection.",
+    'beyond_max_aVWAPs':     "Maximum number of secondary VWAPs to draw beyond the convergence zone.",
+    # ── aVWAP anchor score ───────────────────────────────────────────────────
+    'valleys':               "Score and output valley (swing low) anchors.",
+    'peaks':                 "Score and output peak (swing high) anchors.",
+    'min_score_pct':         "Minimum percentile score (0–1) to qualify — candidates below this threshold are discarded. Leave empty for no minimum.",
+    'keep_scores':           "Include the raw score values as output columns alongside the VWAP lines.",
+    'min_swing_spacing':     "Minimum number of bars between candidate anchor points to prevent clustering.",
+    'atr_period':            "ATR period used to normalize price prominence for the anchor scoring calculation.",
+    'isolation_max_bars':    "Maximum bars to look outward when measuring how long a swing point remains the local extreme.",
+    'sharpness_bars_before': "Number of bars before the swing used to score how sharply price entered the reversal (V-shape left side).",
+    'sharpness_bars_after':  "Number of bars after the swing used to score how sharply price exited the reversal (V-shape right side).",
+    'w_prominence':          "Weight for swing prominence (depth/significance of the move) in the combined score.",
+    'w_isolation':           "Weight for isolation (how long the swing point stays the local extreme) in the combined score.",
+    'w_sharpness':           "Weight for reversal sharpness (V-shape speed of entry and exit) in the combined score.",
+    # ── BoS / CHoCH ──────────────────────────────────────────────────────────
+    'swing_lengths':         "Swing length(s) in bars used to detect structural highs and lows. Multiple values run detection at each length simultaneously.",
+    'show_bos':              "Show Break of Structure events (price clears a prior swing in the trend direction — trend continuation).",
+    'show_choch':            "Show Change of Character events (price breaks the opposing swing structure — potential trend reversal).",
+    'BoS_swing_lengths':     "Override which swing lengths are used for BoS detection. Leave empty to use the main swing_lengths setting.",
+    'CHoCH_swing_lengths':   "Override which swing lengths are used for CHoCH detection. Leave empty to use the main swing_lengths setting.",
+    # ── SMC structural ────────────────────────────────────────────────────────
+    'max_swept':             "Maximum number of swept (triggered) levels/zones to display. Oldest are dropped when exceeded.",
+    'max_unswept':           "Maximum number of unswept (untriggered) levels/zones to display. Oldest are dropped when exceeded.",
+    'max_mitigated':         "Maximum number of mitigated (price has visited) zones to display.",
+    'max_unmitigated':       "Maximum number of unmitigated (unfilled) zones to display.",
+    'join_consecutive':      "Merge adjacent zones of the same type into a single larger zone.",
+    'range_percent':         "Percentage tolerance for clustering nearby levels — levels within this range of each other are treated as the same zone.",
+    'extend_lines':          "Extend unswept levels forward to the current bar rather than stopping at the next structural event.",
+    'OB_params':             "Parameters for the underlying order block detection used as VWAP anchors.",
+    'gaps_params':           "Parameters for the underlying gap detection used as VWAP anchors.",
+    'peaks_valleys_params':  "Parameters for the underlying peak/valley detection used to build the reference lines.",
+    # ── Supertrend ───────────────────────────────────────────────────────────
+    'multiplier':            "ATR multiplier controlling how far the trailing band extends from price — higher values produce fewer but more reliable trend-change signals.",
+    # ── WAE ──────────────────────────────────────────────────────────────────
+    'fast_period':           "Fast EMA period for the MACD component — shorter values react more quickly to momentum shifts.",
+    'slow_period':           "Slow EMA period for the MACD component — longer values provide the stable baseline trend reference.",
+    'explosion_multiplier':  "Dead Zone threshold multiplier — signals below this multiple of the volatility baseline are filtered as low-conviction.",
+    # ── Banker RSI ───────────────────────────────────────────────────────────
+    'rsi_base':              "Neutral RSI reference level (typically 50) used as the midpoint for divergence measurement.",
+    'sensitivity':           "Scaling factor applied to the divergence output — higher values amplify the signal magnitude.",
+    # ── Oscillation Volatility ────────────────────────────────────────────────
+    'include_ma_output':     "Include the composite aVWAP centreline as an output column alongside the oscillation scores.",
+    'min_cross_std':         "Minimum deviation in standard deviation units at a crossing to count as a valid oscillation — filters out noise.",
+    # ── QQEMOD ───────────────────────────────────────────────────────────────
+    'rsi_period':            "RSI lookback period for the primary QQE signal.",
+    'rsi_period2':           "RSI lookback period for the secondary QQE confirmation signal.",
+    'sf':                    "EMA smoothing factor applied to the primary RSI before the QQE band calculation.",
+    'sf2':                   "EMA smoothing factor applied to the secondary RSI before the QQE band calculation.",
+    'qqe_factor':            "ATR multiplier for the primary QQE dynamic bands — higher values widen the bands and slow their reaction speed.",
+    'qqe_factor2':           "ATR multiplier for the secondary QQE dynamic bands.",
+    'threshold':             "QQE2 level threshold — the secondary signal must cross this value to confirm a trend state.",
+    'bb_length':             "Bollinger Band period applied to the QQE line for detecting extreme readings. Also used as Bollinger period in TTM Squeeze.",
+    'bb_multi':              "Bollinger Band standard deviation multiplier for the QQE extreme reading filter.",
+    # ── TTM Squeeze ──────────────────────────────────────────────────────────
+    'bb_std_dev':            "Bollinger Band standard deviation multiplier — wider bands reduce squeeze sensitivity.",
+    'kc_length':             "Keltner Channel lookback period used for the squeeze detection comparison.",
+    'kc_mult':               "Keltner Channel ATR multiplier — larger values widen the channel and make squeezes less frequent.",
+    'use_true_range':        "Use True Range (accounts for overnight gaps) instead of High−Low for the Keltner Channel ATR.",
+    # ── Divergence ───────────────────────────────────────────────────────────
+    'show_regular':          "Show regular divergences — price makes a new extreme but the oscillator does not, signalling a potential reversal.",
+    'show_hidden':           "Show hidden divergences — oscillator makes a new extreme but price does not, signalling trend continuation.",
+    'show_labels':           "Replace shape markers with arrows and oscillator name labels for clearer source identification.",
+    'show_markers':          "Show shape markers at divergence pivot bars — squares for regular divergences, circles for hidden.",
+    'show_wicks':            "Highlight the wick and border of candles at divergence pivot bars in aqua (bullish) or red (bearish).",
+    'show_candles':          "Color the full candle body aqua (bullish) or red (bearish) at divergence pivot bars.",
+    'show_pivots':           "Draw comparison lines connecting the two price pivot points being compared, showing the divergence structure.",
+    'RSI':                   "Use Relative Strength Index as a divergence source.",
+    'MACD':                  "Use MACD histogram as a divergence source.",
+    'OBV':                   "Use On-Balance Volume as a divergence source.",
+    'ATR':                   "Use Average True Range as a divergence source.",
+    'Fisher':                "Use the Fisher Transform as a divergence source.",
+    'Fractal':               "Use Bill Williams Fractals as a divergence source.",
+    'MFI':                   "Use Money Flow Index as a divergence source.",
+    'Momentum':              "Use price Momentum oscillator as a divergence source.",
+    'Stochastic':            "Use Stochastic %K/%D as a divergence source.",
+    'Volume':                "Use raw Volume as a divergence source.",
+    'Vortex':                "Use the Vortex Indicator (VI+ vs VI−) as a divergence source.",
+    'macd_fast':             "MACD fast EMA period.",
+    'macd_slow':             "MACD slow EMA period.",
+    'macd_signal':           "MACD signal line EMA period.",
+    'stoch_d':               "Stochastic %D smoothing period applied to %K.",
+    'smooth_period':         "EMA smoothing period applied to the raw Momentum value to reduce noise.",
+    'volume_threshold':      "MFI volume multiplier — bars with volume below this multiple of the average are excluded from MFI signals.",
+    'vol_filter':            "Only trigger Fractal divergence signals when the pivot bar's volume is above the rolling average.",
+    # ── Candle colors ─────────────────────────────────────────────────────────
+    'indicator_color':       "The indicator used to determine candle color. Changing this updates the sub-parameters automatically.",
+    'custom_params':         "Parameters passed to the selected color indicator. Updated automatically when indicator_color changes.",
+    # ── POC ───────────────────────────────────────────────────────────────────
+    'num_levels':            "Number of Point of Control price levels to identify and plot simultaneously.",
+}
 
 _DESCRIPTIONS = {
     'aVWAP_anchor_score':    "Ranks every candidate swing point by three criteria — prominence (how significant the swing is relative to surrounding bars), isolation (how long it remains the local extreme), and reversal sharpness (how quickly price entered and exited the swing, i.e. a V-shape). Each is percentile-ranked, then combined into a weighted score. Only the top-scoring anchors are kept and labelled by quality rank (q1 = best), making this useful for filtering the most meaningful aVWAP anchors.",
@@ -213,7 +359,12 @@ def indicator_defaults():
     param_separators  = {name: s for name in available
                          if (s := _get_param_separators(name))}
     descriptions = {name: _DESCRIPTIONS[name] for name in available if name in _DESCRIPTIONS}
+    # Merge per-indicator param_descriptions into global defaults
+    merged_param_desc: Dict[str, str] = dict(_PARAM_DESCRIPTIONS)
+    for name in available:
+        per_ind = _get_param_descriptions(name)
+        merged_param_desc.update(per_ind)
     return {"available": available, "defaults": defaults,
             "param_options": param_options, "param_labels": param_labels,
             "display_names": display_names, "param_separators": param_separators,
-            "descriptions": descriptions}
+            "descriptions": descriptions, "param_descriptions": merged_param_desc}

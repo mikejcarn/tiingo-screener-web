@@ -1,9 +1,9 @@
 import pandas as pd
-from smartmoneyconcepts import smc
-
 
 display_name = "Liquidity Sweeps"
+
 def calculate_liquidity(df, swing_length=25, range_percent=0.1, max_swept=None, max_unswept=None, extend_lines=False):
+    from smartmoneyconcepts import smc
 
     df = df.rename(columns={
         'Open': 'open',
