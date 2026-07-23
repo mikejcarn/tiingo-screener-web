@@ -3,6 +3,64 @@
 
 const _PAGES = [
   {
+    id: 'tickers',
+    label: 'tickers',
+    html: `<table class="help-table"><tbody>
+      <tr class="help-section"><td colspan="2">Ticker Search</td></tr>
+      <tr><td>Type any letter</td><td>Search tickers in the Single Ticker box</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate suggestions</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next suggestion (same as ↑ / ↓)</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Add selected ticker to queue</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Clear search box / close dropdown / cancel API key edit</td></tr>
+
+      <tr class="help-section"><td colspan="2">Ticker Lists</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next list in Batch Fetch select</td></tr>
+
+      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
+      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages: chart → tickers → indicators</td></tr>
+      <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
+
+      <tr class="help-section"><td colspan="2">This Panel</td></tr>
+      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
+    </tbody></table>`,
+  },
+  {
+    id: 'indicators',
+    label: 'indicators',
+    html: `<table class="help-table"><tbody>
+      <tr class="help-section"><td colspan="2">Config List</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate configs</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next config (same as ↑ / ↓)</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next config</td></tr>
+
+      <tr class="help-section"><td colspan="2">Config Actions</td></tr>
+      <tr><td><kbd>N</kbd></td><td>New config</td></tr>
+      <tr><td><kbd>S</kbd></td><td>Save config</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Delete config</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run selected configs</td></tr>
+      <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
+
+      <tr class="help-section"><td colspan="2">Timeframes</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
+
+      <tr class="help-section"><td colspan="2">Indicator Cards</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate indicator cards</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator (select / deselect)</td></tr>
+      <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Toggle focused indicator in / out of run queue</td></tr>
+
+      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
+      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages: chart → tickers → indicators</td></tr>
+      <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
+
+      <tr class="help-section"><td colspan="2">This Panel</td></tr>
+      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
+    </tbody></table>`,
+  },
+  {
     id: 'chart',
     label: 'chart',
     html: `<table class="help-table"><tbody>
@@ -44,66 +102,8 @@ const _PAGES = [
 
       <tr class="help-section"><td colspan="2">This Panel</td></tr>
       <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
       <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>
-    </tbody></table>`,
-  },
-  {
-    id: 'tickers',
-    label: 'tickers',
-    html: `<table class="help-table"><tbody>
-      <tr class="help-section"><td colspan="2">Ticker Search</td></tr>
-      <tr><td>Type any letter</td><td>Search tickers in the Single Ticker box</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate suggestions</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next suggestion (same as ↑ / ↓)</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Add selected ticker to queue</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Clear search box / close dropdown / cancel API key edit</td></tr>
-
-      <tr class="help-section"><td colspan="2">Ticker Lists</td></tr>
-      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next list in Batch Fetch select</td></tr>
-
-      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages: chart → tickers → indicators</td></tr>
-      <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
-
-      <tr class="help-section"><td colspan="2">This Panel</td></tr>
-      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
-    </tbody></table>`,
-  },
-  {
-    id: 'indicators',
-    label: 'indicators',
-    html: `<table class="help-table"><tbody>
-      <tr class="help-section"><td colspan="2">Config List</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate configs</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next config (same as ↑ / ↓)</td></tr>
-      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next config</td></tr>
-
-      <tr class="help-section"><td colspan="2">Config Actions</td></tr>
-      <tr><td><kbd>N</kbd></td><td>New config</td></tr>
-      <tr><td><kbd>S</kbd></td><td>Save config</td></tr>
-      <tr><td><kbd>D</kbd></td><td>Delete config</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Run selected configs</td></tr>
-      <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
-
-      <tr class="help-section"><td colspan="2">Timeframes</td></tr>
-      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
-
-      <tr class="help-section"><td colspan="2">Indicator Cards</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate indicator cards</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator (select / deselect)</td></tr>
-      <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Toggle focused indicator in / out of run queue</td></tr>
-
-      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages: chart → tickers → indicators</td></tr>
-      <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
-
-      <tr class="help-section"><td colspan="2">This Panel</td></tr>
-      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
     </tbody></table>`,
   },
 ];
@@ -126,6 +126,7 @@ function _createOverlay() {
     <div id="help-panel">
       <div id="help-header">
         <div id="help-tabs">${tabsHtml}</div>
+        <span id="help-nav-hint"><kbd>=</kbd> / <kbd>-</kbd></span>
         <button id="help-close" title="Close (Escape)">&#x2715;</button>
       </div>
       <div id="help-body"></div>
@@ -178,8 +179,8 @@ export function initHelp(currentPage) {
   document.addEventListener('keydown', (e) => {
     if (_overlay.classList.contains('visible')) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); _hide(); return; }
-      if (e.key === 'ArrowLeft'  || e.key === '[') { e.preventDefault(); e.stopPropagation(); _switchTab(_activeIdx - 1); return; }
-      if (e.key === 'ArrowRight' || e.key === ']') { e.preventDefault(); e.stopPropagation(); _switchTab(_activeIdx + 1); return; }
+      if (e.key === 'ArrowLeft'  || e.key === '[' || e.key === '=') { e.preventDefault(); e.stopPropagation(); _switchTab(_activeIdx - 1); return; }
+      if (e.key === 'ArrowRight' || e.key === ']' || e.key === '-') { e.preventDefault(); e.stopPropagation(); _switchTab(_activeIdx + 1); return; }
       e.stopPropagation(); // swallow all other keys while panel is open
       return;
     }

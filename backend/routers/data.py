@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from backend.core import data_manager as dm
+from backend.core import database as db
 from backend.core.globals import TIMEFRAME_ALIASES
 
 router = APIRouter(prefix="/api")
@@ -17,10 +17,10 @@ def _resolve_tf(timeframe: str) -> str:
 def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None):
     """List available tickers, optionally filtered by timeframe and/or ticker list."""
     tf = _resolve_tf(timeframe) if timeframe else None
-    tickers = dm.list_tickers(tf, ticker_list)
-    timeframes = dm.list_timeframes()
-    confs = dm.list_ind_confs_named()
-    lists = dm.list_ticker_lists()
+    tickers = db.list_tickers(tf, ticker_list)
+    timeframes = db.list_timeframes()
+    confs = db.list_ind_confs_named()
+    lists = db.list_ticker_lists()
     return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs, "lists": lists}
 
 
@@ -28,7 +28,7 @@ def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = No
 def get_ohlcv(ticker: str, timeframe: str, end_date: Optional[str] = None):
     """Return OHLCV bars for a ticker+timeframe as a list of objects."""
     tf = _resolve_tf(timeframe)
-    df = dm.load_ticker_df(ticker.upper(), tf)
+    df = db.load_ticker_df(ticker.upper(), tf)
     if df is None:
         raise HTTPException(status_code=404, detail=f"{ticker} {tf} not found in tickers buffer")
     if end_date:
@@ -45,7 +45,7 @@ def get_ohlcv(ticker: str, timeframe: str, end_date: Optional[str] = None):
 def get_indicators(ticker: str, timeframe: str, ind_conf: int, end_date: Optional[str] = None):
     """Return full indicator CSV (OHLCV + all indicator columns) as a list of objects."""
     tf = _resolve_tf(timeframe)
-    df = dm.load_indicator_df(ticker.upper(), tf, ind_conf)
+    df = db.load_indicator_df(ticker.upper(), tf, ind_conf)
     if df is None:
         raise HTTPException(
             status_code=404,

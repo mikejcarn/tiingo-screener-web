@@ -11,8 +11,7 @@ from backend.routers.fetch import router as fetch_router
 from backend.routers.indicators_router import router as indicators_router
 from backend.routers.jobs import router as jobs_router
 from backend.routers.ind_configs import router as ind_configs_router
-from backend.core import data_manager as dm
-from backend.core import database as _db
+from backend.core import database as db
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
 from backend.core.replay_events import extract_events
@@ -31,7 +30,7 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 
 @app.on_event("startup")
 def startup():
-    _db.init_db()
+    db.init_db()
 
 app.add_middleware(NoCacheMiddleware)
 app.add_middleware(
@@ -70,10 +69,10 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         await websocket.close()
         return
 
-    df = dm.load_indicator_df(ticker.upper(), tf, ind_conf)
+    df = db.load_indicators(ticker.upper(), tf, ind_conf)
     if df is None:
         # Fall back to raw OHLCV if no indicators computed yet
-        df = dm.load_ticker_df(ticker.upper(), tf)
+        df = db.load_ohlcv(ticker.upper(), tf)
     if df is None:
         await websocket.send_text(json.dumps({"type": "error", "detail": f"{ticker} {tf} not found"}))
         await websocket.close()

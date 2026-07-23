@@ -300,6 +300,17 @@ input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline
 .help-tab:hover { color: var(--t6); background: var(--c-ctrl); }
 .help-tab.active { color: var(--t8); border-color: var(--b6); background: var(--c-card); }
 
+#help-nav-hint {
+  margin-left: auto;
+  margin-right: 10px;
+  font-size: 11px;
+  color: var(--t3);
+  white-space: nowrap;
+}
+#help-nav-hint kbd {
+  font-size: 10px;
+  padding: 1px 4px;
+}
 #help-close {
   background: none;
   border: none;
@@ -308,7 +319,6 @@ input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline
   cursor: pointer;
   padding: 0 2px;
   line-height: 1;
-  margin-left: auto;
 }
 #help-close:hover { color: var(--t6); background: none; }
 

@@ -126,44 +126,12 @@ def _get_indicator_defaults(name: str) -> Dict[str, Any]:
     }
 
 
-def _get_param_options(name: str) -> dict:
+def _get_mod_attr(name: str, attr: str, default=None):
     try:
         mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
-        return getattr(mod, 'param_options', {})
+        return getattr(mod, attr, default)
     except ImportError:
-        return {}
-
-
-def _get_param_labels(name: str) -> dict:
-    try:
-        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
-        return getattr(mod, 'param_labels', {})
-    except ImportError:
-        return {}
-
-
-def _get_param_separators(name: str) -> list:
-    try:
-        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
-        return getattr(mod, 'param_separators', [])
-    except ImportError:
-        return []
-
-
-def _get_param_descriptions(name: str) -> dict:
-    try:
-        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
-        return getattr(mod, 'param_descriptions', {})
-    except ImportError:
-        return {}
-
-
-def _get_display_name(name: str) -> str | None:
-    try:
-        mod = importlib.import_module(f'backend.indicators.indicators_list.{name}')
-        return getattr(mod, 'display_name', None)
-    except ImportError:
-        return None
+        return default
 
 
 _PARAM_DESCRIPTIONS = {
@@ -350,20 +318,14 @@ def indicator_defaults():
         if not f.stem.startswith("_") and f.stem not in _HIDDEN_INDICATORS
     )
     defaults = {name: _get_indicator_defaults(name) for name in available}
-    param_options = {name: opts for name in available
-                     if (opts := _get_param_options(name))}
-    param_labels = {name: lbls for name in available
-                    if (lbls := _get_param_labels(name))}
-    display_names     = {name: dn for name in available
-                         if (dn := _get_display_name(name))}
-    param_separators  = {name: s for name in available
-                         if (s := _get_param_separators(name))}
+    param_options    = {name: v for name in available if (v := _get_mod_attr(name, 'param_options', {}))}
+    param_labels     = {name: v for name in available if (v := _get_mod_attr(name, 'param_labels', {}))}
+    display_names    = {name: v for name in available if (v := _get_mod_attr(name, 'display_name'))}
+    param_separators = {name: v for name in available if (v := _get_mod_attr(name, 'param_separators', []))}
     descriptions = {name: _DESCRIPTIONS[name] for name in available if name in _DESCRIPTIONS}
-    # Merge per-indicator param_descriptions into global defaults
     merged_param_desc: Dict[str, str] = dict(_PARAM_DESCRIPTIONS)
     for name in available:
-        per_ind = _get_param_descriptions(name)
-        merged_param_desc.update(per_ind)
+        merged_param_desc.update(_get_mod_attr(name, 'param_descriptions', {}))
     return {"available": available, "defaults": defaults,
             "param_options": param_options, "param_labels": param_labels,
             "display_names": display_names, "param_separators": param_separators,

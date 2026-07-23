@@ -1,5 +1,6 @@
 import { initHelp } from './help.js';
 import { initTheme } from './theme.js';
+import { api } from './api.js';
 
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
@@ -76,7 +77,7 @@ async function init() {
   } else {
     _showEmpty(true);
   }
-  const status = await fetch('/api/jobs/status').then(r => r.json());
+  const status = await api.get('/api/jobs/status');
   if (status.indicators.status === 'running') {
     _updateProgress(status.indicators);
     _startPolling();
@@ -87,14 +88,14 @@ async function init() {
 // ── Data loaders ───────────────────────────────────────────────
 
 async function _loadConfigList() {
-  const data = await fetch('/api/ind-configs').then(r => r.json());
+  const data = await api.get('/api/ind-configs');
   _configList = data.configs || [];
   _renderConfigList();
   _renderRunConfigs();
 }
 
 async function _loadDefaults() {
-  _defaults = await fetch('/api/indicator-defaults').then(r => r.json());
+  _defaults = await api.get('/api/indicator-defaults');
   _paramOptions    = _defaults.param_options    || {};
   _paramLabels     = _defaults.param_labels     || {};
   _displayNames    = _defaults.display_names    || {};
@@ -128,7 +129,7 @@ async function _selectConfig(id, { toggleQueue = true } = {}) {
 }
 
 async function _loadConfig(id) {
-  _configData = await fetch(`/api/ind-configs/${id}`).then(r => r.json());
+  _configData = await api.get(`/api/ind-configs/${id}`);
   _confDataCache[id] = _configData;
 }
 
@@ -511,7 +512,7 @@ function _wireStaticButtons() {
     _runQueue    = [];
     _runQueueIdx = -1;
     _updateQueueStatus();
-    fetch('/api/jobs/indicators/cancel', { method: 'POST' });
+    api.post('/api/jobs/indicators/cancel');
   });
 
   for (const tab of document.querySelectorAll('.tf-tab')) {
@@ -552,7 +553,7 @@ async function _renderRunConfigs() {
   // Fetch data for any conf not yet cached
   await Promise.all(
     queued.filter(c => !_confDataCache[c.id])
-          .map(c => fetch(`/api/ind-configs/${c.id}`).then(r => r.json()).then(d => { _confDataCache[c.id] = d; }))
+          .map(c => api.get(`/api/ind-configs/${c.id}`).then(d => { _confDataCache[c.id] = d; }))
   );
   el.innerHTML = queued.map((c, i) => {
     const inds = _confDataCache[c.id]?.indicators || {};
@@ -803,12 +804,7 @@ function _collectCurrentTf() {
 // ── Config CRUD ────────────────────────────────────────────────
 
 async function _createConfig() {
-  const res = await fetch('/api/ind-configs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'New config' }),
-  });
-  const created = await res.json();
+  const created = await api.post('/api/ind-configs', { name: 'New config' });
   _configList.push(created);
   _renderConfigList();
   await _selectConfig(created.id);
@@ -818,15 +814,15 @@ async function _clearResults() {
   if (!_selectedId) return;
   const name = _configData?.name || 'this config';
   if (!confirm(`Clear all computed results for "${name}"? The config will be kept.`)) return;
-  await fetch(`/api/data/indicators/${_selectedId}`, { method: 'DELETE' });
+  await api.del(`/api/data/indicators/${_selectedId}`);
 }
 
 async function _deleteConfig() {
   if (!_selectedId) return;
   const name = _configData?.name || 'this config';
   if (!confirm(`Delete "${name}" and all its computed results? This cannot be undone.`)) return;
-  await fetch(`/api/data/indicators/${_selectedId}`, { method: 'DELETE' });
-  await fetch(`/api/ind-configs/${_selectedId}`, { method: 'DELETE' });
+  await api.del(`/api/data/indicators/${_selectedId}`);
+  await api.del(`/api/ind-configs/${_selectedId}`);
   _runCheckedIds.delete(_selectedId);
   delete _runResults[_selectedId];
   _saveRunQueue();
@@ -854,16 +850,10 @@ async function _saveConfig() {
   btn.disabled = true;
   btn.textContent = 'Saving…';
 
-  const res = await fetch(`/api/ind-configs/${_selectedId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, indicators }),
-  });
-
   btn.disabled = false;
 
-  if (res.ok) {
-    const saved = await res.json();
+  try {
+    const saved = await api.put(`/api/ind-configs/${_selectedId}`, { name, indicators });
     _dirty   = false;
     _pending = {};
     await _loadConfig(_selectedId);
@@ -876,7 +866,7 @@ async function _saveConfig() {
     btn.textContent = 'Saved ✓';
     btn.classList.add('ind-btn-save-ok');
     setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
-  } else {
+  } catch {
     btn.textContent = 'Failed ✗';
     btn.classList.add('ind-btn-save-err');
     setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-err'); }, 2000);
@@ -939,21 +929,16 @@ async function _kickNextQueueItem() {
   btn.textContent = 'Starting…';
   btnCancel.style.display = '';
 
-  const res = await fetch('/api/indicators/batch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config_id: configId }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
+  try {
+    await api.post('/api/indicators/batch', { config_id: configId });
+  } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Run';
     btnCancel.style.display = 'none';
     _runQueue    = [];
     _runQueueIdx = -1;
     _updateQueueStatus();
-    alert(err.detail || 'Failed to start compute job');
+    alert(err.message || 'Failed to start compute job');
     return;
   }
 
@@ -974,7 +959,7 @@ function _stopPolling() {
 }
 
 async function _poll() {
-  const data  = await fetch('/api/jobs/status').then(r => r.json());
+  const data  = await api.get('/api/jobs/status');
   const state = data.indicators;
   _updateProgress(state);
   if (state.status !== 'running') {
@@ -1238,7 +1223,7 @@ function _updateDbRowNav(rows) {
 async function _loadDbTickers() {
   if (!_dbSectionConfigId) return;
   try {
-    const data = await fetch(`/api/indicators/tickers-list?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}`).then(r => r.json());
+    const data = await api.get(`/api/indicators/tickers-list?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}`);
     _dbTickers = data.tickers || [];
   } catch {
     _dbTickers = [];
@@ -1260,7 +1245,7 @@ async function _loadDbSection(configId) {
 
   let data;
   try {
-    data = await fetch(`/api/indicators/columns?config_id=${configId}`).then(r => r.json());
+    data = await api.get(`/api/indicators/columns?config_id=${configId}`);
   } catch { return; }
 
   _dbColumnsData = data;
@@ -1289,9 +1274,9 @@ async function _loadDbPreview() {
   const tickerParam = _dbPreviewTicker ? `&ticker=${encodeURIComponent(_dbPreviewTicker)}` : '';
   let data;
   try {
-    data = await fetch(
+    data = await api.get(
       `/api/indicators/preview?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}&offset=${_dbRowOffset}${tickerParam}`
-    ).then(r => r.json());
+    );
   } catch {
     tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">Failed to load.</td></tr>';
     return;
@@ -1352,7 +1337,7 @@ async function _loadHistory() {
   const tbody = document.getElementById('ind-history-body');
   let data;
   try {
-    data = await fetch('/api/indicators/history').then(r => r.json());
+    data = await api.get('/api/indicators/history');
   } catch {
     tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">Failed to load.</td></tr>';
     return;

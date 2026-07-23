@@ -8,6 +8,7 @@
 
 import { initReplay, jump, getCurrentBarInfo, applyRangeLock } from './replay.js';
 import { initHelp, isHelpVisible } from './help.js';
+import { api } from './api.js';
 import { initTheme } from './theme.js';
 
 let tickers    = [];
@@ -30,8 +31,7 @@ const listSelect   = document.getElementById('list-select');
 // ── Bootstrap ─────────────────────────────────────────────────
 
 export async function initBrowse() {
-  const res  = await fetch('/api/tickers');
-  const data = await res.json();
+  const data = await api.get('/api/tickers');
 
   tickers    = data.tickers    || [];
   timeframes = data.timeframes || [];
@@ -122,7 +122,7 @@ async function _selectList() {
   const url           = selected === 'All'
     ? '/api/tickers'
     : `/api/tickers?ticker_list=${encodeURIComponent(selected)}`;
-  const data = await fetch(url).then(r => r.json());
+  const data = await api.get(url);
   tickers = data.tickers || [];
   const newIdx = tickers.indexOf(currentTicker);
   _loadTicker(newIdx >= 0 ? newIdx : 0);

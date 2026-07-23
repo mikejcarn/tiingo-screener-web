@@ -1,5 +1,6 @@
 import { initHelp } from './help.js';
 import { initTheme } from './theme.js';
+import { api } from './api.js';
 
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
@@ -32,7 +33,7 @@ async function init() {
   _initDropZone();
 
   const [status] = await Promise.all([
-    fetch('/api/jobs/status').then(r => r.json()),
+    api.get('/api/jobs/status'),
     _loadApiKey(),
     _loadStats(),
     _loadHistory(),
@@ -200,15 +201,8 @@ async function _runSingleQueue() {
     _singleResults[ticker] = { status: 'running' };
     _renderSingleQueue();
     try {
-      const res = await fetch('/api/fetch/ticker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, timeframes }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        _singleResults[ticker] = { status: 'error', message: data.detail || 'Error' };
-      } else {
+      const data = await api.post('/api/fetch/ticker', { ticker, timeframes });
+      {
         const lines = [
           ...(data.results || []).map(r =>
             `<span class="rq-state rq-done fetch-tf-line">✓ ${r.timeframe} — ${r.rows.toLocaleString()} rows</span>`),
@@ -217,8 +211,8 @@ async function _runSingleQueue() {
         ].join('');
         _singleResults[ticker] = { status: 'done', linesHtml: `<div class="rq-info" style="flex-wrap:wrap;gap:3px 10px;">${lines}</div>` };
       }
-    } catch {
-      _singleResults[ticker] = { status: 'error', message: 'Network error' };
+    } catch (err) {
+      _singleResults[ticker] = { status: 'error', message: err.message || 'Network error' };
     }
     _renderSingleQueue();
   }
@@ -270,21 +264,17 @@ async function _runBatchQueue() {
     _batchResults[listName] = { status: 'running', done: 0, total: 0, errors: 0, current: '' };
     _renderBatchQueueStatus();
 
-    const res = await fetch('/api/fetch/batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker_list: listName, timeframes }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      _batchResults[listName] = { status: 'error', message: err.detail || 'Failed to start' };
+    try {
+      await api.post('/api/fetch/batch', { ticker_list: listName, timeframes });
+    } catch (err) {
+      _batchResults[listName] = { status: 'error', message: err.message || 'Failed to start' };
       _renderBatchQueueStatus();
       continue;
     }
 
     await new Promise(resolve => {
       const timer = setInterval(async () => {
-        const data  = await fetch('/api/jobs/status').then(r => r.json());
+        const data  = await api.get('/api/jobs/status');
         const state = data.fetch;
         if (state.status === 'running') {
           _batchResults[listName] = { status: 'running', done: state.done, total: state.total, errors: state.errors, current: state.current };
@@ -346,7 +336,7 @@ function _addBatchList() {
 // ── Ticker lists ──────────────────────────────────────────────
 
 async function _loadTickerLists() {
-  const data = await fetch('/api/ticker-lists').then(r => r.json());
+  const data = await api.get('/api/ticker-lists');
   _tickerLists = data.lists || [];
   const sel = document.getElementById('fetch-list');
   const prev = sel.value;
@@ -406,7 +396,7 @@ function _getChecked(containerId) {
 let _hasApiKey = false;
 
 async function _loadApiKey() {
-  const data = await fetch('/api/settings/api-key').then(r => r.json());
+  const data = await api.get('/api/settings/api-key');
   _hasApiKey = !!data.masked;
   document.getElementById('apikey-masked').textContent = data.masked || '(not set)';
   _setApiKeyEditMode(false);
@@ -430,12 +420,7 @@ function _setApiKeyEditMode(on) {
 async function _saveApiKey() {
   const key = document.getElementById('apikey-input').value.trim();
   if (!key) return;
-  const res = await fetch('/api/settings/api-key', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key }),
-  });
-  const data = await res.json();
+  const data = await api.put('/api/settings/api-key', { key });
   _hasApiKey = !!data.masked;
   document.getElementById('apikey-masked').textContent = data.masked || '(not set)';
   document.getElementById('apikey-status').textContent = '';
@@ -447,7 +432,7 @@ async function _verifyApiKey() {
   const statusEl = document.getElementById('apikey-status');
   statusEl.textContent = '…';
   statusEl.className = 'apikey-status';
-  const data = await fetch('/api/settings/api-key/verify', { method: 'POST' }).then(r => r.json());
+  const data = await api.post('/api/settings/api-key/verify');
   if (data.valid) {
     statusEl.textContent = '✓ valid';
     statusEl.className = 'apikey-status apikey-ok';
@@ -462,7 +447,7 @@ async function _verifyApiKey() {
 async function _loadTiingoListInfo() {
   const meta = document.getElementById('tiingo-list-meta');
   try {
-    const data = await fetch('/api/tickers/list-info').then(r => r.json());
+    const data = await api.get('/api/tickers/list-info');
     if (data.exists) {
       meta.textContent = `${data.rows.toLocaleString()} tickers · updated ${data.updated_at}`;
     } else {
@@ -479,9 +464,7 @@ async function _loadStats() {
   const tbody = document.getElementById('stats-body');
   let data;
   try {
-    const res = await fetch('/api/stats');
-    if (!res.ok) throw new Error(res.status);
-    data = await res.json();
+    data = await api.get('/api/stats');
   } catch {
     tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">Failed to load stats.</td></tr>';
     return;
@@ -529,7 +512,7 @@ async function _loadStats() {
     btn.addEventListener('click', async () => {
       const ticker = btn.dataset.ticker;
       if (!confirm(`Delete all data for ${ticker}?`)) return;
-      await fetch(`/api/data/ohlcv/ticker/${encodeURIComponent(ticker)}`, { method: 'DELETE' });
+      await api.del(`/api/data/ohlcv/ticker/${encodeURIComponent(ticker)}`);
       _loadStats();
     });
   }
@@ -541,9 +524,7 @@ async function _loadHistory() {
   const tbody = document.getElementById('history-body');
   let data;
   try {
-    const res = await fetch('/api/fetch-history');
-    if (!res.ok) throw new Error(res.status);
-    data = await res.json();
+    data = await api.get('/api/fetch-history');
   } catch {
     tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">Failed to load history.</td></tr>';
     return;
@@ -569,7 +550,7 @@ async function _loadHistory() {
     btn.addEventListener('click', async () => {
       const list = btn.dataset.list;
       if (!confirm(`Delete all tickers from list "${list}"?`)) return;
-      await fetch(`/api/data/ohlcv/list/${encodeURIComponent(list)}`, { method: 'DELETE' });
+      await api.del(`/api/data/ohlcv/list/${encodeURIComponent(list)}`);
       _loadStats();
       _loadHistory();
     });
@@ -583,7 +564,7 @@ function _wireButtons() {
   document.getElementById('btn-fetch').addEventListener('click', _runBatchQueue);
   document.getElementById('btn-fetch-cancel').addEventListener('click', () => {
     _batchCancelled = true;
-    fetch('/api/jobs/fetch/cancel', { method: 'POST' });
+    api.post('/api/jobs/fetch/cancel');
   });
   document.getElementById('btn-batch-add').addEventListener('click', _addBatchList);
   document.getElementById('btn-single-add').addEventListener('click', () => {
@@ -598,7 +579,7 @@ function _wireButtons() {
   document.getElementById('btn-apikey-save').addEventListener('click', _saveApiKey);
   document.getElementById('btn-apikey-verify').addEventListener('click', _verifyApiKey);
   document.getElementById('btn-apikey-delete').addEventListener('click', async () => {
-    const data = await fetch('/api/settings/api-key', { method: 'DELETE' }).then(r => r.json());
+    const data = await api.del('/api/settings/api-key');
     _hasApiKey = !!data.masked;
     document.getElementById('apikey-masked').textContent = data.masked || '(not set)';
     document.getElementById('apikey-status').textContent = '';
@@ -618,17 +599,11 @@ function _wireButtons() {
     meta.textContent = 'Fetching from Tiingo…';
     meta.className = 'tiingo-ref-meta';
     try {
-      const res  = await fetch('/api/tickers/update-list', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        meta.textContent = `✗ ${data.detail || 'Update failed'}`;
-        meta.className = 'tiingo-ref-meta upload-err';
-      } else {
-        meta.textContent = `${data.rows.toLocaleString()} tickers · updated ${data.updated_at}`;
-        meta.className = 'tiingo-ref-meta';
-      }
-    } catch {
-      meta.textContent = '✗ Network error';
+      const data = await api.post('/api/tickers/update-list');
+      meta.textContent = `${data.rows.toLocaleString()} tickers · updated ${data.updated_at}`;
+      meta.className = 'tiingo-ref-meta';
+    } catch (err) {
+      meta.textContent = `✗ ${err.message || 'Update failed'}`;
       meta.className = 'tiingo-ref-meta upload-err';
     }
     btn.disabled = false;
@@ -642,7 +617,7 @@ function _wireButtons() {
 
   document.getElementById('btn-clear-all').addEventListener('click', async () => {
     if (!confirm('Delete ALL ticker data from the database?')) return;
-    await fetch('/api/data/ohlcv', { method: 'DELETE' });
+    await api.del('/api/data/ohlcv');
     _loadStats();
     _loadHistory();
   });
@@ -734,7 +709,7 @@ function _ddWireItems(dd) {
 }
 
 async function _ddFetch(q, dd, offset = 0, append = false) {
-  const data = await fetch(`/api/tickers/search?q=${encodeURIComponent(q)}&offset=${offset}`).then(r => r.json());
+  const data = await api.get(`/api/tickers/search?q=${encodeURIComponent(q)}&offset=${offset}`);
   const results = data.results || [];
   if (!append && !results.length) { _ddHide(dd); return; }
   if (append) {
@@ -754,7 +729,7 @@ async function _ddFetch(q, dd, offset = 0, append = false) {
 async function _ddFetchBefore(dd) {
   const firstTicker = dd.querySelector('.ticker-dd-item')?.dataset.ticker;
   if (!firstTicker) return 0;
-  const data = await fetch(`/api/tickers/search?before=${encodeURIComponent(firstTicker)}`).then(r => r.json());
+  const data = await api.get(`/api/tickers/search?before=${encodeURIComponent(firstTicker)}`);
   const results = data.results || [];
   if (!results.length) return 0;
   const frag = document.createElement('div');
@@ -765,7 +740,7 @@ async function _ddFetchBefore(dd) {
 }
 
 async function _ddFetchTail(dd) {
-  const data = await fetch('/api/tickers/search?before=~').then(r => r.json());
+  const data = await api.get('/api/tickers/search?before=~');
   const results = data.results || [];
   if (!results.length) return;
   const frag = document.createElement('div');
@@ -845,7 +820,7 @@ function _stopPolling() {
 }
 
 async function _poll() {
-  const status = await fetch('/api/jobs/status').then(r => r.json());
+  const status = await api.get('/api/jobs/status');
   if (status.fetch.status !== 'running') {
     _stopPolling();
     _batchRunning = false;
