@@ -2,6 +2,7 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
 let _tickerLists   = [];
 let _pollTimer     = null;
+let _moveTickerSuggestion = null; // set by _initTickerSearch
 
 // Single ticker queue state
 let _singleQueue   = [];
@@ -654,12 +655,43 @@ function _initTickerSearch() {
   let debounce = null;
   let hiIdx    = -1;
 
+  async function _navigate(dir) {
+    const items = [...dd.querySelectorAll('.ticker-dd-item')];
+    if (!items.length) return;
+    // Going down: load more when within 3 of the bottom
+    if (dir > 0 && hiIdx >= items.length - 3 && dd.dataset.hasMore) {
+      await _ddFetch(dd.dataset.q || '', dd, parseInt(dd.dataset.offset || '0'), true);
+    }
+    // Going up past the first item: prepend tickers from earlier in the alphabet
+    if (dir < 0 && hiIdx <= 0) {
+      const added = await _ddFetchBefore(dd);
+      if (added > 0) {
+        hiIdx += added; // shift index to stay on same item after prepend
+      } else {
+        // Already at the very beginning — append the tail so wrap lands at the end
+        await _ddFetchTail(dd);
+      }
+    }
+    const allItems = [...dd.querySelectorAll('.ticker-dd-item')];
+    hiIdx = (hiIdx + dir + allItems.length) % allItems.length;
+    allItems.forEach((el, i) => el.classList.toggle('hi', i === hiIdx));
+    allItems[hiIdx]?.scrollIntoView({ block: 'nearest' });
+  }
+
+  _moveTickerSuggestion = async (dir) => {
+    input.focus();
+    if (!dd.querySelector('.ticker-dd-item')) {
+      hiIdx = -1;
+      await _ddFetch(input.value.trim(), dd);
+    }
+    _navigate(dir);
+  };
+
   input.addEventListener('input', e => {
     e.target.value = e.target.value.toUpperCase();
     clearTimeout(debounce);
     hiIdx = -1;
     const q = e.target.value.trim();
-    if (!q) { _ddHide(dd); return; }
     debounce = setTimeout(() => _ddFetch(q, dd), 120);
   });
 
@@ -671,17 +703,9 @@ function _initTickerSearch() {
       return;
     }
     if (e.key === 'Escape') { _ddHide(dd); return; }
-    const items = [...dd.querySelectorAll('.ticker-dd-item')];
-    if (!items.length) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      hiIdx = Math.min(hiIdx + 1, items.length - 1);
-      items.forEach((el, i) => el.classList.toggle('hi', i === hiIdx));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      hiIdx = Math.max(hiIdx - 1, 0);
-      items.forEach((el, i) => el.classList.toggle('hi', i === hiIdx));
-    }
+    if (e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); _navigate(1);  return; }
+    if (e.key === 'ArrowUp'   || e.key === '=') { e.preventDefault(); _navigate(-1); return; }
+    if (e.key === '[' || e.key === ']') { e.preventDefault(); _moveList(e.key === ']' ? 1 : -1); return; }
   });
 
   document.addEventListener('click', e => {
@@ -689,24 +713,62 @@ function _initTickerSearch() {
   });
 }
 
-async function _ddFetch(q, dd) {
-  const data = await fetch(`/api/tickers/search?q=${encodeURIComponent(q)}`).then(r => r.json());
-  const results = data.results || [];
-  if (!results.length) { _ddHide(dd); return; }
-  dd.innerHTML = results.map(r => `
+function _ddMakeItems(results) {
+  return results.map(r => `
     <div class="ticker-dd-item" data-ticker="${r.ticker}">
       <span class="ticker-dd-sym">${r.ticker}</span>
       <span class="ticker-dd-exch">${r.exchange}</span>
       <span class="ticker-dd-type">${r.assetType}</span>
     </div>
   `).join('');
-  dd.querySelectorAll('.ticker-dd-item').forEach(el => {
-    el.addEventListener('mousedown', e => {
-      e.preventDefault();
-      _addSingleTicker(el.dataset.ticker);
-    });
+}
+
+function _ddWireItems(dd) {
+  dd.querySelectorAll('.ticker-dd-item:not([data-wired])').forEach(el => {
+    el.dataset.wired = '1';
+    el.addEventListener('mousedown', e => { e.preventDefault(); _addSingleTicker(el.dataset.ticker); });
   });
-  dd.style.display = 'block';
+}
+
+async function _ddFetch(q, dd, offset = 0, append = false) {
+  const data = await fetch(`/api/tickers/search?q=${encodeURIComponent(q)}&offset=${offset}`).then(r => r.json());
+  const results = data.results || [];
+  if (!append && !results.length) { _ddHide(dd); return; }
+  if (append) {
+    const frag = document.createElement('div');
+    frag.innerHTML = _ddMakeItems(results);
+    while (frag.firstChild) dd.appendChild(frag.firstChild);
+  } else {
+    dd.innerHTML = _ddMakeItems(results);
+    dd.style.display = 'block';
+  }
+  dd.dataset.q       = q;
+  dd.dataset.offset  = data.offset ?? (offset + results.length);
+  dd.dataset.hasMore = data.has_more ? '1' : '';
+  _ddWireItems(dd);
+}
+
+async function _ddFetchBefore(dd) {
+  const firstTicker = dd.querySelector('.ticker-dd-item')?.dataset.ticker;
+  if (!firstTicker) return 0;
+  const data = await fetch(`/api/tickers/search?before=${encodeURIComponent(firstTicker)}`).then(r => r.json());
+  const results = data.results || [];
+  if (!results.length) return 0;
+  const frag = document.createElement('div');
+  frag.innerHTML = _ddMakeItems(results);
+  dd.insertBefore(frag, dd.firstChild);
+  _ddWireItems(dd);
+  return results.length;
+}
+
+async function _ddFetchTail(dd) {
+  const data = await fetch('/api/tickers/search?before=~').then(r => r.json());
+  const results = data.results || [];
+  if (!results.length) return;
+  const frag = document.createElement('div');
+  frag.innerHTML = _ddMakeItems(results);
+  while (frag.firstChild) dd.appendChild(frag.firstChild);
+  _ddWireItems(dd);
 }
 
 function _ddHide(dd) {
@@ -790,11 +852,31 @@ async function _poll() {
   }
 }
 
+function _moveList(dir) {
+  const sel = document.getElementById('fetch-list');
+  if (!sel || sel.options.length < 2) return;
+  sel.selectedIndex = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
+  sel.dispatchEvent(new Event('change'));
+}
+
 document.addEventListener('keydown', e => {
   if (e.key === '`') { e.preventDefault(); window.location.href = '/indicators'; return; }
   if (e.key === '~') { e.preventDefault(); window.location.href = '/'; return; }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    _setApiKeyEditMode(false);
+    const tickerInput = document.getElementById('single-ticker');
+    tickerInput.value = '';
+    _ddHide(document.getElementById('single-ticker-dd'));
+    document.activeElement?.blur();
+    return;
+  }
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === '-') { e.preventDefault(); _moveTickerSuggestion?.(1);  return; }
+  if (e.key === '=') { e.preventDefault(); _moveTickerSuggestion?.(-1); return; }
+  if (e.key === '[') { e.preventDefault(); _moveList(-1);   return; }
+  if (e.key === ']') { e.preventDefault(); _moveList(1);    return; }
   if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; }
   if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
   if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }

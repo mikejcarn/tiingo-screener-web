@@ -109,13 +109,31 @@ def _tiingo_tickers_cached():
 
 
 @router.get("/tickers/search")
-def search_tickers(q: str = ''):
-    if len(q) < 1:
-        return {"results": []}
-    q = q.upper()
-    all_t = _tiingo_tickers_cached()
-    prefix  = [t for t in all_t if t[0].startswith(q)][:20]
-    return {"results": [{"ticker": t[0], "exchange": t[1], "assetType": t[2]} for t in prefix]}
+def search_tickers(q: str = '', offset: int = 0, before: str = ''):
+    all_t = sorted(_tiingo_tickers_cached())
+    if before:
+        # Return up to 50 tickers alphabetically before `before`, in ascending order
+        before_up = before.upper()
+        prev = [t for t in all_t if t[0] < before_up]
+        page = prev[-50:]
+        return {
+            "results": [{"ticker": t[0], "exchange": t[1], "assetType": t[2]} for t in page],
+            "has_more": False,
+            "has_prev": len(prev) > 50,
+            "offset": 0,
+        }
+    if q:
+        q_up = q.upper()
+        filtered = [t for t in all_t if t[0].startswith(q_up)]
+    else:
+        filtered = all_t
+    page = filtered[offset:offset + 50]
+    return {
+        "results": [{"ticker": t[0], "exchange": t[1], "assetType": t[2]} for t in page],
+        "has_more": offset + 50 < len(filtered),
+        "has_prev": False,
+        "offset": offset + len(page),
+    }
 
 
 @router.post("/ticker-lists/upload")
