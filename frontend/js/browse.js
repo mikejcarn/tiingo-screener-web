@@ -8,6 +8,7 @@
 
 import { initReplay, jump, getCurrentBarInfo, applyRangeLock } from './replay.js';
 import { initHelp, isHelpVisible } from './help.js';
+import { initTheme } from './theme.js';
 
 let tickers    = [];
 let timeframes = [];
@@ -215,6 +216,7 @@ function _wireNav() {
   _updateLockUI();
   _commitLock(); // apply restored (or default) lock on page load
 
+  initTheme();
   initHelp('chart');
 
   // Fullscreen

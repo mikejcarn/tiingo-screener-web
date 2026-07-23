@@ -12,6 +12,7 @@
  */
 
 import { DynamicVWAPEngine } from './avwap_replay.js';
+import { cssVar, onThemeChange } from './theme.js';
 
 const C_UP   = 'rgba(38,166,154,1)';
 const C_DOWN = 'rgba(239,83,80,1)';
@@ -70,13 +71,34 @@ export class ChartManager {
     this._init();
   }
 
+  _chartColors() {
+    return {
+      bg:     cssVar('--chart-bg')     || '#000',
+      text:   cssVar('--chart-text')   || '#aaa',
+      grid:   cssVar('--chart-grid')   || '#111',
+      border: cssVar('--chart-border') || '#222',
+    };
+  }
+
+  applyTheme() {
+    if (!this._chart) return;
+    const c = this._chartColors();
+    this._chart.applyOptions({
+      layout:          { background: { color: c.bg }, textColor: c.text },
+      grid:            { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale:       { borderColor: c.border },
+    });
+  }
+
   _init() {
+    const c = this._chartColors();
     this._chart = LightweightCharts.createChart(this._container, {
-      layout:          { background: { color: '#000000' }, textColor: '#aaaaaa' },
-      grid:            { vertLines: { color: '#111111' }, horzLines: { color: '#111111' } },
+      layout:          { background: { color: c.bg }, textColor: c.text },
+      grid:            { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       crosshair:       { mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#222222', scaleMargins: { top: 0.03, bottom: 0.03 } },
-      timeScale:       { borderColor: '#222222', timeVisible: true },
+      rightPriceScale: { borderColor: c.border, scaleMargins: { top: 0.03, bottom: 0.03 } },
+      timeScale:       { borderColor: c.border, timeVisible: true },
     });
 
     this._candles = this._chart.addCandlestickSeries({
@@ -98,6 +120,8 @@ export class ChartManager {
       lastValueVisible:       false,
       crosshairMarkerVisible: false,
     });
+
+    onThemeChange(() => this.applyTheme());
 
     window.addEventListener('resize', () => {
       if (this._chart) {

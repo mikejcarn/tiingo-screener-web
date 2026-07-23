@@ -1,4 +1,5 @@
 import { initHelp } from './help.js';
+import { initTheme } from './theme.js';
 
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
@@ -1500,4 +1501,5 @@ document.addEventListener('keydown', e => {
 });
 
 init();
+initTheme();
 initHelp('indicators');
