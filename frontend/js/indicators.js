@@ -1421,6 +1421,8 @@ document.addEventListener('keydown', e => {
     return;
   }
 
+  if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveConfig(); return; }
+
   if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
     if (e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); _moveFocus(1);  return; }
     if (e.key === 'ArrowUp'   || e.key === '=') { e.preventDefault(); _moveFocus(-1); return; }
@@ -1457,8 +1459,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'C') { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I') { e.preventDefault(); window.location.href = '/indicators'; return; }
-    if (e.key === 'A') { e.preventDefault(); window.location.href = '/scanner'; return; }
-    if (e.key === 'S') { e.preventDefault(); _saveConfig(); return; }
+    if (e.key === 'S' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; return; }
     if (e.key === 'R') { e.preventDefault(); _startCompute(); return; }
     if (e.key === 'D') { e.preventDefault(); _deleteConfig(); return; }
     if (e.key === 'N') {

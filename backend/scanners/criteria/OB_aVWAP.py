@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Optional
 
 display_name = "Order Block aVWAP"
+required_columns = ['aVWAP_OB_*']
 param_schema = {
     'mode':           {'label': 'Side',       'type': 'select', 'options': ['bullish', 'bearish'], 'default': 'bullish'},
     'direction':      {'label': 'Direction',  'type': 'select', 'options': ['within', 'below', 'above'], 'default': 'within'},

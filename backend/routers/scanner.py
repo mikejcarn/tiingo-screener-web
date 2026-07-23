@@ -45,6 +45,41 @@ def list_criteria():
     return {"criteria": items}
 
 
+@router.get("/criteria/check/{ind_conf_id}")
+def check_criteria_compatibility(ind_conf_id: int, timeframe: str = "daily"):
+    with db._conn() as con:
+        row = con.execute(
+            "SELECT data FROM indicators WHERE ind_conf=? AND timeframe=? LIMIT 1",
+            (ind_conf_id, timeframe)
+        ).fetchone()
+    if not row:
+        return {"compatibility": {name: None for name in _list_criteria_names()}}
+
+    available = set(json.loads(row[0]).keys())
+
+    def _matches(req: list[str]) -> bool:
+        for r in req:
+            if r.endswith('*'):
+                prefix = r[:-1]
+                if not any(c.startswith(prefix) for c in available):
+                    return False
+            else:
+                if r not in available:
+                    return False
+        return True
+
+    compat = {}
+    for name in _list_criteria_names():
+        try:
+            mod = _load_criteria_module(name)
+            req = getattr(mod, 'required_columns', None)
+            compat[name] = _matches(req) if req is not None else None
+        except Exception:
+            compat[name] = None
+
+    return {"compatibility": compat}
+
+
 @router.delete("/criteria/{name}")
 def delete_criteria(name: str):
     path = _CRITERIA_DIR / f"{name}.py"

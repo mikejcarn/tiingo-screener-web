@@ -2,6 +2,7 @@ import pandas as pd
 from typing import List, Optional
 
 display_name = "Divergences"
+required_columns = ['OBV_Regular_Bullish']
 param_schema = {
     'mode':                {'label': 'Direction',     'type': 'select',   'options': ['bearish', 'bullish'], 'default': 'bearish'},
     'divergence_types':    {'label': 'Types (comma)', 'type': 'list_str', 'default': ['OBV', 'VI', 'Fisher', 'Vol']},

@@ -1,6 +1,7 @@
 import pandas as pd
 
 display_name = "Standard Deviation Band (ZScore)"
+required_columns = ['ZScore_*']
 param_schema = {
     'threshold': {'label': 'Band level (StDevs)', 'type': 'number', 'default': 2.0, 'min': 0.1},
     'mode': {'label': 'Mode', 'type': 'select', 'options': ['oversold', 'overbought'], 'default': 'oversold'},

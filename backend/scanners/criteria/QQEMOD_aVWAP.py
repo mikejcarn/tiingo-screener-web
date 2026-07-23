@@ -3,6 +3,9 @@ import numpy as np
 from typing import Optional
 
 display_name = "QQEMOD aVWAP Pullback"
+required_columns = ['QQE1_Above_Upper', 'QQE1_Below_Lower',
+                    'QQE2_Above_Threshold', 'QQE2_Below_Threshold', 'QQE2_Above_TL',
+                    'aVWAP_*']
 param_schema = {
     'mode':          {'label': 'Direction', 'type': 'select',
                       'options': ['bullish', 'bearish', 'both'], 'default': 'bullish'},

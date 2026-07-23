@@ -1979,6 +1979,37 @@ body.scan-page {
   flex-shrink: 0;
 }
 
+.scan-name-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.scan-name-wrap .ind-name { flex: 0 0 auto; }
+
+.scan-compat-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  font-size: 12px; font-weight: 700;
+  line-height: 1;
+}
+.scan-compat-badge[data-state="ok"] {
+  border: 2px solid rgba(var(--teal-rgb), 0.85);
+  color: rgba(var(--teal-rgb), 0.85);
+  background: transparent;
+  font-weight: 900;
+}
+.scan-compat-badge:not([data-state="ok"]) {
+  border: 2px solid transparent;
+  color: transparent;
+  background: transparent;
+}
+
 /* Results */
 .scan-signal-cell { font-size: 11px; color: var(--t5); }
 .scan-result-row  { cursor: pointer; }

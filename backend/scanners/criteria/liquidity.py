@@ -1,6 +1,7 @@
 import pandas as pd
 
 display_name = "Liquidity Level"
+required_columns = ['Liquidity', 'Liquidity_Level']
 param_schema = {
     'distance_pct': {'label': 'Distance %', 'type': 'number', 'default': 1.0, 'min': 0.0},
 }

@@ -14,10 +14,11 @@ let _activeTf   = '';
 // _enabled[tf]  = Set<criteria_name>
 // _params[tf][criteria_name] = {key: val}  (persisted even when unchecked)
 // _critLogic[criteria_name]  = 'AND' | 'OR'
-let _enabled    = {};
-let _params     = {};
-let _critLogic  = {};
-let _focusedIdx = -1;
+let _enabled      = {};
+let _params       = {};
+let _critLogic    = {};
+let _compatibility = {};   // { criteria_name: true | false | null }
+let _focusedIdx   = -1;
 
 // ── Init ──────────────────────────────────────────────────────
 (async function init() {
@@ -71,6 +72,8 @@ function _setActiveTf(tf) {
     b.classList.toggle('active', b.dataset.tf === tf)
   );
   document.querySelectorAll('.scan-crit-card').forEach(card => card._update?.(tf));
+  const indConfId = parseInt(document.getElementById('scan-ind-conf')?.value) || 0;
+  _checkCompat(indConfId, tf);
 }
 
 // ── Config list ───────────────────────────────────────────────
@@ -128,6 +131,8 @@ async function _selectConfig(id) {
   }
   _loadFromConfig(cfg.criteria || []);
   _clearResults();
+  const indConfId = parseInt(document.getElementById('scan-ind-conf').value) || 0;
+  _checkCompat(indConfId, _activeTf);
 }
 
 function _showEmpty(yes) {
@@ -160,13 +165,37 @@ function _rebuildCards() {
   if (!_criteria.length) { noMsg.style.display = 'block'; return; }
   noMsg.style.display = 'none';
   _criteria.forEach((crit, idx) => list.appendChild(_buildCard(crit, idx)));
+  _updateCompatBadges();
   _syncFocus();
+}
+
+function _updateCompatBadges() {
+  document.querySelectorAll('.scan-crit-card').forEach(card => {
+    const badge = card.querySelector('.scan-compat-badge');
+    if (!badge) return;
+    const ok = _compatibility[card.dataset.name];
+    badge.textContent   = ok === true ? '✓' : '';
+    badge.title         = ok === true ? 'Indicator data available' : ok === false ? 'Indicator data missing' : '';
+    badge.dataset.state = ok === true ? 'ok' : ok === false ? 'miss' : '';
+  });
+}
+
+async function _checkCompat(indConfId, tf) {
+  if (!indConfId || !tf) { _compatibility = {}; _updateCompatBadges(); return; }
+  try {
+    const data = await api.get(`/api/criteria/check/${indConfId}?timeframe=${tf}`);
+    _compatibility = data.compatibility || {};
+  } catch {
+    _compatibility = {};
+  }
+  _updateCompatBadges();
 }
 
 function _buildCard(crit, idx) {
   const card = document.createElement('div');
   card.className = 'ind-card scan-crit-card';
-  card.dataset.idx = idx;
+  card.dataset.idx  = idx;
+  card.dataset.name = crit.name;
 
   // ── Head ──────────────────────────────────────────────────
   const head = document.createElement('div');
@@ -178,9 +207,17 @@ function _buildCard(crit, idx) {
   cbx.type = 'checkbox'; cbx.className = 'param-checkbox';
   cbxWrap.appendChild(cbx);
 
+  const nameWrap = document.createElement('div');
+  nameWrap.className = 'scan-name-wrap';
+
   const nameSpan = document.createElement('span');
   nameSpan.className = 'ind-name';
   nameSpan.textContent = crit.display_name || crit.name;
+
+  const compatBadge = document.createElement('span');
+  compatBadge.className = 'scan-compat-badge';
+
+  nameWrap.append(nameSpan, compatBadge);
 
   const countBadge = document.createElement('span');
   countBadge.className = 'scan-count-badge';
@@ -203,7 +240,7 @@ function _buildCard(crit, idx) {
   const arrow = document.createElement('span');
   arrow.className = 'ind-expand-arrow'; arrow.textContent = '▸';
 
-  head.append(cbxWrap, logicToggle, nameSpan, countBadge, arrow);
+  head.append(cbxWrap, logicToggle, nameWrap, countBadge, arrow);
   card.appendChild(head);
 
   // ── Body ──────────────────────────────────────────────────
@@ -562,7 +599,11 @@ function _wireGlobal() {
   });
 
   document.getElementById('scan-name').addEventListener('input', _markDirty);
-  document.getElementById('scan-ind-conf').addEventListener('change', _markDirty);
+  document.getElementById('scan-ind-conf').addEventListener('change', e => {
+    _markDirty();
+    const id = parseInt(e.target.value) || 0;
+    _checkCompat(id, _activeTf);
+  });
 
   document.addEventListener('keydown', e => {
     const tag     = document.activeElement?.tagName;
@@ -575,13 +616,13 @@ function _wireGlobal() {
     if (inInput) return;
 
     if (e.key === 'N' && !ctrl) { e.preventDefault(); document.getElementById('btn-new-scan').click(); }
-    if (e.key === 'S' && !ctrl) { e.preventDefault(); _saveScan(); }
+    if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveScan(); }
     if (e.key === 'D' && !ctrl) { e.preventDefault(); document.getElementById('btn-delete-scan').click(); }
     if (e.key === 'R' && !ctrl) { e.preventDefault(); _runScan(); }
     if (e.key === 'T' && !ctrl) { e.preventDefault(); window.location.href = '/fetch'; }
     if (e.key === 'I' && !ctrl) { e.preventDefault(); window.location.href = '/indicators'; }
     if (e.key === 'C' && !ctrl) { e.preventDefault(); window.location.href = '/'; }
-    if (e.key === 'A' && !ctrl) { e.preventDefault(); window.location.href = '/scanner'; }
+    if (e.key === 'S' && !ctrl) { e.preventDefault(); window.location.href = '/scanner'; }
 
     if (e.key === '=') {
       const i = _configs.findIndex(c => c.id === _activeId);

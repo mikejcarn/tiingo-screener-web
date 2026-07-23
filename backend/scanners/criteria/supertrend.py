@@ -1,6 +1,7 @@
 import pandas as pd
 
 display_name = "Supertrend"
+required_columns = ['Supertrend_Direction']
 param_schema = {
     'mode': {'label': 'Mode', 'type': 'select', 'options': ['bullish', 'bearish'], 'default': 'bullish'},
 }

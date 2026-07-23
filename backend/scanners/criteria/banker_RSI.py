@@ -1,6 +1,7 @@
 import pandas as pd
 
 display_name = "Banker RSI"
+required_columns = ['banker_RSI']
 param_schema = {
     'threshold_lower': {'label': 'Min value', 'type': 'number', 'default': 1, 'min': 0},
     'threshold_upper': {'label': 'Max value', 'type': 'number', 'default': 20, 'max': 20},

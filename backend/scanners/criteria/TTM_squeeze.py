@@ -1,6 +1,7 @@
 import pandas as pd
 
 display_name = "TTM Squeeze"
+required_columns = ['TTM_squeeze_Active']
 param_schema = {
     'mode': {'label': 'Mode', 'type': 'select', 'options': ['active', 'breakout'], 'default': 'active'},
     'min_squeeze_bars': {'label': 'Min squeeze bars', 'type': 'int', 'default': 5, 'min': 1},

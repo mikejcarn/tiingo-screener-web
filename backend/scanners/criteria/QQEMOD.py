@@ -1,6 +1,8 @@
 import pandas as pd
 
 display_name = "QQEMOD"
+required_columns = ['QQE1_Above_Upper', 'QQE1_Below_Lower',
+                    'QQE2_Above_Threshold', 'QQE2_Below_Threshold', 'QQE2_Above_TL']
 param_schema = {
     'mode': {'label': 'Mode', 'type': 'select',
              'options': ['overbought', 'oversold', 'bullish_reversal', 'bearish_reversal'],

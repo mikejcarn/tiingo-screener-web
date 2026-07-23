@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Literal
 
 display_name = "Break of Structure / Change of Character"
+required_columns = ['BoS_*', 'CHoCH_*']
 param_schema = {
     'mode':          {'label': 'Mode', 'type': 'select',
                       'options': ['BoS_bullish', 'BoS_bearish', 'CHoCH_bullish', 'CHoCH_bearish'],

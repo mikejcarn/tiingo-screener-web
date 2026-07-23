@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Optional, Literal
 
 display_name = "Order Block"
+required_columns = ['OB']
 param_schema = {
     'mode':         {'label': 'Mode', 'type': 'select',
                      'options': ['bullish', 'bearish', 'support', 'resistance'], 'default': 'bullish'},

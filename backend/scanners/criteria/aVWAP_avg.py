@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Literal
 
 display_name = "aVWAP Average"
+required_columns = ['aVWAP_*']
 param_schema = {
     'mode':         {'label': 'Average type', 'type': 'select',
                      'options': ['combined', 'peaks', 'valleys'], 'default': 'combined'},

@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Optional
 
 display_name = "Oscillation Volatility"
+required_columns = ['MA_Cross_Count', 'MA_Avg_Deviation_Z', 'MA_Oscillation_Score']
 param_schema = {
     'cross_count':          {'label': 'Min MA crosses',      'type': 'int',    'default': 0, 'min': 0},
     'cross_count_max':      {'label': 'Max MA crosses (0=∞)','type': 'int',    'default': 0, 'min': 0},

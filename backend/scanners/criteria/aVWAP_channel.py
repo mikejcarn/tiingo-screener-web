@@ -2,6 +2,7 @@ import pandas as pd
 from typing import Literal
 
 display_name = "aVWAP Channel"
+required_columns = ['aVWAP_*']
 param_schema = {
     'mode':         {'label': 'Level',     'type': 'select', 'options': ['support', 'resistance'], 'default': 'support'},
     'distance_pct': {'label': 'Distance %','type': 'number', 'default': 5.0, 'min': 0.0},

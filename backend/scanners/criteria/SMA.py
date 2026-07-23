@@ -2,6 +2,7 @@ import pandas as pd
 from typing import List
 
 display_name = "SMA Relationship"
+required_columns = ['SMA_*']
 param_schema = {
     'sma_periods': {'label': 'Periods (comma-separated)', 'type': 'list_int', 'default': [50, 20, 10]},
     'mode': {'label': 'Mode', 'type': 'select', 'options': ['within', 'above', 'below', 'order'], 'default': 'within'},
