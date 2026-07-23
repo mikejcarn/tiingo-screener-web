@@ -16,7 +16,7 @@ from backend.core import database as _db
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
 from backend.core.replay_events import extract_events
-from backend.indicators.indicators import load_indicator_config, load_config_from_db
+from backend.indicators.indicators import load_config_from_db
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 

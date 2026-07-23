@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import json
@@ -7,33 +7,9 @@ import pandas as pd
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core import database as db
 from backend.core import job_state
-from backend.indicators.indicators import get_indicators, load_indicator_config, load_config_from_db
+from backend.indicators.indicators import get_indicators, load_config_from_db
 
 router = APIRouter(prefix="/api")
-
-
-def _run_and_store(ticker: str, timeframe: str, ind_conf: int) -> int:
-    """Load OHLCV from DB, run indicator pipeline, store results. Returns row count."""
-    df = db.load_ohlcv(ticker, timeframe)
-    if df is None:
-        raise ValueError(f"{ticker} {timeframe} not in database — fetch it first")
-
-    # indicators.py expects lowercase 'date' as the index (matches original CSV read_csv index_col='date')
-    df_indexed = df.rename(columns={'Date': 'date'}).set_index('date')
-
-    result = load_indicator_config(ind_conf, timeframe)
-    if result is None or result == (None, None):
-        raise ValueError(f"No indicator config for ind_conf={ind_conf} timeframe={timeframe}")
-
-    indicator_list, params = result
-    df_with_ind = get_indicators(df_indexed, indicator_list, params)
-
-    # Reset index so 'Date' becomes a column again for upsert
-    df_with_ind = df_with_ind.reset_index().rename(columns={'date': 'Date', 'index': 'Date'})
-    if 'Date' not in df_with_ind.columns and df_with_ind.index.name == 'Date':
-        df_with_ind = df_with_ind.reset_index()
-
-    return db.upsert_indicators(ticker, timeframe, ind_conf, df_with_ind)
 
 
 def _run_and_store_db(ticker: str, timeframe: str, config_id: int) -> int:
@@ -53,20 +29,6 @@ def _run_and_store_db(ticker: str, timeframe: str, config_id: int) -> int:
 
 
 # ── Endpoints ────────────────────────────────────────────────
-
-@router.post("/indicators/{ticker}/{timeframe}/{ind_conf}")
-def compute_indicators(ticker: str, timeframe: str, ind_conf: int):
-    """Run indicator pipeline for one ticker and store results in DB."""
-    tf = TIMEFRAME_ALIASES.get(timeframe.lower())
-    if tf is None:
-        raise HTTPException(status_code=400, detail=f"Unknown timeframe '{timeframe}'")
-    try:
-        count = _run_and_store(ticker.upper(), tf, ind_conf)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"ticker": ticker.upper(), "timeframe": tf, "ind_conf": ind_conf, "rows": count}
 
 
 @router.get("/indicators/history")
@@ -189,8 +151,7 @@ def indicator_columns(config_id: int):
 
 
 class BatchIndicatorsRequest(BaseModel):
-    ind_conf: Optional[int] = None      # legacy: use Python file config
-    config_id: Optional[int] = None     # new: use DB config
+    config_id: int
 
 
 @router.post("/indicators/batch")
@@ -198,42 +159,31 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
     """Run indicator pipeline for all tickers × timeframes defined in the config."""
     if job_state.get_all()['indicators']['status'] == 'running':
         raise HTTPException(status_code=409, detail="Indicators job already running")
-    if req.config_id is None and req.ind_conf is None:
-        raise HTTPException(status_code=400, detail="Provide config_id or ind_conf")
 
     job_state.update('indicators', status='running', done=0, total=0, current='', errors=0)
 
     def _run():
-        # Derive timeframes from the config's indicator assignments
-        if req.config_id is not None:
-            with db._conn() as con:
-                tf_rows = con.execute(
-                    "SELECT DISTINCT timeframe FROM ind_config_indicators WHERE config_id=?",
-                    (req.config_id,)
-                ).fetchall()
-            config_tfs = [r[0] for r in tf_rows]
-        else:
-            config_tfs = db.list_timeframes()
+        with db._conn() as con:
+            tf_rows = con.execute(
+                "SELECT DISTINCT timeframe FROM ind_config_indicators WHERE config_id=?",
+                (req.config_id,)
+            ).fetchall()
+            r = con.execute("SELECT name FROM ind_configs WHERE id=?", (req.config_id,)).fetchone()
+        config_tfs = [r2[0] for r2 in tf_rows]
+        config_name = r[0] if r else f'Config {req.config_id}'
+
         tfs = [TIMEFRAME_ALIASES.get(tf.lower(), tf.lower()) for tf in config_tfs]
         pairs = [(ticker, tf) for tf in tfs for ticker in db.list_tickers(tf)]
         unique_tickers = len(set(t for t, _ in pairs))
         job_state.update('indicators', total=len(pairs))
 
-        config_name = ''
-        if req.config_id is not None:
-            with db._conn() as con:
-                r = con.execute("SELECT name FROM ind_configs WHERE id=?", (req.config_id,)).fetchone()
-                config_name = r[0] if r else f'Config {req.config_id}'
         for i, (ticker, tf) in enumerate(pairs):
             if job_state.is_cancelled('indicators'):
                 job_state.update('indicators', status='cancelled', current='')
                 return
             job_state.update('indicators', current=f"{ticker} {tf}")
             try:
-                if req.config_id is not None:
-                    _run_and_store_db(ticker, tf, req.config_id)
-                else:
-                    _run_and_store(ticker, tf, req.ind_conf)
+                _run_and_store_db(ticker, tf, req.config_id)
                 job_state.add_log('indicators', ticker, tf, ok=True)
             except Exception as e:
                 print(f"indicators error {ticker} {tf}: {e}")
@@ -243,7 +193,7 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
         final_errors = job_state.get_all()['indicators']['errors']
         job_state.update('indicators', status='done', current='')
         db.log_indicator_run(
-            config_id=req.config_id or req.ind_conf or 0,
+            config_id=req.config_id,
             config_name=config_name,
             timeframes=tfs,
             tickers=unique_tickers,
