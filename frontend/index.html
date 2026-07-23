@@ -26,10 +26,13 @@
   <select id="tf-select" title="Timeframe ([ previous / ] next)"></select>
   <span class="nav-label">indicators</span>
   <select id="conf-select" title="Indicator configuration ({ previous / } next)"></select>
-  <div class="page-nav">
-    <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
-    <a class="page-nav-item" href="/indicators" title="Go to indicators page (I)">indicators</a>
-    <span class="page-nav-item active" title="Chart page (C)">chart</span>
+  <div class="nav-right">
+    <div class="page-nav">
+      <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
+      <a class="page-nav-item" href="/indicators" title="Go to indicators page (I)">indicators</a>
+      <span class="page-nav-item active" title="Chart page (C)">chart</span>
+    </div>
+    <button class="btn-help-nav" title="Keyboard shortcuts (?)">?</button>
   </div>
 </div>
 
@@ -80,64 +83,8 @@
   <label title="Playback speed in frames per second (↑ ↓ to adjust)">fps
     <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"
       title="Frames per second — 1 is slowest, 60 is fastest"></label>
-  <div class="nav-sep"></div>
-  <button id="btn-help" title="Keyboard shortcuts &amp; controls (?)">?</button>
 </div>
 
-<!-- ── Help overlay ──────────────────────────────────────────── -->
-<div id="help-overlay">
-  <div id="help-panel">
-    <div id="help-header">
-      <span>Keyboard Shortcuts &amp; Controls</span>
-      <button id="help-close">&#x2715;</button>
-    </div>
-    <div id="help-body">
-      <table class="help-table">
-        <tbody>
-          <tr class="help-section"><td colspan="2">Playback</td></tr>
-          <tr><td><kbd>Space</kbd></td><td>Play / pause (rewinds to start if at last bar)</td></tr>
-          <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step one bar backward / forward</td></tr>
-          <tr><td><kbd>Shift+←</kbd> <kbd>Shift+→</kbd></td><td>Jump 20 bars</td></tr>
-          <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>First bar / last bar</td></tr>
-          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Increase / decrease FPS</td></tr>
-          <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles on screen during playback)</td></tr>
-          <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
-
-          <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
-          <tr><td><kbd>=</kbd></td><td>Previous ticker</td></tr>
-          <tr><td><kbd>-</kbd></td><td>Next ticker</td></tr>
-          <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
-          <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>
-          <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next indicator conf</td></tr>
-          <tr><td>Any lowercase letter</td><td>Focus ticker search</td></tr>
-
-          <tr class="help-section"><td colspan="2">Jump Inputs (press Enter)</td></tr>
-          <tr><td>Any digit key</td><td>Focus the bar # input and start typing</td></tr>
-          <tr><td>Bar # input</td><td>Jump to bar number</td></tr>
-          <tr><td>Date input</td><td>Jump to date (YYYY-MM-DD)</td></tr>
-          <tr><td>FPS input</td><td>Set playback speed (1–60)</td></tr>
-
-          <tr class="help-section"><td colspan="2">Load Position (nav bar dropdown)</td></tr>
-          <tr><td><kbd>\</kbd></td><td>Cycle load mode: start → end → bar → date</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>Enter the value field (when bar or date mode is active)</td></tr>
-          <tr><td>start</td><td>Each ticker loads at bar 0, ready for playback</td></tr>
-          <tr><td>end</td><td>Each ticker loads at the last bar (full chart)</td></tr>
-          <tr><td>bar</td><td>Each ticker loads at the given bar index</td></tr>
-          <tr><td>date</td><td>Each ticker loads at the bar closest to the given date</td></tr>
-
-          <tr class="help-section"><td colspan="2">View</td></tr>
-          <tr><td><kbd>F</kbd></td><td>Toggle fullscreen (hides nav &amp; controls bars)</td></tr>
-          <tr><td><kbd>`</kbd> / <kbd>~</kbd></td><td>Cycle pages forward / backward</td></tr>
-          <tr><td><kbd>C</kbd> / <kbd>T</kbd> / <kbd>I</kbd></td><td>Go to chart / tickers / indicators page</td></tr>
-
-          <tr class="help-section"><td colspan="2">This Panel</td></tr>
-          <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-          <tr><td><kbd>Escape</kbd></td><td>Return to chart context (blurs any focused input/dropdown)</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
 
 <script type="module">
   import { initBrowse } from '/static/js/browse.js';

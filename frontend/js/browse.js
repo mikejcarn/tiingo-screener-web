@@ -7,6 +7,7 @@
  */
 
 import { initReplay, jump, getCurrentBarInfo, applyRangeLock } from './replay.js';
+import { initHelp, isHelpVisible } from './help.js';
 
 let tickers    = [];
 let timeframes = [];
@@ -214,19 +215,7 @@ function _wireNav() {
   _updateLockUI();
   _commitLock(); // apply restored (or default) lock on page load
 
-  // Help overlay
-  const helpOverlay = document.getElementById('help-overlay');
-  const btnHelp     = document.getElementById('btn-help');
-
-  function _toggleHelp(force) {
-    const show = force !== undefined ? force : !helpOverlay.classList.contains('visible');
-    helpOverlay.classList.toggle('visible', show);
-    btnHelp.classList.toggle('active', show);
-  }
-
-  btnHelp.addEventListener('click', () => _toggleHelp());
-  document.getElementById('help-close').addEventListener('click', () => _toggleHelp(false));
-  helpOverlay.addEventListener('click', (e) => { if (e.target === helpOverlay) _toggleHelp(false); });
+  initHelp('chart');
 
   // Fullscreen
   const btnFullscreen = document.getElementById('btn-fullscreen');
@@ -256,13 +245,12 @@ function _wireNav() {
   // Global keyboard shortcuts
   const _lockModes = ['start', 'end', 'bar', 'date'];
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { _toggleHelp(false); document.activeElement?.blur(); return; }
+    if (e.key === 'Escape') { document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
     if (e.key === 'f' || e.key === 'F') { e.preventDefault(); _toggleFullscreen(); return; }
     if (e.key === '`') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === '~') { e.preventDefault(); window.location.href = '/indicators'; return; }
-    if (e.key === '?') { e.preventDefault(); _toggleHelp(); return; }
-    if (helpOverlay.classList.contains('visible')) return;
+    if (isHelpVisible()) return;
     if (e.key === '\\') {
       e.preventDefault();
       const next = (_lockModes.indexOf(lockModeEl.value) + 1) % _lockModes.length;

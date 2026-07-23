@@ -1,3 +1,5 @@
+import { initHelp } from './help.js';
+
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
 // Numeric params that are legitimately nullable (null = no limit / disabled).
@@ -1498,3 +1500,4 @@ document.addEventListener('keydown', e => {
 });
 
 init();
+initHelp('indicators');

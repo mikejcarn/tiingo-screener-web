@@ -1,3 +1,5 @@
+import { initHelp } from './help.js';
+
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
 let _tickerLists   = [];
@@ -890,3 +892,4 @@ document.addEventListener('keydown', e => {
 });
 
 init();
+initHelp('tickers');
