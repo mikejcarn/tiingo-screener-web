@@ -101,20 +101,11 @@ function _renderSingleQueue() {
       <div class="run-queue-header">
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(ticker)}</span>
-        <button class="run-queue-remove" data-ticker="${_esc(ticker)}"${_singleRunning ? ' disabled' : ''} title="Remove ${_esc(ticker)} from the queue">×</button>
+        <button class="run-queue-remove" data-ticker="${ticker}"${_singleRunning ? ' disabled' : ''} title="Remove ${_esc(ticker)} from the queue">×</button>
       </div>
       ${statusHtml ? `<div class="run-queue-detail">${statusHtml}</div>` : ''}
     </div>`;
   }).join('');
-  for (const btn of el.querySelectorAll('.run-queue-remove')) {
-    btn.addEventListener('click', () => {
-      const t = btn.dataset.ticker;
-      _singleQueue = _singleQueue.filter(x => x !== t);
-      delete _singleResults[t];
-      _saveSingleQueue();
-      _renderSingleQueue();
-    });
-  }
 }
 
 function _renderBatchQueue() {
@@ -132,20 +123,11 @@ function _renderBatchQueue() {
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(listName)}</span>
         ${countStr ? `<span class="fetch-list-count-tag">${countStr}</span>` : ''}
-        <button class="run-queue-remove" data-list="${_esc(listName)}"${_batchRunning ? ' disabled' : ''} title="Remove ${_esc(listName)} from the queue">×</button>
+        <button class="run-queue-remove" data-list="${listName}"${_batchRunning ? ' disabled' : ''} title="Remove ${_esc(listName)} from the queue">×</button>
       </div>
-      <div class="rq-status" data-list="${_esc(listName)}"></div>
+      <div class="rq-status" data-list="${listName}"></div>
     </div>`;
   }).join('');
-  for (const btn of el.querySelectorAll('.run-queue-remove')) {
-    btn.addEventListener('click', () => {
-      const n = btn.dataset.list;
-      _batchQueue = _batchQueue.filter(l => l !== n);
-      delete _batchResults[n];
-      _saveBatchQueue();
-      _renderBatchQueue();
-    });
-  }
   _renderBatchQueueStatus();
 }
 
@@ -219,7 +201,7 @@ async function _runSingleQueue() {
 
   _singleRunning = false;
   btn.disabled = false;
-  btn.textContent = 'Fetch';
+  btn.textContent = '▶ Fetch';
   _loadStats();
   _loadHistory();
 }
@@ -302,7 +284,7 @@ async function _runBatchQueue() {
 
   _batchRunning = false;
   btn.disabled = false;
-  btn.textContent = 'Fetch';
+  btn.textContent = '▶ Fetch';
   btnCancel.style.display = 'none';
   _renderBatchQueue();
   _loadStats();
@@ -312,13 +294,13 @@ async function _runBatchQueue() {
 // ── Add to queues ─────────────────────────────────────────────
 
 function _addSingleTicker(ticker) {
-  ticker = ticker.trim().toUpperCase();
-  if (!ticker) return;
-  if (!_singleQueue.includes(ticker)) {
-    _singleQueue.push(ticker);
-    _saveSingleQueue();
-    _renderSingleQueue();
+  const tickers = ticker.toUpperCase().split(',').map(t => t.trim()).filter(Boolean);
+  if (!tickers.length) return;
+  let changed = false;
+  for (const t of tickers) {
+    if (!_singleQueue.includes(t)) { _singleQueue.push(t); changed = true; }
   }
+  if (changed) { _saveSingleQueue(); _renderSingleQueue(); }
   document.getElementById('single-ticker').value = '';
   _ddHide(document.getElementById('single-ticker-dd'));
 }
@@ -526,35 +508,39 @@ async function _loadHistory() {
   try {
     data = await api.get('/api/fetch-history');
   } catch {
-    tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">Failed to load history.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">Failed to load history.</td></tr>';
     return;
   }
   const rows = data.history || [];
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">No history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No history yet.</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(r => `
-    <tr>
+    <tr data-session="${r.session}" data-timeframe="${r.timeframe}" data-list="${r.ticker_list !== '—' ? r.ticker_list : ''}">
       <td>${_esc(r.session)}</td>
       <td>${_esc(r.ticker_list)}</td>
       <td>${_esc(r.timeframe)}</td>
       <td>${r.tickers.toLocaleString()}</td>
       <td>${r.last_date}</td>
-      <td>${r.ticker_list !== '—'
-        ? `<button class="tbl-del-btn" data-list="${_esc(r.ticker_list)}" title="Delete list ${_esc(r.ticker_list)}">×</button>`
-        : ''}</td>
+      <td><button class="scan-history-del" title="Delete this history entry">✕</button></td>
     </tr>
   `).join('');
-  for (const btn of tbody.querySelectorAll('.tbl-del-btn')) {
-    btn.addEventListener('click', async () => {
-      const list = btn.dataset.list;
-      if (!confirm(`Delete all tickers from list "${list}"?`)) return;
-      await api.del(`/api/data/ohlcv/list/${encodeURIComponent(list)}`);
-      _loadStats();
-      _loadHistory();
-    });
-  }
+}
+
+function _wireHistoryTable() {
+  document.getElementById('history-body').addEventListener('click', async e => {
+    const btn = e.target.closest('.scan-history-del');
+    if (!btn) return;
+    const tr = btn.closest('tr');
+    const session  = tr.dataset.session;
+    const timeframe = tr.dataset.timeframe;
+    const list     = tr.dataset.list;
+    const params   = new URLSearchParams({ session, timeframe });
+    if (list) params.set('ticker_list', list);
+    await api.del(`/api/fetch-history/entry?${params}`);
+    _loadHistory();
+  });
 }
 
 // ── Buttons ───────────────────────────────────────────────────
@@ -562,6 +548,26 @@ async function _loadHistory() {
 function _wireButtons() {
   document.getElementById('btn-single-fetch').addEventListener('click', _runSingleQueue);
   document.getElementById('btn-fetch').addEventListener('click', _runBatchQueue);
+
+  document.getElementById('single-queue').addEventListener('click', e => {
+    const btn = e.target.closest('.run-queue-remove');
+    if (!btn || btn.disabled) return;
+    const t = btn.dataset.ticker;
+    _singleQueue = _singleQueue.filter(x => x !== t);
+    delete _singleResults[t];
+    _saveSingleQueue();
+    _renderSingleQueue();
+  });
+
+  document.getElementById('batch-queue').addEventListener('click', e => {
+    const btn = e.target.closest('.run-queue-remove');
+    if (!btn || btn.disabled) return;
+    const n = btn.dataset.list;
+    _batchQueue = _batchQueue.filter(l => l !== n);
+    delete _batchResults[n];
+    _saveBatchQueue();
+    _renderBatchQueue();
+  });
   document.getElementById('btn-fetch-cancel').addEventListener('click', () => {
     _batchCancelled = true;
     api.post('/api/jobs/fetch/cancel');
@@ -614,6 +620,14 @@ function _wireButtons() {
     _loadStats();
     _loadHistory();
   });
+
+  document.getElementById('btn-history-refresh').addEventListener('click', () => _loadHistory());
+  document.getElementById('btn-history-clear').addEventListener('click', async () => {
+    if (!confirm('Clear all fetch history?')) return;
+    await api.del('/api/fetch-history');
+    _loadHistory();
+  });
+  _wireHistoryTable();
 
   document.getElementById('btn-clear-all').addEventListener('click', async () => {
     if (!confirm('Delete ALL ticker data from the database?')) return;

@@ -417,7 +417,7 @@ body.dash {
   cursor: pointer;
   padding: 3px 8px;
   border-radius: 3px;
-  line-height: 1.4;
+  line-height: 1;
 }
 .dash-section-actions button:hover { color: var(--t5); border-color: var(--t3); }
 .dash-section-actions button.dash-btn-sm-launch {
@@ -1404,8 +1404,8 @@ body.ind-page {
 }
 .run-queue-pos    { color: var(--b6); font-size: 10px; min-width: 12px; text-align: right; flex-shrink: 0; }
 .run-queue-name   { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t7); }
-.run-queue-remove { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 0 3px; line-height: 1; flex-shrink: 0; }
-.run-queue-remove:hover { color: var(--t6); }
+.run-queue-remove { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 0 3px; line-height: 1; flex-shrink: 0; border-radius: 3px; }
+.run-queue-remove:hover { color: #e05; background: rgba(220,0,50,0.08); }
 .run-queue-detail { padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
 /* Per-conf status bars inside queue items */
 .rq-status { display: flex; flex-direction: column; gap: 3px; padding-top: 3px; min-height: 0; }
@@ -1852,11 +1852,12 @@ body.scan-page {
 .scan-history-table td { padding: 4px 12px; color: var(--t4); border-bottom: 1px solid var(--c-card); }
 .scan-history-table td:first-child { color: var(--t7); }
 .scan-history-table tbody tr:hover td { background: var(--c-surface); }
-.scan-history-del {
+.scan-history-del, .tbl-del-btn {
   background: none; border: none; cursor: pointer;
   color: var(--t2); font-size: 11px; padding: 1px 4px; border-radius: 3px;
 }
-.scan-history-del:hover { color: #e05; background: rgba(220,0,50,0.08); }
+.scan-history-del:hover, .tbl-del-btn:hover { color: #e05; background: rgba(220,0,50,0.08); }
+.tbl-del-btn { font-size: 14px; }
 .ind-db-head-actions { display: flex; align-items: center; gap: 6px; }
 .ind-clear-hist-btn {
   background: none; border: 1px solid var(--b3); cursor: pointer;

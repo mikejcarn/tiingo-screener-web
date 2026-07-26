@@ -33,7 +33,7 @@
       <div class="dash-section-head">
         <span>API Key</span>
         <div class="dash-section-actions">
-          <button id="btn-apikey-add" class="dash-btn-sm dash-btn-sm-add" style="display:none;" title="Add your Tiingo API key">+ Add Key</button>
+          <button id="btn-apikey-add" class="dash-btn-sm" style="display:none;" title="Add your Tiingo API key">+ Add Key</button>
         </div>
       </div>
       <div style="padding:14px 16px;">
@@ -80,7 +80,7 @@
                    title="Type any lowercase letter to search tickers, ↑↓ to navigate suggestions, Enter to add">
             <div id="single-ticker-dd"></div>
           </div>
-          <button id="btn-single-add" class="dash-btn-sm dash-btn-sm-add" title="Add this ticker to the queue below (or press Enter in the box)">+ Add to Queue</button>
+          <button id="btn-single-add" class="dash-btn-sm" title="Add this ticker to the queue below (or press Enter in the box)">+ Add to Queue</button>
         </div>
         <div class="dash-field">
           <label>Timeframes</label>
@@ -105,7 +105,7 @@
           <div class="dash-field-right">
             <select id="fetch-list" title="Choose a ticker list to fetch"></select>
             <span id="fetch-list-count" class="dash-count" title="Number of tickers in this list"></span>
-            <button id="btn-batch-add" class="dash-btn-sm dash-btn-sm-add" title="Add this list to the queue below">+ Add to Queue</button>
+            <button id="btn-batch-add" class="dash-btn-sm" title="Add this list to the queue below">+ Add to Queue</button>
           </div>
         </div>
         <div class="dash-field">
@@ -121,7 +121,7 @@
       <div class="dash-section-head">
         <span>Ticker Lists</span>
         <div class="dash-section-actions">
-          <button id="btn-add-list" class="dash-btn-sm dash-btn-sm-add" title="Upload a CSV to create a new ticker list">+ Add List</button>
+          <button id="btn-add-list" class="dash-btn-sm" title="Upload a CSV to create a new ticker list">+ Add List</button>
         </div>
       </div>
       <div class="ticker-lists-body">
@@ -146,7 +146,7 @@
       <div class="dash-section-head">
         <span>Database</span>
         <div class="dash-section-actions">
-          <button id="btn-refresh-stats" title="Refresh the database stats">&#x21BB;</button>
+          <button id="btn-refresh-stats" class="dash-btn-sm" title="Refresh the database stats">&#x21BB;</button>
           <button id="btn-clear-all" class="dash-btn-sm dash-btn-sm-del" title="Delete ALL fetched data from the database">Clear All</button>
         </div>
       </div>
@@ -173,7 +173,7 @@
 
     <!-- Fetch History (pinned at bottom) -->
     <div class="dash-section fetch-history">
-      <div class="dash-section-head"><span>Fetch History</span></div>
+      <div class="dash-section-head"><span>Fetch History</span><div class="dash-section-actions"><button id="btn-history-refresh" class="dash-btn-sm" title="Refresh fetch history">↻</button><button id="btn-history-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all fetch history">Clear All</button></div></div>
       <div id="history-wrap">
         <table id="history-table">
           <thead>
@@ -187,7 +187,7 @@
             </tr>
           </thead>
           <tbody id="history-body">
-            <tr><td colspan="5" class="stats-empty">No history yet.</td></tr>
+            <tr><td colspan="6" class="stats-empty">No history yet.</td></tr>
           </tbody>
         </table>
       </div>

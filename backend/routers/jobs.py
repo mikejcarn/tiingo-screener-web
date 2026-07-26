@@ -218,6 +218,29 @@ def fetch_history():
     ]}
 
 
+@router.delete("/fetch-history/entry")
+def delete_fetch_history_entry(session: str, timeframe: str, ticker_list: str = ""):
+    with db._conn() as con:
+        if ticker_list:
+            con.execute(
+                "DELETE FROM fetch_log WHERE strftime('%Y-%m-%d %H:00', fetched_at) = ? AND timeframe = ? AND ticker_list = ?",
+                (session, timeframe, ticker_list)
+            )
+        else:
+            con.execute(
+                "DELETE FROM fetch_log WHERE strftime('%Y-%m-%d %H:00', fetched_at) = ? AND timeframe = ? AND ticker_list IS NULL",
+                (session, timeframe)
+            )
+    return {"ok": True}
+
+
+@router.delete("/fetch-history")
+def clear_fetch_history():
+    with db._conn() as con:
+        con.execute("DELETE FROM fetch_log")
+    return {"cleared": "fetch_log"}
+
+
 @router.get("/stats")
 def stats():
     with db._conn() as con:
@@ -260,10 +283,9 @@ def stats():
 
 @router.delete("/data/ohlcv")
 def clear_ohlcv():
-    """Delete all price data and fetch log. Indicators are preserved."""
+    """Delete all price data. Fetch history and indicators are preserved."""
     with db._conn() as con:
         con.execute("DELETE FROM ohlcv")
-        con.execute("DELETE FROM fetch_log")
     return {"cleared": "ohlcv"}
 
 
