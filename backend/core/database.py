@@ -427,6 +427,12 @@ def delete_scan_run(run_id: int) -> None:
         con.execute("DELETE FROM scan_log WHERE id=?", (run_id,))
 
 
+def clear_scan_history() -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM scan_results")
+        con.execute("DELETE FROM scan_log")
+
+
 def get_scan_history(limit: int = 30) -> list:
     with _conn() as con:
         rows = con.execute(

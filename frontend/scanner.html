@@ -50,7 +50,7 @@
 
       <!-- Name + actions -->
       <div class="ind-editor-top">
-        <span class="ind-editor-label">Scan</span>
+        <span class="ind-editor-label">Config Name</span>
         <input type="text" id="scan-name" class="config-name-input" placeholder="Scan name">
         <button id="btn-save-scan" class="ind-btn-save" title="Save (Ctrl+S)">Save</button>
         <button id="btn-delete-scan" class="btn-destructive" title="Delete (D)">Delete</button>
@@ -82,8 +82,12 @@
     <!-- Run card -->
     <div class="scan-run-card">
       <div class="ind-run-head">
-        <span>Run</span>
-        <button id="btn-run-scan" class="dash-btn-sm dash-btn-sm-launch" title="Run scan (R)">&#9654; Run</button>
+        <span>Run Scan Configs</span>
+        <div class="ind-db-head-actions">
+          <button id="btn-run-refresh" class="dash-btn-sm" title="Refresh configs">↻</button>
+          <button id="btn-run-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear run status">Clear All</button>
+          <button id="btn-run-scan" class="dash-btn-sm dash-btn-sm-launch" title="Run scan (R)">&#9654; Run</button>
+        </div>
       </div>
       <div class="scan-run-body">
         <span id="scan-run-status" class="scan-run-status-text"></span>
@@ -94,8 +98,12 @@
     <!-- Results card -->
     <div class="scan-results-card">
       <div class="ind-run-head">
-        <span>Results <span id="scan-results-label" class="scan-results-count"></span></span>
-        <button id="btn-open-chart" class="dash-btn-sm" title="Load results into chart page" style="display:none">Open in chart ↗</button>
+        <span>Scan Results <span id="scan-results-label" class="scan-results-count"></span></span>
+        <div class="ind-db-head-actions">
+          <button id="btn-results-refresh" class="dash-btn-sm" title="Refresh scan results">↻</button>
+          <button id="btn-results-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear scan results">Clear All</button>
+          <button id="btn-open-chart" class="dash-btn-sm" title="Load results into chart page" style="display:none">Open in chart ↗</button>
+        </div>
       </div>
       <div class="scan-results-body">
         <div id="scan-results-empty" class="scan-results-empty">Run a scan to see results.</div>
@@ -107,7 +115,7 @@
 
     <!-- History card -->
     <div class="scan-history">
-      <div class="ind-run-head">Run History</div>
+      <div class="ind-run-head">Scan History <div class="ind-db-head-actions"><button id="btn-history-refresh" class="dash-btn-sm" title="Refresh scan history">↻</button><button id="btn-history-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all scan history">Clear All</button></div></div>
       <div class="scan-history-wrap">
         <table class="scan-history-table">
           <thead>

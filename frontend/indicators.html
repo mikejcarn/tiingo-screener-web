@@ -28,7 +28,7 @@
   <!-- ── Left: config list ──────────────────────────────── -->
   <div class="ind-sidebar">
     <div class="ind-sidebar-head">
-      <span>Configs</span>
+      <span>Indicators</span>
       <div class="dash-section-actions">
         <button id="btn-new-config" class="dash-btn-sm dash-btn-sm-launch" title="Create new config (N)">+ New</button>
       </div>
@@ -51,10 +51,10 @@
     <div id="ind-editor" style="display:none; flex-direction:column; height:100%;">
 
       <div class="ind-editor-top">
-        <span class="ind-editor-label">Config</span>
+        <span class="ind-editor-label">Config Name</span>
         <input type="text" id="config-name" class="config-name-input" placeholder="Config name" title="Config name — Shift+Enter to focus, Enter to save">
         <button id="btn-save" class="ind-btn-save" title="Save config (Ctrl+S)">Save</button>
-        <button id="btn-clear-results" class="btn-destructive" title="Delete computed indicator results for this config">Clear Results</button>
+        <button id="btn-clear-results" class="btn-destructive" title="Delete computed indicator results for this config">Clear All</button>
         <button id="btn-delete-config" class="btn-destructive" title="Delete this config and its results (D)">Delete</button>
       </div>
       <div id="conf-dates" class="conf-dates"></div>
@@ -82,8 +82,10 @@
     <!-- Run + DB output card -->
     <div class="ind-run">
       <div class="ind-run-head">
-        <span>Run</span>
+        <span>Run Indicator Configs</span>
         <div class="dash-section-actions">
+          <button id="btn-run-refresh" class="dash-btn-sm" title="Refresh run queue">↻</button>
+          <button id="btn-run-clear-all" class="dash-btn-sm dash-btn-sm-del" title="Remove all configs from the run queue">Clear All</button>
           <button id="btn-compute" class="dash-btn-sm dash-btn-sm-launch" title="Run indicator computation for queued configs (R)">&#9654; Run</button>
           <button id="btn-compute-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running computation">Cancel</button>
         </div>
@@ -91,15 +93,20 @@
       <div class="ind-run-body">
 
         <div id="run-conf-list" class="run-queue-list"></div>
-        <div id="run-queue-status" class="run-queue-status" style="display:none;"></div>
 
-        <div class="dash-progress">
-          <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
-          <div id="comp-meta" class="progress-meta">
-            <span id="comp-count"   class="dash-count-text"></span>
-            <span id="comp-pct"     class="dash-pct"></span>
-            <span id="comp-current" class="dash-current"></span>
-            <span id="comp-errors"  class="dash-errors"></span>
+        <div class="ind-overall-section">
+          <div class="ind-overall-header">
+            <span class="ind-overall-label">total run</span>
+            <span id="run-queue-status" class="run-queue-status" style="display:none;"></span>
+          </div>
+          <div class="dash-progress">
+            <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
+            <div id="comp-meta" class="progress-meta">
+              <span id="comp-count"   class="dash-count-text"></span>
+              <span id="comp-pct"     class="dash-pct"></span>
+              <span id="comp-current" class="dash-current"></span>
+              <span id="comp-errors"  class="dash-errors"></span>
+            </div>
           </div>
         </div>
 
@@ -110,7 +117,7 @@
 
     <!-- DB card -->
     <div class="ind-db-card">
-      <div class="ind-run-head" title="Browse computed indicator rows stored in the database">DB — indicators <div class="ind-db-head-actions"><button id="btn-db-refresh" class="ind-clear-hist-btn" title="Refresh DB view">↻</button><button id="btn-db-clear-results" class="ind-clear-hist-btn" title="Clear all computed results for the current config">Clear Results</button></div></div>
+      <div class="ind-run-head" title="Browse computed indicator rows stored in the database">DATABASE — INDICATORS <div class="ind-db-head-actions"><button id="btn-db-refresh" class="dash-btn-sm" title="Refresh DB view">↻</button><button id="btn-db-clear-results" class="dash-btn-sm dash-btn-sm-del" title="Clear all computed results for the current config">Clear All</button></div></div>
       <div class="ind-db-body">
 
         <div class="ind-db-nav-row">
@@ -149,7 +156,7 @@
 
     <!-- History card -->
     <div class="ind-history">
-      <div class="ind-run-head">Run History <button id="btn-clear-history" class="ind-clear-hist-btn" title="Clear all run history">Clear All</button></div>
+      <div class="ind-run-head">Indicators History <div class="ind-db-head-actions"><button id="btn-history-refresh" class="dash-btn-sm" title="Refresh run history">↻</button><button id="btn-clear-history" class="dash-btn-sm dash-btn-sm-del" title="Clear all run history">Clear All</button></div></div>
       <div class="ind-history-wrap">
         <table class="ind-history-table">
           <thead>

@@ -313,3 +313,9 @@ def get_scan_run(run_id: int):
 def delete_scan_run(run_id: int):
     db.delete_scan_run(run_id)
     return {"deleted": run_id}
+
+
+@router.delete("/scan/history")
+def clear_scan_history():
+    db.clear_scan_history()
+    return {"cleared": "scan_history"}

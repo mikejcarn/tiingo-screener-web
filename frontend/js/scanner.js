@@ -616,6 +616,21 @@ function _wireGlobal() {
     await _loadConfigs();
   });
 
+  document.getElementById('btn-run-refresh').addEventListener('click', _loadConfigs);
+  document.getElementById('btn-run-clear').addEventListener('click', () => {
+    document.getElementById('scan-run-status').textContent  = '';
+    document.getElementById('scan-run-summary').textContent = '';
+  });
+  document.getElementById('btn-results-refresh').addEventListener('click', () => {
+    if (_lastResults) _renderResults({ results: _lastResults, count: _lastResults.length });
+  });
+  document.getElementById('btn-results-clear').addEventListener('click', _clearResults);
+  document.getElementById('btn-history-refresh').addEventListener('click', _loadHistory);
+  document.getElementById('btn-history-clear').addEventListener('click', async () => {
+    if (!confirm('Clear all scan history?')) return;
+    await api.del('/api/scan/history');
+    _loadHistory();
+  });
   document.getElementById('btn-run-scan').addEventListener('click', _runScan);
   document.getElementById('btn-open-chart').addEventListener('click', () => {
     if (_lastResults?.length) _openTicker(_lastResults[0].ticker);

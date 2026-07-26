@@ -426,6 +426,8 @@ body.dash {
 }
 .dash-section-actions button.dash-btn-sm-launch:hover { background: rgba(var(--teal-rgb),0.2); border-color: rgba(var(--teal-rgb),0.8); color: rgba(var(--teal-rgb),1); }
 .dash-section-actions button.dash-btn-sm-launch:disabled { opacity: 1; color: rgba(var(--teal-rgb),0.4); background: rgba(var(--teal-rgb),0.05); border-color: rgba(var(--teal-rgb),0.2); }
+.dash-section-actions button.dash-btn-sm-del { color: rgba(var(--red-rgb),0.5); border-color: rgba(var(--red-rgb),0.15); }
+.dash-section-actions button.dash-btn-sm-del:hover { color: rgba(var(--red-rgb),0.9); border-color: rgba(var(--red-rgb),0.4); background: var(--c-ctrl); }
 /* Destructive clear buttons */
 #btn-clear-ohlcv:hover, #btn-clear-indicators:hover, #btn-clear-all:hover {
   color: rgba(var(--red-rgb),0.8);
@@ -1362,7 +1364,7 @@ body.ind-page {
 .ind-run-body {
   flex: 1;
   min-height: 0;
-  padding: 14px;
+  padding: 8px 14px 14px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1372,7 +1374,6 @@ body.ind-page {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-top: 14px;
   margin-bottom: 10px;
 }
 .run-queue-list:last-child { margin-bottom: 0; }
@@ -1425,10 +1426,27 @@ body.ind-page {
 .rq-current { color: var(--t1); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .rq-count   { color: var(--t1); flex-shrink: 0; }
 
+.ind-overall-section {
+  border-top: 1px solid var(--b3);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+.ind-overall-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ind-overall-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--t2);
+  flex-shrink: 0;
+}
 .run-queue-status {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--t3);
-  margin-bottom: 10px;
   letter-spacing: 0.01em;
 }
 .run-conf-summary {
@@ -1859,11 +1877,7 @@ body.scan-page {
 .scan-history-del:hover, .tbl-del-btn:hover { color: #e05; background: rgba(220,0,50,0.08); }
 .tbl-del-btn { font-size: 14px; }
 .ind-db-head-actions { display: flex; align-items: center; gap: 6px; }
-.ind-clear-hist-btn {
-  background: none; border: 1px solid var(--b3); cursor: pointer;
-  color: var(--t3); font-size: 11px; padding: 2px 8px; border-radius: 4px;
-}
-.ind-clear-hist-btn:hover { color: #e05; border-color: rgba(220,0,50,0.4); background: rgba(220,0,50,0.06); }
+.ind-db-head-actions button { line-height: 1; }
 
 /* Selectors row */
 .scan-selectors {

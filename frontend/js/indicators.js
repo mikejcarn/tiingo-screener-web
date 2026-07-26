@@ -507,9 +507,19 @@ function _wireStaticButtons() {
   document.getElementById('btn-clear-results').addEventListener('click', _clearResults);
   document.getElementById('btn-db-clear-results').addEventListener('click', _dbClearResults);
   document.getElementById('btn-db-refresh').addEventListener('click', () => { if (_dbConfId) _loadDbSection(_dbConfId); });
+  document.getElementById('btn-history-refresh').addEventListener('click', _loadHistory);
   document.getElementById('btn-clear-history').addEventListener('click', _clearHistory);
   document.getElementById('btn-delete-config').addEventListener('click', _deleteConfig);
   document.getElementById('btn-save').addEventListener('click', _saveConfig);
+  document.getElementById('btn-run-refresh').addEventListener('click', _renderRunConfigs);
+  document.getElementById('btn-run-clear-all').addEventListener('click', () => {
+    if (!_runCheckedIds.size) return;
+    _runCheckedIds.clear();
+    _runResults = {};
+    _saveRunQueue();
+    _renderConfigList();
+    _renderRunConfigs();
+  });
   document.getElementById('btn-compute').addEventListener('click', _startCompute);
   document.getElementById('btn-compute-cancel').addEventListener('click', () => {
     _runQueue    = [];
