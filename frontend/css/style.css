@@ -431,7 +431,7 @@ body.dash {
   color: rgba(var(--red-rgb),0.8);
   border-color: rgba(var(--red-rgb),0.3);
 }
-#btn-refresh-stats { font-size: 14px; padding: 2px 6px; }
+#btn-refresh-stats { font-size: 11px; padding: 3px 8px; }
 
 #stats-summary {
   display: flex;

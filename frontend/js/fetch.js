@@ -621,6 +621,7 @@ function _wireButtons() {
     _loadHistory();
   });
 
+  document.getElementById('btn-refresh-lists').addEventListener('click', () => _loadTickerLists());
   document.getElementById('btn-history-refresh').addEventListener('click', () => _loadHistory());
   document.getElementById('btn-history-clear').addEventListener('click', async () => {
     if (!confirm('Clear all fetch history?')) return;
