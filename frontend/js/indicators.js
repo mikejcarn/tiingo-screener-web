@@ -505,6 +505,8 @@ function _wireStaticButtons() {
     if (e.key === 'Enter') { e.preventDefault(); _saveConfig(); e.target.blur(); }
   });
   document.getElementById('btn-clear-results').addEventListener('click', _clearResults);
+  document.getElementById('btn-db-clear-results').addEventListener('click', _dbClearResults);
+  document.getElementById('btn-db-refresh').addEventListener('click', () => { if (_dbConfId) _loadDbSection(_dbConfId); });
   document.getElementById('btn-clear-history').addEventListener('click', _clearHistory);
   document.getElementById('btn-delete-config').addEventListener('click', _deleteConfig);
   document.getElementById('btn-save').addEventListener('click', _saveConfig);
@@ -837,6 +839,27 @@ async function _clearResults() {
   }
 }
 
+async function _dbClearResults() {
+  if (!_dbConfId) return;
+  const conf = _configList.find(c => c.id === _dbConfId);
+  const name = conf?.name || 'this config';
+  if (!confirm(`Clear all computed results for "${name}"? The config will be kept.`)) return;
+  await api.del(`/api/data/indicators/${_dbConfId}`);
+  _dbColumnsData = null;
+  const others = _configList.filter(c => c.id !== _dbConfId);
+  if (others.length) {
+    await _loadDbSection(others[0].id);
+  } else {
+    _dbConfId = null;
+    _dbSectionConfigId = null;
+    document.getElementById('db-conf-label').textContent = '—';
+    document.getElementById('db-tf-display').textContent = '—';
+    document.getElementById('comp-db-stats').innerHTML   = '';
+    document.getElementById('comp-db-table').innerHTML   = '';
+    document.getElementById('comp-db-ticker').value      = '';
+  }
+}
+
 async function _deleteConfig() {
   if (!_selectedId) return;
   const name = _configData?.name || 'this config';
@@ -946,14 +969,14 @@ async function _kickNextQueueItem() {
   }
   _updateRunQueueStatus();
   btn.disabled = true;
-  btn.textContent = 'Starting…';
+  btn.textContent = '▶ Starting…';
   btnCancel.style.display = '';
 
   try {
     await api.post('/api/indicators/batch', { config_id: configId });
   } catch (err) {
     btn.disabled = false;
-    btn.textContent = 'Run';
+    btn.textContent = '▶ Run';
     btnCancel.style.display = 'none';
     _runQueue    = [];
     _runQueueIdx = -1;
@@ -1027,7 +1050,7 @@ function _updateProgress(state) {
     _setActive(false);
     count.textContent = pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
-    btn.textContent = 'Run';
+    btn.textContent = '▶ Run';
     btnCancel.style.display = 'none';
   } else if (state.status === 'running') {
     _setActive(true);
@@ -1036,7 +1059,7 @@ function _updateProgress(state) {
     currentEl.textContent = state.current ? `→ ${state.current}` : '';
     errorsEl.textContent = state.errors > 0 ? `✗ ${state.errors}` : '';
     btn.disabled = true;
-    btn.textContent = 'Running…';
+    btn.textContent = '▶ Running…';
     btnCancel.style.display = '';
     _renderFeed(state.log || []);
     if (_dbSectionConfigId) _loadDbPreview();
@@ -1056,7 +1079,7 @@ function _updateProgress(state) {
     const isLastInQueue = _runQueueIdx + 1 >= _runQueue.length;
     if (isLastInQueue) {
       btn.disabled = false;
-      btn.textContent = 'Run';
+      btn.textContent = '▶ Run';
       btnCancel.style.display = 'none';
     }
     _renderFeed(state.log || []);
@@ -1072,7 +1095,7 @@ function _updateProgress(state) {
     currentEl.textContent = '';
     errorsEl.textContent  = state.errors > 0 ? `✗ ${state.errors} error${state.errors !== 1 ? 's' : ''}` : '';
     btn.disabled = false;
-    btn.textContent = 'Run';
+    btn.textContent = '▶ Run';
     btnCancel.style.display = 'none';
     _renderFeed(state.log || []);
   } else if (state.status === 'error') {
@@ -1080,7 +1103,7 @@ function _updateProgress(state) {
     count.textContent = 'failed';
     pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
-    btn.textContent = 'Run';
+    btn.textContent = '▶ Run';
     btnCancel.style.display = 'none';
   }
 }
