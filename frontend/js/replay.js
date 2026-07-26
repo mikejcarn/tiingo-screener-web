@@ -37,8 +37,9 @@ const status      = document.getElementById('status');
 
 let controlsWired = false;
 let keysWired     = false;
+let _restoreDate  = null;
 
-export function initReplay(ticker, timeframe, indConf) {
+export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   // Clean up previous instance
   if (ws)    { ws.close(); ws = null; }
   if (chart) { chart.destroy(); }
@@ -46,6 +47,7 @@ export function initReplay(ticker, timeframe, indConf) {
   styles  = {};
   N       = 0;
   current = 0;
+  _restoreDate = restoreDate || null;
   setPlaying(false);
 
   chart = new ChartManager(document.getElementById('chart'));
@@ -53,6 +55,14 @@ export function initReplay(ticker, timeframe, indConf) {
   _connectWS(ticker, timeframe, indConf);
   if (!controlsWired) { _wireControls(); controlsWired = true; }
   if (!keysWired)     { _wireKeys();     keysWired     = true; }
+}
+
+function _findBarByDate(targetDate) {
+  for (let i = bars.length - 1; i >= 0; i--) {
+    const d = (bars[i]?.Date || bars[i]?.date || '').slice(0, 10);
+    if (d <= targetDate) return i;
+  }
+  return 0;
 }
 
 // ── WebSocket ─────────────────────────────────────────────────
@@ -97,7 +107,9 @@ function _onAllLoaded() {
   dateEnd.textContent = (lastBar?.Date || lastBar?.date || '').slice(0, 10) || '—';
   chart.load(bars, styles);
   chart.fitContent();
-  jump(N - 1);
+  const target = _restoreDate ? _findBarByDate(_restoreDate) : N - 1;
+  _restoreDate = null;
+  jump(target);
   _applyLock();
 }
 

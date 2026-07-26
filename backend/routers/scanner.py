@@ -284,10 +284,32 @@ def run_scan(req: RunScanRequest):
 
             results.append({"ticker": ticker, "date": latest_date, "signals": signals})
 
-    db.log_scan_run(req.config_id, cfg_name, len(results), len(tickers))
-    return {"count": len(results), "total": len(tickers), "results": results}
+    run_id = db.log_scan_run(req.config_id, cfg_name, len(results), len(tickers),
+                              ind_conf_id=ind_conf_id, timeframes=needed_tfs)
+    if results:
+        db.save_scan_results(run_id, results)
+    return {"run_id": run_id, "count": len(results), "total": len(tickers), "results": results}
 
 
 @router.get("/scan/history")
 def scan_history():
     return {"history": db.get_scan_history()}
+
+
+@router.get("/scan/runs")
+def list_scan_runs():
+    return {"runs": db.get_scan_runs()}
+
+
+@router.get("/scan/runs/{run_id}")
+def get_scan_run(run_id: int):
+    tickers = db.get_scan_run_tickers(run_id)
+    if not tickers:
+        raise HTTPException(status_code=404, detail="Scan run not found or no results")
+    return {"tickers": tickers}
+
+
+@router.delete("/scan/runs/{run_id}")
+def delete_scan_run(run_id: int):
+    db.delete_scan_run(run_id)
+    return {"deleted": run_id}

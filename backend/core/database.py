@@ -95,7 +95,18 @@ CREATE TABLE IF NOT EXISTS scan_log (
     config_name TEXT NOT NULL DEFAULT '',
     matched     INTEGER NOT NULL DEFAULT 0,
     total       INTEGER NOT NULL DEFAULT 0,
-    ran_at      TEXT NOT NULL
+    ran_at      TEXT NOT NULL,
+    ind_conf_id INTEGER,
+    timeframes  TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS scan_results (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id  INTEGER NOT NULL,
+    ticker  TEXT NOT NULL,
+    date    TEXT,
+    signals TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (run_id) REFERENCES scan_log(id)
 );
 """
 
@@ -145,6 +156,27 @@ def init_db() -> None:
             pass
         try:
             con.execute("ALTER TABLE scan_criteria ADD COLUMN logic TEXT NOT NULL DEFAULT 'AND'")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE scan_log ADD COLUMN ind_conf_id INTEGER")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE scan_log ADD COLUMN timeframes TEXT NOT NULL DEFAULT '[]'")
+        except Exception:
+            pass
+        try:
+            con.executescript("""
+                CREATE TABLE IF NOT EXISTS scan_results (
+                    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id  INTEGER NOT NULL,
+                    ticker  TEXT NOT NULL,
+                    date    TEXT,
+                    signals TEXT NOT NULL DEFAULT '{}',
+                    FOREIGN KEY (run_id) REFERENCES scan_log(id)
+                );
+            """)
         except Exception:
             pass
 
@@ -338,23 +370,62 @@ def get_indicator_history(limit: int = 30) -> list:
     ]
 
 
-def log_scan_run(config_id: int, config_name: str, matched: int, total: int) -> None:
+def log_scan_run(config_id: int, config_name: str, matched: int, total: int,
+                 ind_conf_id: Optional[int] = None, timeframes: list = None) -> int:
     from datetime import datetime
     with _conn() as con:
-        con.execute(
-            "INSERT INTO scan_log (config_id, config_name, matched, total, ran_at) VALUES (?,?,?,?,?)",
-            (config_id, config_name, matched, total, datetime.utcnow().isoformat())
+        cur = con.execute(
+            "INSERT INTO scan_log (config_id, config_name, matched, total, ran_at, ind_conf_id, timeframes) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (config_id, config_name, matched, total, datetime.utcnow().isoformat(),
+             ind_conf_id, json.dumps(timeframes or []))
         )
+        return cur.lastrowid
+
+
+def save_scan_results(run_id: int, results: list) -> None:
+    rows = [(run_id, r['ticker'], r.get('date', ''), json.dumps(r.get('signals', {})))
+            for r in results]
+    with _conn() as con:
+        con.executemany(
+            "INSERT INTO scan_results (run_id, ticker, date, signals) VALUES (?,?,?,?)", rows
+        )
+
+
+def get_scan_runs(limit: int = 50) -> list:
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT id, config_id, config_name, matched, total, ran_at, ind_conf_id, timeframes "
+            "FROM scan_log ORDER BY ran_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [{'id': r[0], 'config_id': r[1], 'config_name': r[2], 'matched': r[3],
+             'total': r[4], 'ran_at': r[5][:16].replace('T', ' '),
+             'ind_conf_id': r[6], 'timeframes': json.loads(r[7] or '[]')} for r in rows]
+
+
+def get_scan_run_tickers(run_id: int) -> list:
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT ticker FROM scan_results WHERE run_id=? ORDER BY ticker", (run_id,)
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def delete_scan_run(run_id: int) -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM scan_results WHERE run_id=?", (run_id,))
+        con.execute("DELETE FROM scan_log WHERE id=?", (run_id,))
 
 
 def get_scan_history(limit: int = 30) -> list:
     with _conn() as con:
         rows = con.execute(
-            "SELECT config_id, config_name, matched, total, ran_at FROM scan_log ORDER BY ran_at DESC LIMIT ?",
+            "SELECT id, config_id, config_name, matched, total, ran_at FROM scan_log ORDER BY ran_at DESC LIMIT ?",
             (limit,)
         ).fetchall()
     return [
-        {'config_id': r[0], 'config_name': r[1], 'matched': r[2], 'total': r[3], 'ran_at': r[4][:10]}
+        {'id': r[0], 'config_id': r[1], 'config_name': r[2], 'matched': r[3],
+         'total': r[4], 'ran_at': r[5][:10]}
         for r in rows
     ]
 

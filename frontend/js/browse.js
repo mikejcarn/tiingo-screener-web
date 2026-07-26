@@ -28,6 +28,7 @@ const confSelect   = document.getElementById('conf-select');
 const btnPrev      = document.getElementById('btn-prev-ticker');
 const btnNext      = document.getElementById('btn-next-ticker');
 const listSelect   = document.getElementById('list-select');
+const scanSelect   = document.getElementById('scan-select');
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -65,11 +66,17 @@ export async function initBrowse() {
   if (timeframes.includes('daily')) tfSelect.value = 'daily';
 
   // Populate conf select — confs is [{id, name}]
+  const noneOpt = document.createElement('option');
+  noneOpt.value = ''; noneOpt.textContent = '— none —';
+  confSelect.appendChild(noneOpt);
   for (const c of confs) {
     const opt = document.createElement('option');
     opt.value = c.id; opt.textContent = c.name;
     confSelect.appendChild(opt);
   }
+
+  // Populate scan select
+  await _loadScanRuns();
 
   _wireNav();
 
@@ -93,13 +100,15 @@ function _loadTicker(idx) {
   const tf     = tfSelect.value;
   const conf   = parseInt(confSelect.value) || 0;
 
+  const restoreDate = getCurrentBarInfo()?.date || null;
+
   tickerInput.value        = ticker;
   tickerCount.textContent  = `${tickerIdx + 1} / ${tickers.length}`;
   location.hash            = ticker;
   _updateNavTitles();
 
-  // Re-initialise replay for the new ticker
-  initReplay(ticker, tf, conf);
+  // Re-initialise replay, restoring the current date if possible
+  initReplay(ticker, tf, conf, restoreDate);
 }
 
 function _updateNavTitles() {
@@ -150,15 +159,56 @@ async function _selectList() {
   _loadTicker(newIdx >= 0 ? newIdx : 0);
 }
 
+// ── Scan runs ─────────────────────────────────────────────────
+
+async function _loadScanRuns() {
+  try {
+    const data = await api.get('/api/scan/runs');
+    const runs = data.runs || [];
+    scanSelect.innerHTML = '';
+    const none = document.createElement('option');
+    none.value = ''; none.textContent = '— none —';
+    scanSelect.appendChild(none);
+    for (const r of runs) {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `${r.config_name} · ${r.ran_at.slice(0, 10)} · ${r.matched}/${r.total}`;
+      opt.dataset.indConfId  = r.ind_conf_id || '';
+      opt.dataset.timeframes = JSON.stringify(r.timeframes || []);
+      scanSelect.appendChild(opt);
+    }
+  } catch {}
+}
+
+async function _applyScanRun() {
+  const runId = scanSelect.value;
+  if (!runId) { await _selectList(); return; }
+  try {
+    const data = await api.get(`/api/scan/runs/${runId}`);
+    tickers = data.tickers || [];
+    if (!tickers.length) return;
+
+    const opt = scanSelect.selectedOptions[0];
+    // Auto-set timeframe
+    const tfs = JSON.parse(opt.dataset.timeframes || '[]');
+    if (tfs.length && timeframes.includes(tfs[0])) tfSelect.value = tfs[0];
+    // Auto-set indicator conf
+    const confId = opt.dataset.indConfId;
+    if (confId) confSelect.value = confId;
+
+    _loadTicker(0);
+  } catch {}
+}
+
 // ── Nav wiring ────────────────────────────────────────────────
 
 function _wireNav() {
   document.getElementById('btn-prev-ticker').addEventListener('click', () => _loadTicker(tickerIdx - 1));
   document.getElementById('btn-next-ticker').addEventListener('click', () => _loadTicker(tickerIdx + 1));
-  listSelect.addEventListener('change', _selectList);
-
-  tfSelect.addEventListener('change',   () => _loadTicker(tickerIdx));
-  confSelect.addEventListener('change', () => _loadTicker(tickerIdx));
+  listSelect.addEventListener('change',  () => { _selectList();           listSelect.blur();  });
+  tfSelect.addEventListener('change',    () => { _loadTicker(tickerIdx);  tfSelect.blur();    });
+  confSelect.addEventListener('change',  () => { _loadTicker(tickerIdx);  confSelect.blur();  });
+  scanSelect.addEventListener('change',  () => { _applyScanRun();         scanSelect.blur();  });
 
   // Ticker search
   tickerInput.addEventListener('focus', () => { tickerInput.select(); _buildDropdown(''); });

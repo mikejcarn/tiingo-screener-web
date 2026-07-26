@@ -148,8 +148,12 @@ button:hover { background: var(--c-hover); }
   color: var(--t6);
   user-select: none;
 }
+.nav-label-scan {
+  color: rgba(var(--teal-rgb), 0.85);
+  cursor: help;
+}
 
-#tf-select, #conf-select {
+#tf-select, #conf-select, #scan-select {
   background: var(--c-ctrl); color: var(--t7); border: 1px solid var(--b5);
   padding: 4px 8px; border-radius: 3px; font-size: 13px; cursor: pointer;
 }
@@ -1832,6 +1836,11 @@ body.scan-page {
 .scan-history-table td { padding: 4px 12px; color: var(--t4); border-bottom: 1px solid var(--c-card); }
 .scan-history-table td:first-child { color: var(--t7); }
 .scan-history-table tbody tr:hover td { background: var(--c-surface); }
+.scan-history-del {
+  background: none; border: none; cursor: pointer;
+  color: var(--t2); font-size: 11px; padding: 1px 4px; border-radius: 3px;
+}
+.scan-history-del:hover { color: #e05; background: rgba(220,0,50,0.08); }
 
 /* Selectors row */
 .scan-selectors {

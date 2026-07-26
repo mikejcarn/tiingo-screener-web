@@ -559,17 +559,30 @@ async function _loadHistory() {
   const tbody = document.getElementById('scan-history-body');
   const rows  = data.history || [];
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="stats-empty">No history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">No history yet.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r =>
-    `<tr>
+  tbody.innerHTML = '';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
       <td>${r.config_name}</td>
       <td>${r.matched}</td>
       <td>${r.total}</td>
       <td>${r.ran_at}</td>
-    </tr>`
-  ).join('');
+      <td></td>`;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'scan-history-del';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Delete this run and its results';
+    delBtn.addEventListener('click', async () => {
+      if (!confirm(`Delete run "${r.config_name} · ${r.ran_at}"?`)) return;
+      await api.del(`/api/scan/runs/${r.id}`);
+      _loadHistory();
+    });
+    tr.querySelector('td:last-child').appendChild(delBtn);
+    tbody.appendChild(tr);
+  }
 }
 
 function _openTicker(ticker) {
@@ -620,10 +633,11 @@ function _wireGlobal() {
     if (e.key === '`') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === '~') { e.preventDefault(); window.location.href = '/indicators'; return; }
 
+    if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveScan(); return; }
+
     if (inInput) return;
 
     if (e.key === 'N' && !ctrl) { e.preventDefault(); document.getElementById('btn-new-scan').click(); }
-    if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveScan(); }
     if (e.key === 'D' && !ctrl) { e.preventDefault(); document.getElementById('btn-delete-scan').click(); }
     if (e.key === 'R' && !ctrl) { e.preventDefault(); _runScan(); }
     if (e.key === 'T' && !ctrl) { e.preventDefault(); window.location.href = '/fetch'; }
