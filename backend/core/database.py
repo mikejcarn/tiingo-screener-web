@@ -360,14 +360,24 @@ def log_indicator_run(config_id: int, config_name: str, timeframes: list,
 def get_indicator_history(limit: int = 30) -> list:
     with _conn() as con:
         rows = con.execute(
-            "SELECT config_id, config_name, timeframes, tickers, errors, status, ran_at FROM ind_log ORDER BY ran_at DESC LIMIT ?",
+            "SELECT id, config_id, config_name, timeframes, tickers, errors, status, ran_at FROM ind_log ORDER BY ran_at DESC LIMIT ?",
             (limit,)
         ).fetchall()
     return [
-        {'config_id': r[0], 'config_name': r[1], 'timeframes': json.loads(r[2]),
-         'tickers': r[3], 'errors': r[4], 'status': r[5], 'ran_at': r[6][:10]}
+        {'id': r[0], 'config_id': r[1], 'config_name': r[2], 'timeframes': json.loads(r[3]),
+         'tickers': r[4], 'errors': r[5], 'status': r[6], 'ran_at': r[7][:10]}
         for r in rows
     ]
+
+
+def delete_indicator_run(run_id: int) -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM ind_log WHERE id = ?", (run_id,))
+
+
+def clear_indicator_history() -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM ind_log")
 
 
 def log_scan_run(config_id: int, config_name: str, matched: int, total: int,

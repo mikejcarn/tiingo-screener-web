@@ -309,12 +309,15 @@ function _buildCard(crit, idx) {
     _markDirty();
   });
 
-  // ── Head click: expand/collapse ───────────────────────────
+  // ── Head click: toggle select + open together ─────────────
   head.addEventListener('click', e => {
     if (cbxWrap.contains(e.target)) return;
+    if (logicSwitch.contains(e.target)) return;
     _setCritFocus(idx);
-    body.classList.toggle('collapsed');
-    arrow.textContent = body.classList.contains('collapsed') ? '▸' : '▾';
+    cbx.checked = !cbx.checked;
+    cbx.dispatchEvent(new Event('change'));
+    body.classList.toggle('collapsed', !cbx.checked);
+    arrow.textContent = cbx.checked ? '▾' : '▸';
   });
 
   // ── Collect for save ──────────────────────────────────────

@@ -1841,6 +1841,12 @@ body.scan-page {
   color: var(--t2); font-size: 11px; padding: 1px 4px; border-radius: 3px;
 }
 .scan-history-del:hover { color: #e05; background: rgba(220,0,50,0.08); }
+.ind-clear-hist-btn {
+  background: none; border: 1px solid var(--b3); cursor: pointer;
+  color: var(--t3); font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  margin-left: auto;
+}
+.ind-clear-hist-btn:hover { color: #e05; border-color: rgba(220,0,50,0.4); background: rgba(220,0,50,0.06); }
 
 /* Selectors row */
 .scan-selectors {

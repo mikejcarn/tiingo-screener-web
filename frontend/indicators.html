@@ -30,7 +30,7 @@
     <div class="ind-sidebar-head">
       <span>Configs</span>
       <div class="dash-section-actions">
-        <button id="btn-new-config" class="dash-btn-sm dash-btn-sm-add" title="Create new config (N)">+ New</button>
+        <button id="btn-new-config" class="dash-btn-sm dash-btn-sm-launch" title="Create new config (N)">+ New</button>
       </div>
     </div>
     <div id="config-list">
@@ -84,7 +84,7 @@
       <div class="ind-run-head">
         <span>Run</span>
         <div class="dash-section-actions">
-          <button id="btn-compute" class="dash-btn-sm dash-btn-sm-launch" title="Run indicator computation for queued configs (R)">Run</button>
+          <button id="btn-compute" class="dash-btn-sm dash-btn-sm-launch" title="Run indicator computation for queued configs (R)">&#9654; Run</button>
           <button id="btn-compute-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running computation">Cancel</button>
         </div>
       </div>
@@ -149,7 +149,7 @@
 
     <!-- History card -->
     <div class="ind-history">
-      <div class="ind-run-head">Run History</div>
+      <div class="ind-run-head">Run History <button id="btn-clear-history" class="ind-clear-hist-btn" title="Clear all run history">Clear All</button></div>
       <div class="ind-history-wrap">
         <table class="ind-history-table">
           <thead>
@@ -159,10 +159,11 @@
               <th>Tickers</th>
               <th>Errors</th>
               <th>Date</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="ind-history-body">
-            <tr><td colspan="5" class="stats-empty">No history yet.</td></tr>
+            <tr><td colspan="6" class="stats-empty">No history yet.</td></tr>
           </tbody>
         </table>
       </div>

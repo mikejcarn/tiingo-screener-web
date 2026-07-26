@@ -36,6 +36,18 @@ def indicator_history():
     return {"history": db.get_indicator_history()}
 
 
+@router.delete("/indicators/history/{run_id}")
+def delete_indicator_run(run_id: int):
+    db.delete_indicator_run(run_id)
+    return {"ok": True}
+
+
+@router.delete("/indicators/history")
+def clear_indicator_history():
+    db.clear_indicator_history()
+    return {"ok": True}
+
+
 @router.get("/indicators/tickers-list")
 def indicator_tickers_list(config_id: int, timeframe: str = 'daily'):
     """Return sorted list of tickers that have indicator data for a config+timeframe."""

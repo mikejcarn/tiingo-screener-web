@@ -505,6 +505,7 @@ function _wireStaticButtons() {
     if (e.key === 'Enter') { e.preventDefault(); _saveConfig(); e.target.blur(); }
   });
   document.getElementById('btn-clear-results').addEventListener('click', _clearResults);
+  document.getElementById('btn-clear-history').addEventListener('click', _clearHistory);
   document.getElementById('btn-delete-config').addEventListener('click', _deleteConfig);
   document.getElementById('btn-save').addEventListener('click', _saveConfig);
   document.getElementById('btn-compute').addEventListener('click', _startCompute);
@@ -632,7 +633,13 @@ function _wireListEvents() {
   const list = document.getElementById('ind-list');
 
   list.addEventListener('change', e => {
-    if (e.target.classList.contains('ind-toggle')) { _onToggle(e.target); e.target.blur(); return; }
+    if (e.target.classList.contains('ind-toggle')) {
+      e.target.closest('.ind-card').classList.toggle('enabled', e.target.checked);
+      _updateTabCounts();
+      _dirty = true;
+      e.target.blur();
+      return;
+    }
 
     // Nullable-number toggle: enable/disable the number input
     if (e.target.classList.contains('param-nullable-toggle')) {
@@ -676,13 +683,12 @@ function _wireListEvents() {
   list.addEventListener('input', () => { _dirty = true; });
 
   list.addEventListener('click', e => {
-    // Header click: enable if not yet enabled; collapse/expand if already enabled
     const head = e.target.closest('.ind-card-head');
     if (head && !e.target.closest('.ind-toggle-wrap')) {
       const card     = head.closest('.ind-card');
       const checkbox = card.querySelector('.ind-toggle');
       if (checkbox) {
-        checkbox.checked = !card.classList.contains('enabled');
+        checkbox.checked = !checkbox.checked;
         _onToggle(checkbox);
         _dirty = true;
       }
@@ -815,6 +821,20 @@ async function _clearResults() {
   const name = _configData?.name || 'this config';
   if (!confirm(`Clear all computed results for "${name}"? The config will be kept.`)) return;
   await api.del(`/api/data/indicators/${_selectedId}`);
+  _dbColumnsData = null;
+  // Auto-advance DB card to another config, or go neutral if none exist
+  const others = _configList.filter(c => c.id !== _selectedId);
+  if (others.length) {
+    await _loadDbSection(others[0].id);
+  } else {
+    _dbConfId = null;
+    _dbSectionConfigId = null;
+    document.getElementById('db-conf-label').textContent = '—';
+    document.getElementById('db-tf-display').textContent = '—';
+    document.getElementById('comp-db-stats').innerHTML   = '';
+    document.getElementById('comp-db-table').innerHTML   = '';
+    document.getElementById('comp-db-ticker').value      = '';
+  }
 }
 
 async function _deleteConfig() {
@@ -1242,6 +1262,7 @@ async function _loadDbSection(configId) {
   document.getElementById('comp-db-ticker').value = '';
   document.getElementById('comp-db-stats').innerHTML = '';
   document.getElementById('comp-db-table').innerHTML = '';
+  document.getElementById('db-tf-display').textContent = '—';
 
   let data;
   try {
@@ -1339,23 +1360,36 @@ async function _loadHistory() {
   try {
     data = await api.get('/api/indicators/history');
   } catch {
-    tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">Failed to load.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">Failed to load.</td></tr>';
     return;
   }
   const rows = data.history || [];
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="stats-empty">No history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No history yet.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r => `
-    <tr>
+  tbody.innerHTML = '';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
       <td>${_esc(r.config_name)}</td>
       <td>${r.timeframes.join(', ')}</td>
       <td>${r.tickers}</td>
       <td class="${r.errors > 0 ? 'ind-hist-err' : ''}">${r.errors}</td>
       <td>${_esc(r.ran_at)}</td>
-    </tr>
-  `).join('');
+      <td><button class="scan-history-del" title="Delete this run">✕</button></td>
+    `;
+    tr.querySelector('.scan-history-del').addEventListener('click', async () => {
+      try { await api.del(`/api/indicators/history/${r.id}`); } catch {}
+      await _loadHistory();
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+async function _clearHistory() {
+  try { await api.del('/api/indicators/history'); } catch {}
+  await _loadHistory();
 }
 
 
