@@ -15,6 +15,58 @@ router = APIRouter(prefix="/api")
 
 _CRITERIA_DIR = Path(__file__).parent.parent / "scanners" / "criteria"
 
+_CRITERIA_DESCRIPTIONS = {
+    'aVWAP_avg':             "Tests whether the most recent close is within, above, or below the composite aVWAP average (peaks + valleys, or either alone) by a specified percentage. Useful for identifying price proximity to a dynamic volume-weighted mean.",
+    'aVWAP_avg_multi':       "Tests whether multiple aVWAP average lines satisfy a structural condition — stacked bullishly/bearishly or crossing over. Requires a minimum percentage separation between lines to confirm stacking. Useful for identifying momentum alignment across multiple anchored VWAP timeframes.",
+    'aVWAP_channel':         "Tests whether price is near the upper (resistance) or lower (support) boundary of the aVWAP channel — the spread between the peaks aVWAP and valleys aVWAP lines. Identifies price at key dynamic S/R levels defined by volume-weighted price from swing anchors.",
+    'banker_RSI':            "Tests whether the Banker RSI value falls within a specified range on the most recent bar. The Banker RSI measures divergence between slow and fast RSI to proxy institutional activity. High positive values suggest accumulation; high negative values suggest distribution.",
+    'BoS_CHoCH':             "Tests whether the most recent structural price event within the lookback window is a Break of Structure (trend continuation — price clears a prior swing) or Change of Character (potential reversal — price breaks the opposite swing), filtered by direction.",
+    'divergences':           "Tests for divergence between price and one or more momentum oscillators on the most recent swing. Bullish divergence (price lower low, oscillator higher low) suggests upside potential; bearish divergence (price higher high, oscillator lower high) suggests downside. Supports OBV, Volume, Vortex, Fisher, and others.",
+    'liquidity':             "Tests whether price is currently within a specified percentage of a significant swing high or low where retail stop-loss orders are likely clustered. These liquidity pools are common targets for stop-hunting moves before a reversal.",
+    'OB':                    "Tests whether the most recent close is near or within an active order block — the last candle before a strong impulsive move in the opposite direction. Order blocks represent likely institutional entry zones and act as dynamic support (bullish) or resistance (bearish).",
+    'OB_aVWAP':              "Tests whether price is near the aVWAP anchored at an order block. Combines order block location (institutional zone) with volume-weighted price from that anchor to identify high-probability confluence levels.",
+    'oscillation_volatility':"Tests the oscillation behavior of price against its aVWAP average — how frequently and how far price crosses the mean. Set min/max thresholds on crossing count, average deviation, and composite score to isolate trending (low oscillation) or choppy (high oscillation) conditions.",
+    'QQEMOD':                "Tests for overbought/oversold readings or reversal signals from the QQE Mod indicator, which uses ATR-adaptive bands on a double-smoothed RSI for significantly less noise than raw RSI. Reversal modes require a minimum number of consecutive qualifying bars and optionally a price confirmation.",
+    'QQEMOD_aVWAP':          "Tests whether price has pulled back to a VWAP anchored at a recent QQE Mod momentum signal — a potential trend continuation entry at a volume-weighted level coinciding with a prior institutional momentum shift.",
+    'SMA':                   "Tests the relationship between price and one or more Simple Moving Averages — whether price is above, below, within a distance band, or whether the SMAs themselves are stacked in a bullish or bearish order. Periods must match those configured in the linked indicator config.",
+    'StDev':                 "Tests whether the most recent close is beyond a specified number of standard deviations from the dynamic mean (Z-Score band). Oversold selects tickers extended below the lower band; Overbought selects those extended above the upper band. Useful for mean-reversion setups.",
+    'supertrend':            "Tests whether the Supertrend indicator is currently in a bullish (support below price) or bearish (resistance above price) state. The Supertrend uses ATR-based trailing bands and produces a definitive flip signal on trend change.",
+    'TTM_squeeze':           "Tests for TTM Squeeze activity — active compression (Bollinger Bands inside Keltner Channels, signalling a potential breakout building) or a breakout (squeeze just fired). Filter by how long the squeeze has been active using min/max bar counts.",
+}
+
+_CRITERIA_PARAM_DESCRIPTIONS = {
+    'mode':                  "The specific condition or direction to match.",
+    'condition':             "The structural relationship to test across the set of aVWAP lines.",
+    'direction':             "Whether price must be within, above, or below the target level.",
+    'lookback_bars':         "Number of recent bars to search when looking for the most recent matching event. Shorter windows find very recent events; longer windows catch events that may still be relevant.",
+    'distance_pct':          "Maximum allowed distance from the target level as a percentage of price. Smaller values require price to be closer; set to 0 for exact matches.",
+    'outside_range':         "When enabled, inverts the distance check — matches when price is outside the range rather than inside it.",
+    'threshold_pct':         "Minimum percentage separation between lines required to confirm stacking. Prevents false positives from nearly-equal lines.",
+    'confirmation_bars':     "Number of consecutive bars the condition must hold before it qualifies as confirmed.",
+    'threshold_lower':       "Minimum indicator value the most recent bar must reach to match.",
+    'threshold_upper':       "Maximum indicator value the most recent bar must reach to match.",
+    'threshold':             "Standard deviation threshold defining the band boundary. Price must be beyond this level (above for overbought, below for oversold) to match.",
+    'divergence_types':      "Oscillator types to check for divergence. Only types with matching columns in the indicator data will be evaluated.",
+    'max_bars_back':         "Maximum number of bars back to search for a divergence pivot high or low.",
+    'require_confirmation':  "When enabled, requires a price-action confirmation signal before counting the divergence as valid.",
+    'atr_threshold':         "ATR-based tolerance for how close price must be to the order block zone. Set to 0 to require price to be strictly within the zone.",
+    'max_lookback':          "Maximum age in bars for order blocks to consider. Set to 0 to include all blocks regardless of age.",
+    'require_in_range':      "Requires price to also be within the raw order block price range, not just near the aVWAP.",
+    'cross_count':           "Minimum number of aVWAP average crossings in the lookback window. Set to 0 to apply no minimum.",
+    'cross_count_max':       "Maximum crossings allowed. Set to 0 for no upper limit.",
+    'avg_deviation':         "Minimum average deviation magnitude at each crossing (normalized by rolling standard deviation). Set to 0 for no minimum.",
+    'avg_deviation_max':     "Maximum average deviation allowed. Set to 0 for no upper limit.",
+    'oscillation_score':     "Minimum composite oscillation score (crossing count × average deviation). Set to 0 for no minimum.",
+    'oscillation_score_max': "Maximum oscillation score allowed. Set to 0 for no upper limit.",
+    'max_lines':             "Maximum number of aVWAP lines to evaluate. Set to 0 to check all active lines.",
+    'min_lines':             "Minimum number of lines that must satisfy the pullback condition simultaneously.",
+    'extend_to_end':         "When enabled, only considers lines that extend all the way to the current bar.",
+    'min_consecutive':       "Minimum number of consecutive bars that must be in the QQE state to qualify as a signal.",
+    'min_squeeze_bars':      "Minimum number of consecutive squeeze bars (Bollinger Bands inside Keltner Channels) that must be present.",
+    'max_squeeze_bars':      "Maximum squeeze bar count. Set to 0 for no upper limit.",
+    'sma_periods':           "Periods of the SMAs to evaluate. Must match the periods present in the indicator config output columns.",
+}
+
 
 # ── Criteria registry ─────────────────────────────────────────
 
@@ -35,14 +87,20 @@ def list_criteria():
     for name in _list_criteria_names():
         try:
             mod = _load_criteria_module(name)
+            schema = getattr(mod, "param_schema", {})
+            schema_with_desc = {
+                k: {**v, "description": _CRITERIA_PARAM_DESCRIPTIONS.get(k, "")}
+                for k, v in schema.items()
+            }
             items.append({
                 "name":         name,
                 "display_name": getattr(mod, "display_name", name),
-                "param_schema": getattr(mod, "param_schema", {}),
+                "description":  _CRITERIA_DESCRIPTIONS.get(name, ""),
+                "param_schema": schema_with_desc,
             })
         except Exception:
             pass
-    return {"criteria": items}
+    return {"criteria": items, "param_descriptions": _CRITERIA_PARAM_DESCRIPTIONS}
 
 
 @router.get("/criteria/check/{ind_conf_id}")

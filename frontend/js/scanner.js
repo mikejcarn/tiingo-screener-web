@@ -18,6 +18,8 @@ let _enabled      = {};
 let _params       = {};
 let _critLogic    = {};
 let _compatibility = {};   // { criteria_name: true | false | null }
+let _criteriaDescriptions     = {};  // { name: description }
+let _criteriaParamDescriptions = {}; // { param_key: description }
 let _focusedIdx   = -1;
 
 // ── Run queue ─────────────────────────────────────────────────
@@ -51,8 +53,11 @@ function _loadRunQueue() {
   _confs      = tickerData.ind_confs  || [];
   _timeframes = tickerData.timeframes || [];
   _criteria   = criteriaData.criteria || [];
+  _criteriaParamDescriptions = criteriaData.param_descriptions || {};
+  for (const c of _criteria) _criteriaDescriptions[c.name] = c.description || '';
   _activeTf   = _timeframes[0] || 'daily';
   _populateIndConfs();
+  _wireScanTooltip();
   _wireGlobal();
   await Promise.all([_loadConfigs(), _loadHistory()]);
 })();
@@ -65,6 +70,33 @@ function _populateIndConfs() {
     o.value = c.id; o.textContent = c.name;
     sel.appendChild(o);
   }
+}
+
+// ── Criteria tooltip ──────────────────────────────────────────
+function _wireScanTooltip() {
+  const tip  = document.getElementById('scan-tooltip');
+  const list = document.getElementById('scan-criteria-list');
+  if (!tip || !list) return;
+
+  list.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-has-tip]');
+    if (!el) { tip.style.display = 'none'; return; }
+    const desc = _criteriaDescriptions[el.dataset.critName];
+    if (!desc) return;
+    tip.textContent = desc;
+    tip.style.display = 'block';
+  });
+
+  list.addEventListener('mousemove', e => {
+    if (tip.style.display === 'none') return;
+    const x = e.clientX + 14, y = e.clientY + 14;
+    tip.style.left = (x + tip.offsetWidth  > window.innerWidth  ? e.clientX - tip.offsetWidth  - 8 : x) + 'px';
+    tip.style.top  = (y + tip.offsetHeight > window.innerHeight ? e.clientY - tip.offsetHeight - 8 : y) + 'px';
+  });
+
+  list.addEventListener('mouseout', e => {
+    if (!e.relatedTarget?.closest?.('[data-has-tip]')) tip.style.display = 'none';
+  });
 }
 
 // ── Timeframe tabs ────────────────────────────────────────────
@@ -265,6 +297,10 @@ function _buildCard(crit, idx) {
   const nameSpan = document.createElement('span');
   nameSpan.className = 'ind-name';
   nameSpan.textContent = crit.display_name || crit.name;
+  if (_criteriaDescriptions[crit.name]) {
+    nameSpan.dataset.hasTip  = '';
+    nameSpan.dataset.critName = crit.name;
+  }
 
   const compatBadge = document.createElement('span');
   compatBadge.className = 'scan-compat-badge';
@@ -400,6 +436,8 @@ function _renderParamFields(schema, params, container) {
     wrap.className = 'param-field';
     const lbl = document.createElement('span');
     lbl.className = 'param-key'; lbl.textContent = s.label || key;
+    const pdesc = s.description || _criteriaParamDescriptions[key];
+    if (pdesc) lbl.title = pdesc;
     wrap.appendChild(lbl);
 
     const val = params?.[key] ?? s.default;
