@@ -84,6 +84,21 @@ function _buildTfTabs() {
   hint.textContent = 'tabs reflect fetched timeframes';
   hint.title       = 'Fetch additional timeframes on the Tickers page to add more tabs here.';
   container.appendChild(hint);
+  _updateTfCounts();
+}
+
+function _updateTfCounts() {
+  for (const btn of document.querySelectorAll('#scan-tf-tabs .tf-tab')) {
+    const tf    = btn.dataset.tf;
+    const count = _enabled[tf]?.size || 0;
+    let badge   = btn.querySelector('.tf-count');
+    if (count > 0) {
+      if (!badge) { badge = document.createElement('span'); badge.className = 'tf-count'; btn.appendChild(badge); }
+      badge.textContent = count;
+    } else {
+      badge?.remove();
+    }
+  }
 }
 
 function _setActiveTf(tf) {
@@ -343,6 +358,7 @@ function _buildCard(crit, idx) {
     }
     const n = _tfCount();
     countBadge.textContent = n > 1 ? `×${n}` : '';
+    _updateTfCounts();
     _markDirty();
   });
 
