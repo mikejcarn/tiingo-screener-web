@@ -744,8 +744,8 @@ document.getElementById('btn-refresh-stats').addEventListener('click', () => {
   _wireHistoryTable();
 
   document.getElementById('btn-clear-all').addEventListener('click', async () => {
-    if (!confirm('Delete ALL ticker data from the database?')) return;
-    await api.del('/api/data/ohlcv');
+    if (!confirm('Delete ALL data from the database? This includes OHLCV, indicators, and fetch history.')) return;
+    await api.del('/api/data/all');
     _loadStats();
     _loadHistory();
   });

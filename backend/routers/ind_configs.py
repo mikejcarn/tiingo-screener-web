@@ -46,6 +46,8 @@ def create_config(body: CreateConfigBody):
 def delete_config(config_id: int):
     with db._conn() as con:
         con.execute("DELETE FROM ind_config_indicators WHERE config_id=?", (config_id,))
+        con.execute("DELETE FROM indicators WHERE ind_conf=?", (config_id,))
+        con.execute("DELETE FROM ind_log WHERE config_id=?", (config_id,))
         con.execute("DELETE FROM ind_configs WHERE id=?", (config_id,))
     return {"deleted": config_id}
 

@@ -523,7 +523,7 @@ function _renderRunConfigs() {
   const queued = _configs.filter(c => _runCheckedIds.has(c.id));
   const inRun  = _runQueueIdx >= 0;
   if (!queued.length) {
-    el.innerHTML = '<div class="run-queue-empty">No configs queued — click ▶ to add</div>';
+    el.innerHTML = '<div class="run-queue-empty">No scans queued — click ▶ to add</div>';
     return;
   }
   el.innerHTML = queued.map((c, i) => {

@@ -171,6 +171,13 @@ def save_scan_config(config_id: int, body: SaveScanBody):
 def delete_scan_config(config_id: int):
     with db._conn() as con:
         con.execute("DELETE FROM scan_criteria WHERE config_id=?", (config_id,))
+        run_ids = [r[0] for r in con.execute(
+            "SELECT id FROM scan_log WHERE config_id=?", (config_id,)
+        ).fetchall()]
+        if run_ids:
+            placeholders = ','.join('?' * len(run_ids))
+            con.execute(f"DELETE FROM scan_results WHERE run_id IN ({placeholders})", run_ids)
+        con.execute("DELETE FROM scan_log WHERE config_id=?", (config_id,))
         con.execute("DELETE FROM scan_configs WHERE id=?", (config_id,))
     return {"deleted": config_id}
 
