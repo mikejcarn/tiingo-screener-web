@@ -49,11 +49,16 @@
     <div id="scan-editor" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
 
       <!-- Name + actions -->
-      <div class="ind-editor-top">
-        <span class="ind-editor-label">Config Name</span>
+      <div class="ind-run-head">
+        <span>Scanner Configuration</span>
+        <div class="ind-db-head-actions">
+          <button id="btn-save-scan" class="dash-btn-sm ind-btn-save" title="Save (Ctrl+S)">Save</button>
+          <button id="btn-delete-scan" class="dash-btn-sm dash-btn-sm-del" title="Delete (D)">Delete</button>
+        </div>
+      </div>
+      <div class="ind-name-row">
+        <span class="ind-name-label">Config Name</span>
         <input type="text" id="scan-name" class="config-name-input" placeholder="Scan name">
-        <button id="btn-save-scan" class="ind-btn-save" title="Save (Ctrl+S)">Save</button>
-        <button id="btn-delete-scan" class="btn-destructive" title="Delete (D)">Delete</button>
       </div>
 
       <div id="scan-conf-dates" class="conf-dates"></div>

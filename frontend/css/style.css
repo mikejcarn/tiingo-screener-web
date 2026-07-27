@@ -97,6 +97,47 @@ html.light {
   --chart-border: #aca398;
 }
 
+/* ── Light mode: destructive / delete button overrides ──────── */
+html.light .dash-btn-sm-del,
+html.light .dash-section-actions button.dash-btn-sm-del,
+html.light .ind-db-head-actions button.dash-btn-sm-del {
+  color: rgba(var(--red-rgb), 0.75);
+  border-color: rgba(var(--red-rgb), 0.35);
+}
+html.light .dash-btn-sm-del:hover,
+html.light .dash-section-actions button.dash-btn-sm-del:hover,
+html.light .ind-db-head-actions button.dash-btn-sm-del:hover {
+  color: rgba(var(--red-rgb), 1);
+  border-color: rgba(var(--red-rgb), 0.6);
+}
+html.light .btn-destructive {
+  color: rgba(var(--red-rgb), 0.8);
+  border-color: rgba(var(--red-rgb), 0.35);
+}
+html.light .btn-destructive:hover {
+  color: rgba(var(--red-rgb), 1);
+  border-color: rgba(var(--red-rgb), 0.6);
+}
+html.light .dash-btn-cancel {
+  color: rgba(var(--red-rgb), 0.8);
+  border-color: rgba(var(--red-rgb), 0.35);
+}
+html.light .dash-btn-cancel:hover {
+  color: rgba(var(--red-rgb), 1);
+  border-color: rgba(var(--red-rgb), 0.55);
+}
+html.light .scan-history-del,
+html.light .tbl-del-btn,
+html.light .run-queue-remove {
+  color: rgba(var(--red-rgb), 0.55);
+}
+html.light .scan-history-del:hover,
+html.light .tbl-del-btn:hover,
+html.light .run-queue-remove:hover {
+  color: rgba(var(--red-rgb), 0.9);
+  background: rgba(var(--red-rgb), 0.08);
+}
+
 /* ── Reset ────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -415,7 +456,7 @@ body.dash {
   color: var(--t6);
   font-size: 11px;
   cursor: pointer;
-  padding: 3px 8px;
+  padding: 3px 9px;
   border-radius: 3px;
   line-height: 1;
 }
@@ -783,6 +824,13 @@ body.dash {
 }
 .dash-btn-sm:hover { color: var(--t10); border-color: var(--t4); }
 .dash-btn-sm:disabled { opacity: 0.35; cursor: not-allowed; }
+#btn-apikey-add.key-set-check:disabled,
+#btn-apikey-add.key-set-check:disabled:hover {
+  cursor: default;
+  color: rgba(var(--teal-rgb), 1);
+  border-color: rgba(var(--teal-rgb), 0.5);
+  background: rgba(var(--teal-rgb), 0.1);
+}
 .dash-btn-sm-del { color: rgba(var(--red-rgb),0.5); border-color: rgba(var(--red-rgb),0.15); }
 .dash-btn-sm-del:hover { color: rgba(var(--red-rgb),0.9); border-color: rgba(var(--red-rgb),0.4); background: var(--c-ctrl); }
 .dash-btn-sm-add { color: rgba(var(--teal-rgb),0.9); border-color: rgba(var(--teal-rgb),0.4); }
@@ -1079,6 +1127,19 @@ body.ind-page {
   line-height: 1.7;
 }
 
+.ind-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  flex-shrink: 0;
+}
+.ind-name-label {
+  font-size: 11px;
+  color: var(--t3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .ind-editor-top {
   display: flex;
   align-items: center;
@@ -1681,15 +1742,17 @@ body.ind-page {
 
 /* ── Editor top bar with save ────────────────────────────── */
 .ind-btn-save {
-  background: rgba(var(--teal-rgb),0.08);
-  border-color: rgba(var(--teal-rgb),0.28);
-  color: rgba(var(--teal-rgb),0.9);
+  background: rgba(var(--teal-rgb),0.1);
+  border-color: rgba(var(--teal-rgb),0.5);
+  color: rgba(var(--teal-rgb),1);
+  font-weight: 600;
   padding: 5px 18px;
   font-size: 13px;
 }
+.ind-db-head-actions button.ind-btn-save { padding: 3px 9px; font-size: 11px; line-height: 1; }
 .ind-btn-save:hover {
-  background: rgba(var(--teal-rgb),0.18);
-  border-color: rgba(var(--teal-rgb),0.5);
+  background: rgba(var(--teal-rgb),0.2);
+  border-color: rgba(var(--teal-rgb),0.8);
   color: rgba(var(--teal-rgb),1);
 }
 .ind-btn-save-ok {

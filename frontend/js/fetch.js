@@ -390,7 +390,12 @@ function _setApiKeyEditMode(on) {
   document.getElementById('apikey-input').style.display      = on ? '' : 'none';
   document.getElementById('btn-apikey-save').style.display   = on ? '' : 'none';
   document.getElementById('btn-apikey-cancel').style.display = on ? '' : 'none';
-  document.getElementById('btn-apikey-add').disabled    = on || _hasApiKey;
+  const addBtn = document.getElementById('btn-apikey-add');
+  const isKeySet = !on && _hasApiKey;
+  addBtn.disabled = on || _hasApiKey;
+  addBtn.textContent = isKeySet ? '+ Add Key ✓' : '+ Add Key';
+  addBtn.title = isKeySet ? 'API key is already set — delete it to add a new one' : 'Add your Tiingo API key';
+  addBtn.classList.toggle('key-set-check', isKeySet);
   document.getElementById('btn-apikey-edit').disabled   = on || !_hasApiKey;
   document.getElementById('btn-apikey-verify').disabled = on || !_hasApiKey;
   document.getElementById('btn-apikey-delete').disabled = on || !_hasApiKey;
