@@ -98,10 +98,19 @@
       </div>
       <div class="scan-run-body">
         <div id="scan-run-conf-list" class="run-queue-list"></div>
-        <div class="ind-overall-section">
+        <div class="ind-overall-section" id="scan-overall" style="display:none;">
           <div class="ind-overall-header">
             <span class="ind-overall-label">total run</span>
-            <span id="scan-run-total" class="run-queue-status" style="display:none;"></span>
+            <span id="scan-run-total" class="run-queue-status"></span>
+          </div>
+          <div class="dash-progress">
+            <div id="scan-track" class="progress-track"><div id="scan-bar" class="progress-fill"></div></div>
+            <div id="scan-meta" class="progress-meta">
+              <span id="scan-count"   class="dash-count-text"></span>
+              <span id="scan-pct"     class="dash-pct"></span>
+              <span id="scan-current" class="dash-current"></span>
+              <span id="scan-errors"  class="dash-errors"></span>
+            </div>
           </div>
         </div>
       </div>

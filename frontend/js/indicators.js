@@ -67,7 +67,7 @@ function _loadRunQueue() {
 // ── Bootstrap ──────────────────────────────────────────────────
 
 async function init() {
-  _wireDbNav();
+  _wireDbSummary();
   _wireTooltip();
   await Promise.all([_loadConfigList(), _loadDefaults()]);
   _loadRunQueue();   // restore queued confs before first render
@@ -76,6 +76,7 @@ async function init() {
     await _selectConfig(_configList[0].id, { toggleQueue: false });
   } else {
     _showEmpty(true);
+    _loadDbSummary();
   }
   const status = await api.get('/api/jobs/status');
   if (status.indicators.status === 'running') {
@@ -124,7 +125,7 @@ async function _selectConfig(id, { toggleQueue = true } = {}) {
   _showEmpty(false);
   _renderEditor();
   _renderRunConfigs();
-  _loadDbSection(id);
+  _loadDbSummary();
   _loadHistory();
 }
 
@@ -168,7 +169,6 @@ function _renderConfigList() {
       if (!e.target.closest('.ind-queue-btn')) _selectConfig(+item.dataset.id);
     });
   }
-  _updateDbConfDisplay();  // keep DB header label current after any list refresh
   for (const btn of el.querySelectorAll('.ind-queue-btn')) {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -506,7 +506,7 @@ function _wireStaticButtons() {
   });
   document.getElementById('btn-clear-results').addEventListener('click', _clearResults);
   document.getElementById('btn-db-clear-results').addEventListener('click', _dbClearResults);
-  document.getElementById('btn-db-refresh').addEventListener('click', () => { if (_dbConfId) _loadDbSection(_dbConfId); });
+  document.getElementById('btn-db-refresh').addEventListener('click', _loadDbSummary);
   document.getElementById('btn-history-refresh').addEventListener('click', _loadHistory);
   document.getElementById('btn-clear-history').addEventListener('click', _clearHistory);
   document.getElementById('btn-delete-config').addEventListener('click', _deleteConfig);
@@ -833,41 +833,15 @@ async function _clearResults() {
   const name = _configData?.name || 'this config';
   if (!confirm(`Clear all computed results for "${name}"? The config will be kept.`)) return;
   await api.del(`/api/data/indicators/${_selectedId}`);
-  _dbColumnsData = null;
-  // Auto-advance DB card to another config, or go neutral if none exist
-  const others = _configList.filter(c => c.id !== _selectedId);
-  if (others.length) {
-    await _loadDbSection(others[0].id);
-  } else {
-    _dbConfId = null;
-    _dbSectionConfigId = null;
-    document.getElementById('db-conf-label').textContent = '—';
-    document.getElementById('db-tf-display').textContent = '—';
-    document.getElementById('comp-db-stats').innerHTML   = '';
-    document.getElementById('comp-db-table').innerHTML   = '';
-    document.getElementById('comp-db-ticker').value      = '';
-  }
+  _closeDbDetail();
+  await _loadDbSummary();
 }
 
 async function _dbClearResults() {
-  if (!_dbConfId) return;
-  const conf = _configList.find(c => c.id === _dbConfId);
-  const name = conf?.name || 'this config';
-  if (!confirm(`Clear all computed results for "${name}"? The config will be kept.`)) return;
-  await api.del(`/api/data/indicators/${_dbConfId}`);
-  _dbColumnsData = null;
-  const others = _configList.filter(c => c.id !== _dbConfId);
-  if (others.length) {
-    await _loadDbSection(others[0].id);
-  } else {
-    _dbConfId = null;
-    _dbSectionConfigId = null;
-    document.getElementById('db-conf-label').textContent = '—';
-    document.getElementById('db-tf-display').textContent = '—';
-    document.getElementById('comp-db-stats').innerHTML   = '';
-    document.getElementById('comp-db-table').innerHTML   = '';
-    document.getElementById('comp-db-ticker').value      = '';
-  }
+  if (!confirm('Clear ALL computed indicator results from the database? Configs will be kept.')) return;
+  await api.del('/api/data/indicators');
+  _closeDbDetail();
+  await _loadDbSummary();
 }
 
 async function _deleteConfig() {
@@ -1026,7 +1000,7 @@ async function _poll() {
         _runQueue    = [];
         _runQueueIdx = -1;
         _updateQueueStatus();
-        if (_selectedId) { _loadDbSection(_selectedId); _loadHistory(); }
+        _loadDbSummary(); _loadHistory();
       }
     } else if (state.status === 'cancelled' || state.status === 'error') {
       _runQueue    = [];
@@ -1037,6 +1011,7 @@ async function _poll() {
 }
 
 function _updateProgress(state) {
+  const progress  = document.getElementById('comp-overall');
   const track     = document.getElementById('comp-track');
   const bar       = document.getElementById('comp-bar');
   const meta      = document.getElementById('comp-meta');
@@ -1057,12 +1032,14 @@ function _updateProgress(state) {
   };
 
   if (state.status === 'idle') {
+    progress.style.display = 'none';
     _setActive(false);
     count.textContent = pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
     btn.textContent = '▶ Run';
     btnCancel.style.display = 'none';
   } else if (state.status === 'running') {
+    progress.style.display = '';
     _setActive(true);
     count.textContent    = `${state.done} / ${state.total || '?'}`;
     pctEl.textContent    = state.total ? `${Math.round(pct)}%` : '…';
@@ -1079,6 +1056,7 @@ function _updateProgress(state) {
       _updateRunQueueStatus();
     }
   } else if (state.status === 'done') {
+    progress.style.display = '';
     _setActive(false);
     count.textContent     = `${state.done} / ${state.total}`;
     pctEl.textContent     = '100%';
@@ -1099,6 +1077,7 @@ function _updateProgress(state) {
       _updateRunQueueStatus();
     }
   } else if (state.status === 'cancelled') {
+    progress.style.display = '';
     _setActive(false);
     count.textContent     = `${state.done} / ${state.total}`;
     pctEl.textContent     = `${Math.round(pct)}% — cancelled`;
@@ -1109,6 +1088,7 @@ function _updateProgress(state) {
     btnCancel.style.display = 'none';
     _renderFeed(state.log || []);
   } else if (state.status === 'error') {
+    progress.style.display = '';
     _setActive(false);
     count.textContent = 'failed';
     pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
@@ -1119,98 +1099,22 @@ function _updateProgress(state) {
 }
 
 // DB card state
-let _dbConfId          = null;   // config currently shown in DB card
+let _dbSummaryData     = [];
+let _dbGroupBy         = 'config';
+let _dbGroupSort       = { col: 'key', dir: 'asc' };
 let _dbSectionConfigId = null;
 let _dbActiveTf        = 'daily';
-let _dbAvailableTfs    = [];
-let _dbColumnsData     = null;   // cached /columns response
-let _dbPreviewTicker   = null;   // null = auto (most recently computed)
-let _dbTickers         = [];
-let _dbTickerIdx       = 0;
+let _dbPreviewTicker   = null;
 let _dbRowOffset       = 0;
 let _dbRowTotal        = 0;
 const _DB_LIMIT        = 8;
 
-// ── DB card nav ────────────────────────────────────────────────
+const _IND_DIM_COLS = ['config', 'ticker', 'timeframe'];
 
-function _updateDbConfDisplay() {
-  const conf  = _configList.find(c => c.id === _dbConfId);
-  const label = document.getElementById('db-conf-label');
-  if (label) label.textContent = conf?.name ?? '—';
-  const idx   = _configList.findIndex(c => c.id === _dbConfId);
-  const prev  = document.getElementById('db-conf-prev');
-  const next  = document.getElementById('db-conf-next');
-  if (prev) prev.disabled = idx <= 0;
-  if (next) next.disabled = idx < 0 || idx >= _configList.length - 1;
-}
+// ── DB card ────────────────────────────────────────────────────
 
-function _wireDbNav() {
-  let _tickerTimer = null;
-
-  document.getElementById('db-conf-prev').addEventListener('click', () => {
-    const idx = _configList.findIndex(c => c.id === _dbConfId);
-    if (idx <= 0) return;
-    _loadDbSection(_configList[idx - 1].id);
-  });
-  document.getElementById('db-conf-next').addEventListener('click', () => {
-    const idx = _configList.findIndex(c => c.id === _dbConfId);
-    if (idx < 0 || idx >= _configList.length - 1) return;
-    _loadDbSection(_configList[idx + 1].id);
-  });
-
-  document.getElementById('db-ticker-prev').addEventListener('click', () => {
-    if (!_dbTickers.length) return;
-    _dbTickerIdx = Math.max(0, _dbTickerIdx - 1);
-    _dbPreviewTicker = _dbTickers[_dbTickerIdx];
-    _dbRowOffset = 0;
-    document.getElementById('comp-db-ticker').value = _dbPreviewTicker;
-    _loadDbPreview();
-  });
-
-  document.getElementById('db-ticker-next').addEventListener('click', () => {
-    if (!_dbTickers.length) return;
-    _dbTickerIdx = Math.min(_dbTickers.length - 1, _dbTickerIdx + 1);
-    _dbPreviewTicker = _dbTickers[_dbTickerIdx];
-    _dbRowOffset = 0;
-    document.getElementById('comp-db-ticker').value = _dbPreviewTicker;
-    _loadDbPreview();
-  });
-
-  document.getElementById('comp-db-ticker').addEventListener('input', e => {
-    clearTimeout(_tickerTimer);
-    _tickerTimer = setTimeout(() => {
-      const val = e.target.value.trim().toUpperCase();
-      _dbPreviewTicker = val || null;
-      _dbRowOffset = 0;
-      if (val) {
-        const idx = _dbTickers.indexOf(val);
-        if (idx >= 0) _dbTickerIdx = idx;
-      }
-      _loadDbPreview();
-    }, 250);
-  });
-
-  document.getElementById('comp-db-ticker').addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.target.blur(); // global handler clears _dbPreviewTicker and reloads
-    }
-  });
-
-  document.getElementById('db-tf-prev').addEventListener('click', () => {
-    const idx = _dbAvailableTfs.indexOf(_dbActiveTf);
-    if (idx <= 0) return;
-    _dbActiveTf = _dbAvailableTfs[idx - 1];
-    _onDbTfChange();
-  });
-
-  document.getElementById('db-tf-next').addEventListener('click', () => {
-    const idx = _dbAvailableTfs.indexOf(_dbActiveTf);
-    if (idx >= _dbAvailableTfs.length - 1) return;
-    _dbActiveTf = _dbAvailableTfs[idx + 1];
-    _onDbTfChange();
-  });
-
+function _wireDbSummary() {
+  document.getElementById('btn-db-detail-back').addEventListener('click', _closeDbDetail);
   document.getElementById('db-rows-older').addEventListener('click', () => {
     _dbRowOffset = Math.min(_dbRowOffset + _DB_LIMIT, Math.max(0, _dbRowTotal - _DB_LIMIT));
     _loadDbPreview();
@@ -1222,38 +1126,136 @@ function _wireDbNav() {
   });
 }
 
-async function _onDbTfChange() {
-  _dbPreviewTicker = null;
-  _dbTickerIdx = 0;
-  _dbRowOffset = 0;
-  document.getElementById('comp-db-ticker').value = '';
-  document.getElementById('db-tf-display').textContent = _dbActiveTf;
-  _updateDbTfNav();
-  _updateDbStats();
-  await _loadDbTickers();
+async function _loadDbSummary() {
+  let data;
+  try { data = await api.get('/api/indicators/summary'); } catch { data = { rows: [] }; }
+  _dbSummaryData = data.rows || [];
+  _renderDbSummary();
+}
+
+function _renderDbSummary() {
+  const thead = document.getElementById('ind-db-summary-thead');
+  const tbody = document.getElementById('ind-db-summary-body');
+
+  if (!_dbSummaryData.length) {
+    thead.innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No indicator data yet.</td></tr>';
+    return;
+  }
+
+  const groups = {};
+  for (const row of _dbSummaryData) {
+    const key = _dbGroupBy === 'config' ? row.config_name :
+                _dbGroupBy === 'ticker' ? row.ticker : row.timeframe;
+    if (!groups[key]) {
+      groups[key] = { rows: 0, configs: new Set(), tickers: new Set(), timeframes: new Set(),
+                      firstDate: '', lastDate: '',
+                      configId: row.config_id, sampleTicker: row.ticker, sampleTf: row.timeframe };
+    }
+    const g = groups[key];
+    g.rows += row.rows;
+    g.configs.add(row.config_name);
+    g.tickers.add(row.ticker);
+    g.timeframes.add(row.timeframe);
+    if (!g.firstDate || (row.first_date && row.first_date < g.firstDate)) g.firstDate = row.first_date;
+    if (!g.lastDate  || (row.last_date  && row.last_date  > g.lastDate))  g.lastDate  = row.last_date;
+  }
+
+  let entries = Object.entries(groups);
+  const dir = _dbGroupSort.dir === 'asc' ? 1 : -1;
+  if (_dbGroupSort.col === 'key') {
+    entries.sort(([a], [b]) => dir * a.localeCompare(b));
+  } else if (_dbGroupSort.col === 'rows') {
+    entries.sort(([, a], [, b]) => dir * (a.rows - b.rows));
+  } else if (_dbGroupSort.col === 'first_date') {
+    entries.sort(([, a], [, b]) => dir * (a.firstDate || '').localeCompare(b.firstDate || ''));
+  } else if (_dbGroupSort.col === 'last_date') {
+    entries.sort(([, a], [, b]) => dir * (a.lastDate || '').localeCompare(b.lastDate || ''));
+  } else if (_dbGroupSort.col === 'config') {
+    entries.sort(([, a], [, b]) => dir * (a.configs.size - b.configs.size));
+  } else if (_dbGroupSort.col === 'ticker') {
+    entries.sort(([, a], [, b]) => dir * (a.tickers.size - b.tickers.size));
+  } else if (_dbGroupSort.col === 'timeframe') {
+    entries.sort(([, a], [, b]) => dir * (a.timeframes.size - b.timeframes.size));
+  }
+
+  const mkTh = (label, col) => {
+    const isDim   = _IND_DIM_COLS.includes(col);
+    const isGroup = isDim && col === _dbGroupBy;
+    const isSort  = _dbGroupSort.col === col || (_dbGroupSort.col === 'key' && isGroup);
+    const cls = ['stats-th-sort', (isGroup || isSort) ? 'stats-th-pivot' : ''].filter(Boolean).join(' ');
+    const arrow = isSort ? (_dbGroupSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
+    return `<th class="${cls}" data-col="${col}">${_esc(label)}${arrow}</th>`;
+  };
+
+  thead.innerHTML = `<tr>
+    ${mkTh('Config', 'config')}
+    ${mkTh('Ticker', 'ticker')}
+    ${mkTh('Timeframe', 'timeframe')}
+    ${mkTh('Rows', 'rows')}
+    ${mkTh('Start Date', 'first_date')}
+    ${mkTh('Last Date', 'last_date')}
+  </tr>`;
+
+  for (const th of thead.querySelectorAll('th[data-col]')) {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (_IND_DIM_COLS.includes(col)) {
+        if (col === _dbGroupBy) {
+          _dbGroupSort = { col: 'key', dir: _dbGroupSort.dir === 'asc' ? 'desc' : 'asc' };
+        } else {
+          _dbGroupBy   = col;
+          _dbGroupSort = { col: 'key', dir: 'asc' };
+        }
+      } else {
+        _dbGroupSort = { col, dir: _dbGroupSort.col === col && _dbGroupSort.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      _renderDbSummary();
+    });
+  }
+
+  tbody.innerHTML = '';
+  for (const [key, g] of entries) {
+    const tr = document.createElement('tr');
+    tr.className = 'ind-db-summary-row';
+    const configCell = _dbGroupBy === 'config'    ? `<td>${_esc(key)}</td>` : `<td>${g.configs.size}</td>`;
+    const tickerCell = _dbGroupBy === 'ticker'    ? `<td>${_esc(key)}</td>` : `<td>${g.tickers.size}</td>`;
+    const tfCell     = _dbGroupBy === 'timeframe' ? `<td>${_esc(key)}</td>` : `<td>${g.timeframes.size}</td>`;
+    tr.innerHTML = `${configCell}${tickerCell}${tfCell}
+      <td>${g.rows.toLocaleString()}</td>
+      <td>${g.firstDate || '—'}</td>
+      <td>${g.lastDate || '—'}</td>`;
+    tr.addEventListener('click', () => {
+      const row = _dbSummaryData.find(r =>
+        _dbGroupBy === 'config' ? r.config_name === key :
+        _dbGroupBy === 'ticker' ? r.ticker === key : r.timeframe === key
+      );
+      if (row) _openDbDetail(row.config_id, row.ticker, row.timeframe);
+    });
+    tbody.appendChild(tr);
+  }
+}
+
+function _openDbDetail(configId, ticker, timeframe) {
+  _dbSectionConfigId = configId;
+  _dbActiveTf        = timeframe;
+  _dbPreviewTicker   = ticker;
+  _dbRowOffset       = 0;
+  _dbRowTotal        = 0;
+  const conf     = _configList.find(c => c.id === configId);
+  const confName = conf?.name || `Config ${configId}`;
+  document.getElementById('ind-db-detail-label').textContent = `${confName} · ${ticker} · ${timeframe}`;
+  document.getElementById('ind-db-summary-view').style.display = 'none';
+  document.getElementById('ind-db-detail-view').style.display  = 'flex';
+  document.getElementById('comp-db-table').innerHTML = '';
   _loadDbPreview();
 }
 
-function _updateDbTfNav() {
-  const idx = _dbAvailableTfs.indexOf(_dbActiveTf);
-  document.getElementById('db-tf-prev').disabled = idx <= 0;
-  document.getElementById('db-tf-next').disabled = idx >= _dbAvailableTfs.length - 1;
-}
-
-function _updateDbStats() {
-  if (!_dbColumnsData) return;
-  const tfData = _dbColumnsData.timeframes.find(t => t.timeframe === _dbActiveTf);
-  const el = document.getElementById('comp-db-stats');
-  if (!tfData) { el.innerHTML = ''; return; }
-  el.innerHTML =
-    `<span class="ind-db-pill"><span class="ind-db-pill-num">${tfData.tickers}</span><span class="ind-db-pill-meta"> tickers</span></span>` +
-    `<span class="ind-db-pill"><span class="ind-db-pill-num">${tfData.rows.toLocaleString()}</span><span class="ind-db-pill-meta"> rows</span></span>` +
-    `<span class="ind-db-pill"><span class="ind-db-pill-num">${tfData.columns.length}</span><span class="ind-db-pill-meta"> cols</span></span>`;
-}
-
-function _updateDbTickerNav() {
-  document.getElementById('db-ticker-prev').disabled = _dbTickerIdx <= 0;
-  document.getElementById('db-ticker-next').disabled = _dbTickerIdx >= _dbTickers.length - 1 || !_dbTickers.length;
+function _closeDbDetail() {
+  document.getElementById('ind-db-detail-view').style.display  = 'none';
+  document.getElementById('ind-db-summary-view').style.display = 'flex';
+  _dbSectionConfigId = null;
+  _dbPreviewTicker   = null;
 }
 
 function _updateDbRowNav(rows) {
@@ -1273,52 +1275,6 @@ function _updateDbRowNav(rows) {
   }
 }
 
-async function _loadDbTickers() {
-  if (!_dbSectionConfigId) return;
-  try {
-    const data = await api.get(`/api/indicators/tickers-list?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}`);
-    _dbTickers = data.tickers || [];
-  } catch {
-    _dbTickers = [];
-  }
-  _updateDbTickerNav();
-}
-
-async function _loadDbSection(configId) {
-  _dbConfId          = configId;
-  _dbSectionConfigId = configId;
-  _updateDbConfDisplay();
-  _dbPreviewTicker   = null;
-  _dbTickerIdx       = 0;
-  _dbRowOffset       = 0;
-  _dbRowTotal        = 0;
-  document.getElementById('comp-db-ticker').value = '';
-  document.getElementById('comp-db-stats').innerHTML = '';
-  document.getElementById('comp-db-table').innerHTML = '';
-  document.getElementById('db-tf-display').textContent = '—';
-
-  let data;
-  try {
-    data = await api.get(`/api/indicators/columns?config_id=${configId}`);
-  } catch { return; }
-
-  _dbColumnsData = data;
-
-  if (!data.timeframes?.length) {
-    document.getElementById('db-tf-display').textContent = '—';
-    document.getElementById('comp-db-table').innerHTML =
-      '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">No indicator data computed yet.</td></tr>';
-    return;
-  }
-
-  _dbAvailableTfs = data.timeframes.map(t => t.timeframe);
-  if (!_dbAvailableTfs.includes(_dbActiveTf)) _dbActiveTf = _dbAvailableTfs[0];
-  document.getElementById('db-tf-display').textContent = _dbActiveTf;
-  _updateDbTfNav();
-  _updateDbStats();
-  await _loadDbTickers();
-  await _loadDbPreview();
-}
 
 async function _loadDbPreview() {
   if (!_dbSectionConfigId) return;
@@ -1343,15 +1299,6 @@ async function _loadDbPreview() {
   if (!data.columns?.length) {
     tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">No data for this timeframe.</td></tr>';
     return;
-  }
-
-  // Sync ticker display
-  const tickerInput = document.getElementById('comp-db-ticker');
-  if (!_dbPreviewTicker && data.ticker) {
-    tickerInput.placeholder = data.ticker;
-    const idx = _dbTickers.indexOf(data.ticker);
-    if (idx >= 0) _dbTickerIdx = idx;
-    _updateDbTickerNav();
   }
 
   _dbRowTotal = data.total_rows || 0;
@@ -1469,11 +1416,8 @@ document.addEventListener('keydown', e => {
       _renderIndicatorList();
     }
     _setKeyboardFocus(null);
-    if (_dbPreviewTicker) {
-      document.getElementById('comp-db-ticker').value = '';
-      _dbPreviewTicker = null;
-      _dbRowOffset = 0;
-      _loadDbPreview();
+    if (_dbSectionConfigId) {
+      _closeDbDetail();
     }
     document.activeElement?.blur();
     return;

@@ -48,6 +48,27 @@ def clear_indicator_history():
     return {"ok": True}
 
 
+@router.get("/indicators/summary")
+def indicator_summary():
+    with db._conn() as con:
+        rows = con.execute("""
+            SELECT i.ind_conf, i.ticker, i.timeframe,
+                   COUNT(*) AS rows,
+                   MIN(i.date) AS first_date, MAX(i.date) AS last_date,
+                   c.name AS config_name
+            FROM indicators i
+            LEFT JOIN ind_configs c ON i.ind_conf = c.id
+            GROUP BY i.ind_conf, i.ticker, i.timeframe
+            ORDER BY c.name, i.ticker, i.timeframe
+        """).fetchall()
+    return {"rows": [
+        {"config_id": r[0], "ticker": r[1], "timeframe": r[2],
+         "rows": r[3], "first_date": r[4] or '', "last_date": r[5] or '',
+         "config_name": r[6] or f"Config {r[0]}"}
+        for r in rows
+    ]}
+
+
 @router.get("/indicators/tickers-list")
 def indicator_tickers_list(config_id: int, timeframe: str = 'daily'):
     """Return sorted list of tickers that have indicator data for a config+timeframe."""

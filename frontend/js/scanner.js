@@ -25,6 +25,7 @@ let _runCheckedIds = new Set();
 let _runQueue      = [];
 let _runQueueIdx   = -1;
 let _runResults    = {};
+let _scanDone      = false;
 
 const _esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -536,19 +537,63 @@ function _renderRunConfigs() {
     </div>`;
   }).join('');
 
-  const totalEl = document.getElementById('scan-run-total');
-  if (inRun && totalEl) {
-    const conf = _configs.find(c => c.id === _runQueue[_runQueueIdx]);
-    totalEl.style.display = '';
-    totalEl.textContent = `Config ${_runQueueIdx + 1} / ${_runQueue.length}  ·  ${conf?.name ?? ''}`;
-  } else if (totalEl) {
-    totalEl.style.display = 'none';
+  _updateScanOverall();
+}
+
+function _updateScanOverall() {
+  const overall  = document.getElementById('scan-overall');
+  const totalEl  = document.getElementById('scan-run-total');
+  const track    = document.getElementById('scan-track');
+  const bar      = document.getElementById('scan-bar');
+  const meta     = document.getElementById('scan-meta');
+  const countEl  = document.getElementById('scan-count');
+  const pctEl    = document.getElementById('scan-pct');
+  const currentEl= document.getElementById('scan-current');
+  const errorsEl = document.getElementById('scan-errors');
+
+  const inRun = _runQueueIdx >= 0 && _runQueueIdx < _runQueue.length;
+
+  if (!inRun && !_scanDone) {
+    overall.style.display = 'none';
+    return;
+  }
+
+  overall.style.display = '';
+
+  if (inRun) {
+    const total = _runQueue.length;
+    const done  = _runQueueIdx;
+    const pct   = total > 0 ? (done / total * 100) : 0;
+    const conf  = _configs.find(c => c.id === _runQueue[_runQueueIdx]);
+    bar.style.width = `${pct}%`;
+    track.classList.add('active');
+    bar.classList.add('active');
+    meta.classList.add('active');
+    totalEl.textContent  = `Config ${_runQueueIdx + 1} / ${total}`;
+    countEl.textContent  = `${done} / ${total}`;
+    pctEl.textContent    = `${Math.round(pct)}%`;
+    currentEl.textContent= conf?.name ? `→ ${conf.name}` : '';
+    errorsEl.textContent = '';
+  } else {
+    const ids   = Object.keys(_runResults);
+    const total = ids.length;
+    const errs  = ids.filter(id => _runResults[+id]?.error).length;
+    bar.style.width = '100%';
+    track.classList.remove('active');
+    bar.classList.remove('active');
+    meta.classList.remove('active');
+    totalEl.textContent  = `${total} config${total !== 1 ? 's' : ''}`;
+    countEl.textContent  = `${total} / ${total}`;
+    pctEl.textContent    = '100%';
+    currentEl.textContent= '';
+    errorsEl.textContent = errs > 0 ? `✗ ${errs} error${errs !== 1 ? 's' : ''}` : '✓ complete';
   }
 }
 
 async function _startScan() {
   const ids = _configs.filter(c => _runCheckedIds.has(c.id)).map(c => c.id);
   if (!ids.length) return;
+  _scanDone    = false;
   _runQueue    = ids;
   _runQueueIdx = 0;
   _runResults  = {};
@@ -561,6 +606,7 @@ async function _startScan() {
 
 async function _kickNextQueueItem() {
   if (_runQueueIdx >= _runQueue.length) {
+    _scanDone = true;
     _runQueue = []; _runQueueIdx = -1;
     const btn = document.getElementById('btn-run-scan');
     btn.disabled = false; btn.textContent = '▶ Run';
@@ -721,6 +767,7 @@ function _wireGlobal() {
     if (_runQueueIdx >= 0) return;
     _runCheckedIds.clear();
     _runResults = {};
+    _scanDone   = false;
     _saveRunQueue();
     _renderList();
     _renderRunConfigs();

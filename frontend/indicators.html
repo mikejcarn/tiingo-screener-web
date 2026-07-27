@@ -99,12 +99,12 @@
 
         <div id="run-conf-list" class="run-queue-list"></div>
 
-        <div class="ind-overall-section">
+        <div class="ind-overall-section" id="comp-overall" style="display:none;">
           <div class="ind-overall-header">
             <span class="ind-overall-label">total run</span>
             <span id="run-queue-status" class="run-queue-status" style="display:none;"></span>
           </div>
-          <div class="dash-progress">
+          <div class="dash-progress" id="comp-progress">
             <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
             <div id="comp-meta" class="progress-meta">
               <span id="comp-count"   class="dash-count-text"></span>
@@ -122,38 +122,35 @@
 
     <!-- DB card -->
     <div class="ind-db-card">
-      <div class="ind-run-head" title="Browse computed indicator rows stored in the database">DATABASE — INDICATORS <div class="ind-db-head-actions"><button id="btn-db-refresh" class="dash-btn-sm" title="Refresh DB view">↻</button><button id="btn-db-clear-results" class="dash-btn-sm dash-btn-sm-del" title="Clear all computed results for the current config">Clear All</button></div></div>
+      <div class="ind-run-head" title="Browse computed indicator rows stored in the database">DATABASE — INDICATORS <div class="ind-db-head-actions"><button id="btn-db-refresh" class="dash-btn-sm" title="Refresh DB view">↻</button><button id="btn-db-clear-results" class="dash-btn-sm dash-btn-sm-del" title="Clear ALL computed indicator results from the database">Clear All</button></div></div>
       <div class="ind-db-body">
 
-        <div class="ind-db-nav-row">
-          <div class="ind-db-ctrl-group">
-            <button id="db-conf-prev" class="ind-db-nav-btn" title="Previous config">‹</button>
-            <span id="db-conf-label" class="ind-db-conf-label" title="Indicator config being browsed">—</span>
-            <button id="db-conf-next" class="ind-db-nav-btn" title="Next config">›</button>
-          </div>
-          <div class="ind-db-ctrl-group">
-            <button id="db-ticker-prev" class="ind-db-nav-btn" title="Previous ticker">‹</button>
-            <input type="text" id="comp-db-ticker" class="ind-db-ticker-input" placeholder="ticker" autocomplete="off" spellcheck="false" title="Type a ticker and press Enter to jump to it">
-            <button id="db-ticker-next" class="ind-db-nav-btn" title="Next ticker">›</button>
-          </div>
-          <div class="ind-db-ctrl-group">
-            <button id="db-tf-prev" class="ind-db-nav-btn" title="Previous timeframe">‹</button>
-            <span id="db-tf-display" class="ind-db-tf-display" title="Timeframe being browsed">—</span>
-            <button id="db-tf-next" class="ind-db-nav-btn" title="Next timeframe">›</button>
+        <!-- Summary view -->
+        <div id="ind-db-summary-view" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+          <div class="ind-db-summary-wrap">
+            <table class="ind-db-summary-table">
+              <thead id="ind-db-summary-thead"></thead>
+              <tbody id="ind-db-summary-body">
+                <tr><td colspan="6" class="stats-empty">No indicator data yet.</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div class="ind-db-info-row">
-          <div id="comp-db-stats" class="ind-db-stats"></div>
-          <div class="ind-db-row-ctrl">
-            <button id="db-rows-older" class="ind-db-nav-btn" title="Load older rows">‹ older</button>
-            <span id="db-rows-label" class="ind-db-rows-label"></span>
-            <button id="db-rows-newer" class="ind-db-nav-btn" title="Load newer rows">newer ›</button>
+        <!-- Detail view -->
+        <div id="ind-db-detail-view" style="display:none; flex-direction:column; flex:1; min-height:0;">
+          <div class="ind-db-detail-bar">
+            <button id="btn-db-detail-back" class="dash-btn-sm" title="Back to summary">← Back</button>
+            <span id="ind-db-detail-label" class="ind-db-detail-label"></span>
+            <div class="ind-db-row-ctrl">
+              <button id="db-rows-older" class="ind-db-nav-btn" title="Load older rows">‹ older</button>
+              <span id="db-rows-label" class="ind-db-rows-label"></span>
+              <button id="db-rows-newer" class="ind-db-nav-btn" title="Load newer rows">newer ›</button>
+            </div>
           </div>
-        </div>
-
-        <div class="ind-db-table-wrap">
-          <table id="comp-db-table" class="ind-db-table"></table>
+          <div class="ind-db-table-wrap">
+            <table id="comp-db-table" class="ind-db-table"></table>
+          </div>
         </div>
 
       </div>
