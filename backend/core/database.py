@@ -265,9 +265,22 @@ def load_indicators(ticker: str, timeframe: str, ind_conf: int,
 
 # ── Metadata ─────────────────────────────────────────────────
 
-def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None) -> list[str]:
+def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None, ind_conf: Optional[int] = None) -> list[str]:
     params: list = []
-    if ticker_list:
+    if ind_conf:
+        # Filter to tickers with computed indicator data for this config
+        if ticker_list:
+            query = ("SELECT DISTINCT i.ticker FROM indicators i "
+                     "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
+                     "ON i.ticker = fl.ticker WHERE i.ind_conf=?")
+            params = [ticker_list, ind_conf]
+        else:
+            query = "SELECT DISTINCT ticker FROM indicators WHERE ind_conf=?"
+            params = [ind_conf]
+        if timeframe:
+            query += " AND timeframe=?"
+            params.append(timeframe)
+    elif ticker_list:
         query = ("SELECT DISTINCT o.ticker FROM ohlcv o "
                  "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
                  "ON o.ticker = fl.ticker")

@@ -19,6 +19,7 @@ let tickerIdx  = 0;
 let _lists     = ['ALL'];
 let _listIdx   = 0;
 let _scanListName = null;  // name of the virtual scan-results list, if present
+let _scanLocked   = false; // true while _applyScanRun is programmatically setting controls
 
 const tickerInput  = document.getElementById('ticker-input');
 const tickerCount  = document.getElementById('ticker-count');
@@ -80,15 +81,10 @@ export async function initBrowse() {
 
   _wireNav();
 
-  if (!tickers.length) {
-    document.getElementById('chart-empty').style.display = 'flex';
-    return;
-  }
-
-  // Load from URL hash or first ticker
-  const hashTicker = decodeURIComponent(location.hash.slice(1)).toUpperCase();
-  const startIdx   = tickers.indexOf(hashTicker);
-  _loadTicker(startIdx >= 0 ? startIdx : 0);
+  // Initial load: filter by default TF, try to honour URL ticker (query param or hash)
+  const _qp          = new URLSearchParams(location.search);
+  const preferTicker = (_qp.get('ticker') || decodeURIComponent(location.hash.slice(1)) || '').toUpperCase() || undefined;
+  await _refreshTickers(preferTicker);
 }
 
 // ── Load a ticker ─────────────────────────────────────────────
@@ -140,23 +136,38 @@ function _cycleSelect(el, delta) {
   el.dispatchEvent(new Event('change'));
 }
 
-async function _selectList() {
-  const selected      = listSelect.value;
-  _listIdx            = _lists.indexOf(selected);
-  const currentTicker = tickers[tickerIdx];
-  if (_scanListName && selected === _scanListName) {
+// Re-fetches the ticker list based on current TF + conf + list selection, then loads a ticker.
+// preferTicker overrides the "keep current ticker" logic (used on initial load for hash nav).
+async function _refreshTickers(preferTicker) {
+  // DB scan run controls the ticker list — don't re-filter
+  if (scanSelect.value) return;
+
+  const tf   = tfSelect.value;
+  const conf = parseInt(confSelect.value) || 0;
+  const list = listSelect.value;
+  _listIdx   = _lists.indexOf(list);
+  const prev = preferTicker ?? tickers[tickerIdx];
+
+  // Virtual scan list (localStorage) — treat as fixed
+  if (_scanListName && list === _scanListName) {
     try { tickers = JSON.parse(localStorage.getItem('scan_tickers') || '[]'); } catch { tickers = []; }
-    const newIdx = tickers.indexOf(currentTicker);
-    _loadTicker(newIdx >= 0 ? newIdx : 0);
+    const i = tickers.indexOf(prev);
+    if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
+    _loadTicker(i >= 0 ? i : 0);
     return;
   }
-  const url  = selected === 'All'
-    ? '/api/tickers'
-    : `/api/tickers?ticker_list=${encodeURIComponent(selected)}`;
-  const data = await api.get(url);
+
+  const params = new URLSearchParams();
+  if (tf)             params.set('timeframe', tf);
+  if (conf)           params.set('ind_conf', String(conf));
+  if (list !== 'All') params.set('ticker_list', list);
+
+  const data = await api.get(`/api/tickers?${params}`);
   tickers = data.tickers || [];
-  const newIdx = tickers.indexOf(currentTicker);
-  _loadTicker(newIdx >= 0 ? newIdx : 0);
+  if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
+  document.getElementById('chart-empty').style.display = 'none';
+  const i = tickers.indexOf(prev);
+  _loadTicker(i >= 0 ? i : 0);
 }
 
 // ── Scan runs ─────────────────────────────────────────────────
@@ -182,12 +193,13 @@ async function _loadScanRuns() {
 
 async function _applyScanRun() {
   const runId = scanSelect.value;
-  if (!runId) { await _selectList(); return; }
+  if (!runId) { await _refreshTickers(); return; }
   try {
     const data = await api.get(`/api/scan/runs/${runId}`);
     tickers = data.tickers || [];
     if (!tickers.length) return;
 
+    _scanLocked = true;
     const opt = scanSelect.selectedOptions[0];
     // Auto-set timeframe
     const tfs = JSON.parse(opt.dataset.timeframes || '[]');
@@ -195,9 +207,10 @@ async function _applyScanRun() {
     // Auto-set indicator conf
     const confId = opt.dataset.indConfId;
     if (confId) confSelect.value = confId;
+    _scanLocked = false;
 
     _loadTicker(0);
-  } catch {}
+  } catch { _scanLocked = false; }
 }
 
 // ── Nav wiring ────────────────────────────────────────────────
@@ -205,10 +218,10 @@ async function _applyScanRun() {
 function _wireNav() {
   document.getElementById('btn-prev-ticker').addEventListener('click', () => _loadTicker(tickerIdx - 1));
   document.getElementById('btn-next-ticker').addEventListener('click', () => _loadTicker(tickerIdx + 1));
-  listSelect.addEventListener('change',  () => { _selectList();           listSelect.blur();  });
-  tfSelect.addEventListener('change',    () => { _loadTicker(tickerIdx);  tfSelect.blur();    });
-  confSelect.addEventListener('change',  () => { _loadTicker(tickerIdx);  confSelect.blur();  });
-  scanSelect.addEventListener('change',  () => { _applyScanRun();         scanSelect.blur();  });
+  listSelect.addEventListener('change',  () => { listSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; _refreshTickers(); } });
+  tfSelect.addEventListener('change',    () => { tfSelect.blur();    if (!_scanLocked) { scanSelect.value = ''; _refreshTickers(); } });
+  confSelect.addEventListener('change',  () => { confSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; _refreshTickers(); } });
+  scanSelect.addEventListener('change',  () => { scanSelect.blur();  _applyScanRun(); });
 
   // Ticker search
   tickerInput.addEventListener('focus', () => { tickerInput.select(); _buildDropdown(''); });
