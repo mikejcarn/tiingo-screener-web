@@ -987,6 +987,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
   if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }
   if (e.key === 'S' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; }
+  if (e.key === 'F' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); document.getElementById('btn-fetch').click(); }
   if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     const input = document.getElementById('single-ticker');

@@ -1470,7 +1470,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'C') { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I') { e.preventDefault(); window.location.href = '/indicators'; return; }
-    if (e.key === 'S' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; return; }
+    if (e.key === 'S') { e.preventDefault(); window.location.href = '/scanner'; return; }
     if (e.key === 'R') { e.preventDefault(); _startCompute(); return; }
     if (e.key === 'D') { e.preventDefault(); _deleteConfig(); return; }
     if (e.key === 'N') {
