@@ -202,6 +202,7 @@ async function _runSingleQueue() {
   _singleRunning = false;
   btn.disabled = false;
   btn.textContent = '▶ Fetch';
+  _renderSingleQueue();
   _loadStats();
   _loadHistory();
 }
