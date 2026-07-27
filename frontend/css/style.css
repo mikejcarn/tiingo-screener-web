@@ -964,14 +964,16 @@ body.fetch-page {
   flex-direction: column;
   overflow-y: auto;
   border-right: 1px solid var(--b3);
-  padding-bottom: 20px;
+  padding-bottom: 16px;
 }
+.fetch-left .dash-section { margin: 12px 16px 0; }
+.fetch-left .dash-section:first-child { margin-top: 16px; }
 
 .fetch-right {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
+  gap: 12px;
+  padding: 16px;
   overflow: hidden;
 }
 
