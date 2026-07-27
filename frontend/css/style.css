@@ -476,27 +476,6 @@ body.dash {
 }
 #btn-refresh-stats { font-size: 11px; padding: 3px 8px; }
 
-.stats-view-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 8px 16px 0;
-  flex-shrink: 0;
-}
-.stats-view-tab {
-  font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  border: 1px solid var(--b4);
-  background: none;
-  color: var(--t3);
-  line-height: 1;
-}
-.stats-view-tab.active {
-  color: var(--t7);
-  border-color: var(--t5);
-  background: var(--c-raised);
-}
 
 #stats-summary {
   display: flex;
@@ -533,6 +512,11 @@ body.dash {
   top: 0;
   background: var(--c-card);
 }
+#stats-table th.stats-th-sort { cursor: pointer; user-select: none; }
+#stats-table th.stats-th-sort:hover { color: var(--t6); }
+#stats-table th.stats-th-sort.active { color: var(--t7); }
+#stats-table th.stats-th-pivot { color: rgba(var(--teal-rgb), 0.7); }
+#stats-table th.stats-th-pivot:hover { color: rgba(var(--teal-rgb), 1); }
 #stats-table td, #history-table td { padding: 5px 16px; color: var(--t6); border-bottom: 1px solid var(--c-card); }
 #stats-table tbody tr:hover td, #history-table tbody tr:hover td { background: var(--c-surface); }
 #stats-table td:first-child, #history-table td:first-child { color: var(--t7); }
@@ -778,6 +762,7 @@ body.dash {
   border-bottom: 1px solid var(--b0);
 }
 .ticker-list-row:last-child { border-bottom: none; }
+.ticker-list-row:hover { background: var(--c-surface); }
 .ticker-list-name { color: var(--t7); flex: 1; }
 .ticker-list-count { color: var(--t3); font-size: 11px; }
 .ticker-list-del { margin-left: 8px; }

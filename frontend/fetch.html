@@ -123,7 +123,7 @@
     <!-- Ticker Lists -->
     <div class="dash-section">
       <div class="dash-section-head">
-        <span>Ticker Lists</span>
+        <span>Tickers List(s)</span>
         <div class="dash-section-actions">
           <button id="btn-refresh-lists" class="dash-btn-sm" title="Refresh ticker lists">↻</button>
           <button id="btn-add-list" class="dash-btn-sm" title="Upload a CSV to create a new ticker list">+ Add List</button>
@@ -154,10 +154,6 @@
           <button id="btn-refresh-stats" class="dash-btn-sm" title="Refresh the database stats">↻</button>
           <button id="btn-clear-all" class="dash-btn-sm dash-btn-sm-del" title="Delete ALL fetched data from the database">Clear All</button>
         </div>
-      </div>
-      <div class="stats-view-tabs">
-        <button id="btn-stats-tf" class="stats-view-tab active">Timeframes</button>
-        <button id="btn-stats-list" class="stats-view-tab">Lists</button>
       </div>
       <div id="stats-summary"></div>
       <div id="stats-wrap">
@@ -191,12 +187,13 @@
               <th>List</th>
               <th>Timeframe</th>
               <th>Tickers</th>
+              <th>Start Date</th>
               <th>Last Date</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="history-body">
-            <tr><td colspan="6" class="stats-empty">No history yet.</td></tr>
+            <tr><td colspan="7" class="stats-empty">No history yet.</td></tr>
           </tbody>
         </table>
       </div>

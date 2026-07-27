@@ -210,19 +210,22 @@ def fetch_history():
     with db._conn() as con:
         rows = con.execute("""
             SELECT
-                strftime('%Y-%m-%d %H:00', fetched_at) AS session,
-                ticker_list,
-                timeframe,
-                COUNT(DISTINCT ticker)                  AS tickers,
-                MAX(last_date)                          AS last_date
-            FROM fetch_log
-            GROUP BY strftime('%Y-%m-%d %H:00', fetched_at), ticker_list, timeframe
+                strftime('%Y-%m-%d %H:00', f.fetched_at) AS session,
+                f.ticker_list,
+                f.timeframe,
+                COUNT(DISTINCT f.ticker)                  AS tickers,
+                MIN(o.date)                               AS first_date,
+                MAX(f.last_date)                          AS last_date
+            FROM fetch_log f
+            LEFT JOIN ohlcv o ON f.ticker = o.ticker AND f.timeframe = o.timeframe
+            GROUP BY strftime('%Y-%m-%d %H:00', f.fetched_at), f.ticker_list, f.timeframe
             ORDER BY session DESC
             LIMIT 40
         """).fetchall()
     return {"history": [
         {"session": r[0], "ticker_list": r[1] or "—",
-         "timeframe": r[2], "tickers": r[3], "last_date": r[4] or "—"}
+         "timeframe": r[2], "tickers": r[3],
+         "first_date": r[4] or "—", "last_date": r[5] or "—"}
         for r in rows
     ]}
 
@@ -256,6 +259,7 @@ def stats():
         rows = con.execute("""
             SELECT o.ticker, o.timeframe,
                    COUNT(*)    AS rows,
+                   MIN(o.date) AS first_date,
                    MAX(o.date) AS last_date,
                    f.fetched_at,
                    f.ticker_list
@@ -283,8 +287,8 @@ def stats():
         ],
         "stats": [
             {"ticker": r[0], "timeframe": r[1], "rows": r[2],
-             "last_date": r[3], "fetched_at": (r[4] or '')[:10],
-             "ticker_list": r[5] or ''}
+             "first_date": r[3] or '', "last_date": r[4] or '',
+             "fetched_at": (r[5] or '')[:10], "ticker_list": r[6] or ''}
             for r in rows
         ],
     }

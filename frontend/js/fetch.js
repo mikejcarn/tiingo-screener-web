@@ -449,7 +449,11 @@ async function _loadTiingoListInfo() {
 // ── Stats ─────────────────────────────────────────────────────
 
 let _statsData = null;
-let _statsView = 'timeframes';
+let _groupBy   = 'ticker';
+let _groupSort = { col: 'key', dir: 'asc' };
+
+const _DIM_COLS = ['ticker', 'timeframe', 'list'];
+const _NUM_COLS = ['bars', 'tickers', 'tfs'];
 
 function _fmtBars(n) {
   return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : String(n);
@@ -468,57 +472,108 @@ async function _loadStats() {
 
 function _renderStats() {
   if (!_statsData) return;
-  if (_statsView === 'timeframes') _renderStatsByTimeframe();
-  else _renderStatsByList();
+  _renderStatsGrouped();
 }
 
-function _renderStatsByTimeframe() {
-  const summary   = _statsData.summary || [];
-  const allRows   = _statsData.stats   || [];
+function _renderStatsGrouped() {
+  const raw = _statsData.stats || [];
 
-  // compute per-timeframe bar range from detail rows
-  const tfRange = {};
-  for (const r of allRows) {
-    if (!tfRange[r.timeframe]) tfRange[r.timeframe] = { min: r.rows, max: r.rows };
-    else { tfRange[r.timeframe].min = Math.min(tfRange[r.timeframe].min, r.rows);
-           tfRange[r.timeframe].max = Math.max(tfRange[r.timeframe].max, r.rows); }
+  document.getElementById('stats-summary').innerHTML = '';
+
+  // ── Group raw rows ────────────────────────────────────────
+  const groups = {};
+  for (const r of raw) {
+    const key = _groupBy === 'ticker' ? r.ticker
+              : _groupBy === 'timeframe' ? r.timeframe
+              : (r.ticker_list || '—');
+    if (!groups[key]) groups[key] = { key, tickers: new Set(), timeframes: new Set(), lists: new Set(), bars: 0, firstDate: '', lastDate: '' };
+    groups[key].tickers.add(r.ticker);
+    groups[key].timeframes.add(r.timeframe);
+    groups[key].lists.add(r.ticker_list || '—');
+    groups[key].bars += r.rows;
+    if (!groups[key].firstDate || r.first_date < groups[key].firstDate) groups[key].firstDate = r.first_date;
+    if (!groups[key].lastDate  || r.last_date  > groups[key].lastDate)  groups[key].lastDate  = r.last_date;
   }
 
-  const summaryEl = document.getElementById('stats-summary');
-  summaryEl.innerHTML = summary.map(s => {
-    const range = tfRange[s.timeframe];
-    const barsStr = range
-      ? (range.min === range.max ? _fmtBars(range.min) : `${_fmtBars(range.min)} – ${_fmtBars(range.max)}`)
-      : '—';
-    return `<span class="stats-summary-pill">
-      <span class="ss-tf">${s.timeframe}</span>
-      <span class="ss-val">${s.tickers} tickers</span>
-      <span class="ss-sep">·</span>
-      <span class="ss-val">${s.first_date} – ${s.last_date}</span>
-      <span class="ss-sep">·</span>
-      <span class="ss-val">${barsStr} bars</span>
-    </span>`;
-  }).join('');
+  // ── Sort ──────────────────────────────────────────────────
+  const sc = _groupSort.col, sd = _groupSort.dir;
+  const groupArr = Object.values(groups).sort((a, b) => {
+    let av, bv;
+    if (sc === 'bars')           { av = a.bars;            bv = b.bars; }
+    else if (sc === 'first_date'){ av = a.firstDate;       bv = b.firstDate; }
+    else if (sc === 'last_date') { av = a.lastDate;        bv = b.lastDate; }
+    else if (sc === 'tickers')   { av = a.tickers.size;    bv = b.tickers.size; }
+    else if (sc === 'tfs')       { av = a.timeframes.size; bv = b.timeframes.size; }
+    else                         { av = a.key;             bv = b.key; }
+    const cmp = _NUM_COLS.includes(sc) ? av - bv : String(av || '').localeCompare(String(bv || ''));
+    return sd === 'asc' ? cmp : -cmp;
+  });
 
-  document.getElementById('stats-thead-row').innerHTML =
-    '<th>Ticker</th><th>Timeframe</th><th>List</th><th>Last Date</th><th>Bars</th><th>Fetched</th><th></th>';
+  // ── Headers ───────────────────────────────────────────────
+  const theadRow = document.getElementById('stats-thead-row');
+  const mkTh = (label, col) => {
+    const isGroup = col === _groupBy;
+    const isSort  = _groupSort.col === (isGroup ? 'key' : col);
+    const arrow   = isSort ? (_groupSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
+    const cls     = ['stats-th-sort', (isGroup || isSort) ? 'stats-th-pivot' : ''].filter(Boolean).join(' ');
+    return `<th class="${cls}" data-col="${col}">${label}${arrow}</th>`;
+  };
+  theadRow.innerHTML = [
+    mkTh('Ticker',    'ticker'),
+    mkTh('Timeframe', 'timeframe'),
+    mkTh('List',      'list'),
+    mkTh('Bars',       'bars'),
+    mkTh('Start Date', 'first_date'),
+    mkTh('Last Date',  'last_date'),
+    '<th></th>',
+  ].join('');
 
+  for (const th of theadRow.querySelectorAll('.stats-th-sort')) {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (_DIM_COLS.includes(col)) {
+        if (col === _groupBy) {
+          _groupSort = { col: 'key', dir: _groupSort.col === 'key' && _groupSort.dir === 'asc' ? 'desc' : 'asc' };
+        } else {
+          _groupBy   = col;
+          _groupSort = { col: 'key', dir: 'asc' };
+        }
+      } else {
+        _groupSort = { col, dir: _groupSort.col === col && _groupSort.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      _renderStatsGrouped();
+    });
+  }
+
+  // ── Rows ──────────────────────────────────────────────────
   const tbody = document.getElementById('stats-body');
-  const rows  = _statsData.stats || [];
-  if (!rows.length) {
+  if (!groupArr.length) {
     tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">No data in database yet.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r => `<tr>
-    <td>${_esc(r.ticker)}</td>
-    <td>${_esc(r.timeframe)}</td>
-    <td>${_esc(r.ticker_list || '—')}</td>
-    <td>${r.last_date || '—'}</td>
-    <td>${r.rows.toLocaleString()}</td>
-    <td>${r.fetched_at || '—'}</td>
-    <td><button class="tbl-del-btn" data-ticker="${_esc(r.ticker)}" title="Delete ${_esc(r.ticker)}">×</button></td>
-  </tr>`).join('');
-  for (const btn of tbody.querySelectorAll('.tbl-del-btn')) {
+
+  tbody.innerHTML = groupArr.map(g => {
+    const tickerCell = _groupBy === 'ticker'    ? _esc(g.key) : g.tickers.size.toLocaleString();
+    const tfCell     = _groupBy === 'timeframe' ? _esc(g.key) : [...g.timeframes].sort().join(', ');
+    const listCell   = _groupBy === 'list'      ? _esc(g.key)
+                     : g.lists.size === 1 ? _esc([...g.lists][0]) : g.lists.size.toLocaleString();
+    const delBtn = _groupBy === 'ticker'
+      ? `<button class="tbl-del-btn" data-ticker="${_esc(g.key)}" title="Delete ${_esc(g.key)}">×</button>`
+      : _groupBy === 'list' && g.key !== '—'
+        ? `<button class="tbl-del-btn" data-list="${_esc(g.key)}" title="Delete list ${_esc(g.key)}">×</button>`
+        : '';
+    return `<tr>
+      <td>${tickerCell}</td>
+      <td>${tfCell}</td>
+      <td>${listCell}</td>
+      <td>${_fmtBars(g.bars)}</td>
+      <td>${g.firstDate || '—'}</td>
+      <td>${g.lastDate || '—'}</td>
+      <td>${delBtn}</td>
+    </tr>`;
+  }).join('');
+
+  for (const btn of tbody.querySelectorAll('.tbl-del-btn[data-ticker]')) {
     btn.addEventListener('click', async () => {
       const ticker = btn.dataset.ticker;
       if (!confirm(`Delete all data for ${ticker}?`)) return;
@@ -526,62 +581,7 @@ function _renderStatsByTimeframe() {
       _loadStats();
     });
   }
-}
-
-function _renderStatsByList() {
-  const allRows = _statsData.stats || [];
-  const listMap = {};
-  for (const r of allRows) {
-    const list = r.ticker_list || '—';
-    if (!listMap[list]) listMap[list] = { tickers: new Set(), timeframes: new Set(), bars: 0, lastDate: '' };
-    listMap[list].tickers.add(r.ticker);
-    listMap[list].timeframes.add(r.timeframe);
-    listMap[list].bars += r.rows;
-    if (!listMap[list].lastDate || r.last_date > listMap[list].lastDate) listMap[list].lastDate = r.last_date;
-  }
-  const lists = Object.entries(listMap).sort(([a], [b]) => a.localeCompare(b));
-
-  // compute per-ticker total bars within each list, then get range
-  const listTickerBars = {};
-  for (const r of allRows) {
-    const list = r.ticker_list || '—';
-    if (!listTickerBars[list]) listTickerBars[list] = {};
-    listTickerBars[list][r.ticker] = (listTickerBars[list][r.ticker] || 0) + r.rows;
-  }
-
-  const summaryEl = document.getElementById('stats-summary');
-  summaryEl.innerHTML = lists.map(([name, d]) => {
-    const tickerTotals = Object.values(listTickerBars[name] || {});
-    const minB = tickerTotals.length ? Math.min(...tickerTotals) : 0;
-    const maxB = tickerTotals.length ? Math.max(...tickerTotals) : 0;
-    const barsStr = minB === maxB ? _fmtBars(minB) : `${_fmtBars(minB)} – ${_fmtBars(maxB)}`;
-    return `<span class="stats-summary-pill">
-      <span class="ss-tf">${_esc(name)}</span>
-      <span class="ss-val">${d.tickers.size} tickers</span>
-      <span class="ss-sep">·</span>
-      <span class="ss-val">${d.timeframes.size} tf</span>
-      <span class="ss-sep">·</span>
-      <span class="ss-val">${barsStr} bars</span>
-    </span>`;
-  }).join('');
-
-  document.getElementById('stats-thead-row').innerHTML =
-    '<th>List</th><th>Tickers</th><th>Timeframes</th><th>Total Bars</th><th>Last Date</th><th></th>';
-
-  const tbody = document.getElementById('stats-body');
-  if (!lists.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No data in database yet.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = lists.map(([name, d]) => `<tr>
-    <td>${_esc(name)}</td>
-    <td>${d.tickers.size.toLocaleString()}</td>
-    <td>${[...d.timeframes].join(', ')}</td>
-    <td>${d.bars.toLocaleString()}</td>
-    <td>${d.lastDate || '—'}</td>
-    <td>${name !== '—' ? `<button class="tbl-del-btn" data-list="${_esc(name)}" title="Delete all data for list ${_esc(name)}">×</button>` : ''}</td>
-  </tr>`).join('');
-  for (const btn of tbody.querySelectorAll('.tbl-del-btn')) {
+  for (const btn of tbody.querySelectorAll('.tbl-del-btn[data-list]')) {
     btn.addEventListener('click', async () => {
       const list = btn.dataset.list;
       if (!confirm(`Delete all data for list "${list}"?`)) return;
@@ -599,12 +599,12 @@ async function _loadHistory() {
   try {
     data = await api.get('/api/fetch-history');
   } catch {
-    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">Failed to load history.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">Failed to load history.</td></tr>';
     return;
   }
   const rows = data.history || [];
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">No history yet.</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(r => `
@@ -613,6 +613,7 @@ async function _loadHistory() {
       <td>${_esc(r.ticker_list)}</td>
       <td>${_esc(r.timeframe)}</td>
       <td>${r.tickers.toLocaleString()}</td>
+      <td>${r.first_date}</td>
       <td>${r.last_date}</td>
       <td><button class="scan-history-del" title="Delete this history entry">✕</button></td>
     </tr>
@@ -719,19 +720,7 @@ function _wireButtons() {
     btn.textContent = 'Update';
   });
 
-  document.getElementById('btn-stats-tf').addEventListener('click', () => {
-    _statsView = 'timeframes';
-    document.getElementById('btn-stats-tf').classList.add('active');
-    document.getElementById('btn-stats-list').classList.remove('active');
-    _renderStats();
-  });
-  document.getElementById('btn-stats-list').addEventListener('click', () => {
-    _statsView = 'lists';
-    document.getElementById('btn-stats-list').classList.add('active');
-    document.getElementById('btn-stats-tf').classList.remove('active');
-    _renderStats();
-  });
-  document.getElementById('btn-refresh-stats').addEventListener('click', () => {
+document.getElementById('btn-refresh-stats').addEventListener('click', () => {
     _loadStats();
     _loadHistory();
   });
