@@ -33,7 +33,7 @@
       <div class="dash-section-head">
         <span>API Key</span>
         <div class="dash-section-actions">
-          <button id="btn-apikey-add" class="dash-btn-sm" style="display:none;" title="Add your Tiingo API key">+ Add Key</button>
+          <button id="btn-apikey-add" class="dash-btn-sm" title="Add your Tiingo API key">+ Add Key</button>
         </div>
       </div>
       <div style="padding:14px 16px;">
@@ -43,11 +43,11 @@
             <span id="apikey-masked" class="apikey-masked"></span>
             <input id="apikey-input" class="apikey-input" type="password"
                    placeholder="Paste key…" style="display:none; flex:1;" title="Paste your Tiingo API key, then press Enter or Save">
-            <button id="btn-apikey-edit"   class="dash-btn-sm" style="display:none;" title="Edit the saved API key">Edit</button>
+            <button id="btn-apikey-edit"   class="dash-btn-sm" title="Edit the saved API key">Edit</button>
             <button id="btn-apikey-save"   class="dash-btn-sm" style="display:none;" title="Save this key">Save</button>
             <button id="btn-apikey-cancel" class="dash-btn-sm" style="display:none;" title="Discard changes (Esc)">Cancel</button>
-            <button id="btn-apikey-verify" class="dash-btn-sm" style="display:none;" title="Check that this key works with Tiingo">Verify</button>
-            <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del" style="display:none;" title="Remove the saved API key">Delete</button>
+            <button id="btn-apikey-verify" class="dash-btn-sm" title="Check that this key works with Tiingo">Verify</button>
+            <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del" title="Remove the saved API key">Delete</button>
             <span   id="apikey-status"></span>
           </div>
         </div>
@@ -69,6 +69,8 @@
       <div class="dash-section-head">
         <span>Fetch Single Ticker(s)</span>
         <div class="dash-section-actions">
+          <button id="btn-single-queue-refresh" class="dash-btn-sm" title="Refresh queue">↻</button>
+          <button id="btn-single-queue-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all tickers from the queue">Clear All</button>
           <button id="btn-single-fetch" class="dash-btn-sm dash-btn-sm-launch" title="Fetch all queued tickers below">&#9654; Fetch</button>
         </div>
       </div>
@@ -76,7 +78,7 @@
         <div class="fetch-add-row">
           <div id="single-ticker-wrap">
             <input id="single-ticker" class="dash-ticker-input" type="text"
-                   placeholder="Type to select ticker…" autocomplete="off" spellcheck="false"
+                   placeholder="Type to search for tickers, eg. AAPL or AAPL,MSFT,TSLA" autocomplete="off" spellcheck="false"
                    title="Type any lowercase letter to search tickers, ↑↓ to navigate suggestions, Enter to add">
             <div id="single-ticker-dd"></div>
           </div>
@@ -95,6 +97,8 @@
       <div class="dash-section-head">
         <span>Fetch Tickers List(s)</span>
         <div class="dash-section-actions">
+          <button id="btn-batch-queue-refresh" class="dash-btn-sm" title="Refresh queue">↻</button>
+          <button id="btn-batch-queue-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all lists from the queue">Clear All</button>
           <button id="btn-fetch" class="dash-btn-sm dash-btn-sm-launch" title="Fetch all queued lists below">&#9654; Fetch</button>
           <button id="btn-fetch-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running fetch">Cancel</button>
         </div>
@@ -151,22 +155,26 @@
           <button id="btn-clear-all" class="dash-btn-sm dash-btn-sm-del" title="Delete ALL fetched data from the database">Clear All</button>
         </div>
       </div>
+      <div class="stats-view-tabs">
+        <button id="btn-stats-tf" class="stats-view-tab active">Timeframes</button>
+        <button id="btn-stats-list" class="stats-view-tab">Lists</button>
+      </div>
       <div id="stats-summary"></div>
       <div id="stats-wrap">
         <table id="stats-table">
           <thead>
-            <tr>
+            <tr id="stats-thead-row">
               <th>Ticker</th>
               <th>Timeframe</th>
               <th>List</th>
               <th>Last Date</th>
-              <th>Rows</th>
+              <th>Bars</th>
               <th>Fetched</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="stats-body">
-            <tr><td colspan="6" class="stats-empty">No data yet.</td></tr>
+            <tr><td colspan="7" class="stats-empty">No data yet.</td></tr>
           </tbody>
         </table>
       </div>

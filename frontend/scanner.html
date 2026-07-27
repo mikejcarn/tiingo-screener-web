@@ -82,7 +82,7 @@
     <!-- Run card -->
     <div class="scan-run-card">
       <div class="ind-run-head">
-        <span>Run Scan Configs</span>
+        <span>Run Scanner Configs</span>
         <div class="ind-db-head-actions">
           <button id="btn-run-refresh" class="dash-btn-sm" title="Refresh configs">↻</button>
           <button id="btn-run-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear run status">Clear All</button>
@@ -90,8 +90,13 @@
         </div>
       </div>
       <div class="scan-run-body">
-        <span id="scan-run-status" class="scan-run-status-text"></span>
-        <span id="scan-run-summary" class="scan-run-summary"></span>
+        <div id="scan-run-conf-list" class="run-queue-list"></div>
+        <div class="ind-overall-section">
+          <div class="ind-overall-header">
+            <span class="ind-overall-label">total run</span>
+            <span id="scan-run-total" class="run-queue-status" style="display:none;"></span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -115,7 +120,7 @@
 
     <!-- History card -->
     <div class="scan-history">
-      <div class="ind-run-head">Scan History <div class="ind-db-head-actions"><button id="btn-history-refresh" class="dash-btn-sm" title="Refresh scan history">↻</button><button id="btn-history-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all scan history">Clear All</button></div></div>
+      <div class="ind-run-head">Scanner History <div class="ind-db-head-actions"><button id="btn-history-refresh" class="dash-btn-sm" title="Refresh scan history">↻</button><button id="btn-history-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all scan history">Clear All</button></div></div>
       <div class="scan-history-wrap">
         <table class="scan-history-table">
           <thead>

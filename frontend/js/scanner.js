@@ -20,6 +20,25 @@ let _critLogic    = {};
 let _compatibility = {};   // { criteria_name: true | false | null }
 let _focusedIdx   = -1;
 
+// ── Run queue ─────────────────────────────────────────────────
+let _runCheckedIds = new Set();
+let _runQueue      = [];
+let _runQueueIdx   = -1;
+let _runResults    = {};
+
+const _esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function _saveRunQueue() {
+  try { localStorage.setItem('scan_run_queue', JSON.stringify([..._runCheckedIds])); } catch {}
+}
+function _loadRunQueue() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('scan_run_queue') || '[]');
+    const valid = new Set(_configs.map(c => c.id));
+    _runCheckedIds = new Set(saved.filter(id => valid.has(id)));
+  } catch { _runCheckedIds = new Set(); }
+}
+
 // ── Init ──────────────────────────────────────────────────────
 (async function init() {
   initTheme();
@@ -80,6 +99,7 @@ function _setActiveTf(tf) {
 async function _loadConfigs() {
   const data = await api.get('/api/scan-configs');
   _configs = data.configs || [];
+  _loadRunQueue();
   _renderList();
   if (_activeId && _configs.find(c => c.id === _activeId)) {
     await _selectConfig(_activeId);
@@ -88,6 +108,7 @@ async function _loadConfigs() {
   } else {
     _showEmpty(true);
   }
+  _renderRunConfigs();
 }
 
 function _renderList() {
@@ -95,8 +116,9 @@ function _renderList() {
   if (!_configs.length) { el.innerHTML = '<div class="ind-loading">No scans yet.</div>'; return; }
   el.innerHTML = '';
   for (const cfg of _configs) {
+    const queued = _runCheckedIds.has(cfg.id);
     const item = document.createElement('div');
-    item.className = 'ind-config-item' + (cfg.id === _activeId ? ' active' : '');
+    item.className = 'ind-config-item' + (cfg.id === _activeId ? ' active' : '') + (queued ? ' queued' : '');
     item.dataset.id = cfg.id;
     const info = document.createElement('div');
     info.className = 'ind-config-info';
@@ -105,8 +127,22 @@ function _renderList() {
     const sub = document.createElement('div');
     sub.className = 'ind-config-date'; sub.textContent = cfg.updated_at ? cfg.updated_at.slice(0, 10) : '';
     info.append(name, sub);
-    item.appendChild(info);
-    item.addEventListener('click', () => _selectConfig(cfg.id));
+    const qBtn = document.createElement('button');
+    qBtn.className = 'ind-queue-btn' + (queued ? ' queued' : '');
+    qBtn.dataset.id = cfg.id;
+    qBtn.title = queued ? 'Remove from run queue' : 'Add to run queue';
+    qBtn.textContent = '▶';
+    item.append(info, qBtn);
+    item.addEventListener('click', e => { if (!e.target.closest('.ind-queue-btn')) _selectConfig(cfg.id); });
+    qBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = +qBtn.dataset.id;
+      if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
+      else _runCheckedIds.add(id);
+      _saveRunQueue();
+      _renderList();
+      _renderRunConfigs();
+    });
     el.appendChild(item);
   }
 }
@@ -463,26 +499,90 @@ async function _saveScan() {
   }
 }
 
-// ── Run ───────────────────────────────────────────────────────
-async function _runScan() {
-  if (!_activeId) return;
-  if (_dirty) await _saveScan();
-  const statusEl  = document.getElementById('scan-run-status');
-  const summaryEl = document.getElementById('scan-run-summary');
-  statusEl.textContent  = 'Running…';
-  summaryEl.textContent = '';
-  _clearResults();
+// ── Run queue ─────────────────────────────────────────────────
+function _renderRunConfigs() {
+  const el = document.getElementById('scan-run-conf-list');
+  if (!el) return;
+  const queued = _configs.filter(c => _runCheckedIds.has(c.id));
+  const inRun  = _runQueueIdx >= 0;
+  if (!queued.length) {
+    el.innerHTML = '<div class="run-queue-empty">No configs queued — click ▶ to add</div>';
+    return;
+  }
+  el.innerHTML = queued.map((c, i) => {
+    const result = _runResults[c.id];
+    let statusHtml = '';
+    if (result) {
+      if (result.status === 'pending') {
+        statusHtml = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
+      } else if (result.status === 'running') {
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:100%"></div></div>
+                      <div class="rq-info"><span class="rq-state rq-running">running…</span></div>`;
+      } else if (result.status === 'done') {
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill ${result.error ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
+                      <div class="rq-info">
+                        <span class="rq-state ${result.error ? 'rq-errors' : 'rq-done'}">${result.error ? '✗ error' : '✓ done'}</span>
+                        ${!result.error ? `<span class="rq-count">${result.matched} / ${result.total} matched</span>` : ''}
+                      </div>`;
+      }
+    }
+    return `<div class="run-queue-item">
+      <div class="run-queue-header">
+        <span class="run-queue-pos">${i + 1}</span>
+        <span class="run-queue-name">${_esc(c.name)}</span>
+        <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''} title="Remove from queue">×</button>
+      </div>
+      <div class="rq-status">${statusHtml}</div>
+    </div>`;
+  }).join('');
+
+  const totalEl = document.getElementById('scan-run-total');
+  if (inRun && totalEl) {
+    const conf = _configs.find(c => c.id === _runQueue[_runQueueIdx]);
+    totalEl.style.display = '';
+    totalEl.textContent = `Config ${_runQueueIdx + 1} / ${_runQueue.length}  ·  ${conf?.name ?? ''}`;
+  } else if (totalEl) {
+    totalEl.style.display = 'none';
+  }
+}
+
+async function _startScan() {
+  const ids = _configs.filter(c => _runCheckedIds.has(c.id)).map(c => c.id);
+  if (!ids.length) return;
+  _runQueue    = ids;
+  _runQueueIdx = 0;
+  _runResults  = {};
+  for (const id of _runQueue) _runResults[id] = { status: 'pending' };
+  const btn = document.getElementById('btn-run-scan');
+  btn.disabled = true; btn.textContent = '▶ Running…';
+  _renderRunConfigs();
+  await _kickNextQueueItem();
+}
+
+async function _kickNextQueueItem() {
+  if (_runQueueIdx >= _runQueue.length) {
+    _runQueue = []; _runQueueIdx = -1;
+    const btn = document.getElementById('btn-run-scan');
+    btn.disabled = false; btn.textContent = '▶ Run';
+    _renderRunConfigs();
+    return;
+  }
+  const configId = _runQueue[_runQueueIdx];
+  _runResults[configId] = { status: 'running' };
+  _renderRunConfigs();
   try {
-    const data = await api.post('/api/scan/run', { config_id: _activeId });
+    if (_dirty && _activeId === configId) await _saveScan();
+    const data = await api.post('/api/scan/run', { config_id: configId });
     _lastResults = data.results || [];
-    statusEl.textContent  = '';
-    summaryEl.textContent = `${data.count} of ${data.total ?? '?'} matched`;
+    _runResults[configId] = { status: 'done', matched: data.count, total: data.total ?? 0 };
     _renderResults(data);
     _loadHistory();
   } catch (e) {
-    statusEl.textContent  = e.message || 'Error running scan';
-    summaryEl.textContent = '';
+    _runResults[configId] = { status: 'done', error: true };
   }
+  _renderRunConfigs();
+  _runQueueIdx++;
+  await _kickNextQueueItem();
 }
 
 function _clearResults() {
@@ -616,10 +716,24 @@ function _wireGlobal() {
     await _loadConfigs();
   });
 
-  document.getElementById('btn-run-refresh').addEventListener('click', _loadConfigs);
+  document.getElementById('btn-run-refresh').addEventListener('click', _renderRunConfigs);
   document.getElementById('btn-run-clear').addEventListener('click', () => {
-    document.getElementById('scan-run-status').textContent  = '';
-    document.getElementById('scan-run-summary').textContent = '';
+    if (_runQueueIdx >= 0) return;
+    _runCheckedIds.clear();
+    _runResults = {};
+    _saveRunQueue();
+    _renderList();
+    _renderRunConfigs();
+  });
+  document.getElementById('scan-run-conf-list').addEventListener('click', e => {
+    const btn = e.target.closest('.run-queue-remove');
+    if (!btn || btn.disabled) return;
+    const id = +btn.dataset.id;
+    _runCheckedIds.delete(id);
+    delete _runResults[id];
+    _saveRunQueue();
+    _renderList();
+    _renderRunConfigs();
   });
   document.getElementById('btn-results-refresh').addEventListener('click', () => {
     if (_lastResults) _renderResults({ results: _lastResults, count: _lastResults.length });
@@ -631,7 +745,7 @@ function _wireGlobal() {
     await api.del('/api/scan/history');
     _loadHistory();
   });
-  document.getElementById('btn-run-scan').addEventListener('click', _runScan);
+  document.getElementById('btn-run-scan').addEventListener('click', _startScan);
   document.getElementById('btn-open-chart').addEventListener('click', () => {
     if (_lastResults?.length) _openTicker(_lastResults[0].ticker);
   });

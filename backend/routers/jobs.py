@@ -196,6 +196,15 @@ def ticker_lists():
     return {"lists": lists}
 
 
+@router.delete("/ticker-lists/{name}")
+def delete_ticker_list_file(name: str):
+    path = TICKER_LISTS_DIR / f"{name}.csv"
+    if not path.exists() or path.name == 'tiingo-tickers.csv':
+        raise HTTPException(status_code=404, detail="List not found")
+    path.unlink()
+    return {"deleted": name}
+
+
 @router.get("/fetch-history")
 def fetch_history():
     with db._conn() as con:

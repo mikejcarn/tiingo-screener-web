@@ -345,8 +345,9 @@ function _renderTickerListItems() {
   if (!_tickerLists.length) { wrap.innerHTML = ''; return; }
   wrap.innerHTML = _tickerLists.map(l => `
     <div class="ticker-list-row">
-      <span class="ticker-list-name">${l.name}</span>
+      <span class="ticker-list-name">${_esc(l.name)}</span>
       <span class="ticker-list-count">${l.count.toLocaleString()} tickers</span>
+      <button class="ticker-list-del scan-history-del" data-list="${_esc(l.name)}" title="Delete list ${_esc(l.name)}">✕</button>
     </div>
   `).join('');
 }
@@ -387,12 +388,12 @@ async function _loadApiKey() {
 function _setApiKeyEditMode(on) {
   document.getElementById('apikey-masked').style.display     = on ? 'none' : '';
   document.getElementById('apikey-input').style.display      = on ? '' : 'none';
-  document.getElementById('btn-apikey-add').style.display    = (!on && !_hasApiKey) ? '' : 'none';
-  document.getElementById('btn-apikey-edit').style.display   = (!on && _hasApiKey) ? '' : 'none';
   document.getElementById('btn-apikey-save').style.display   = on ? '' : 'none';
   document.getElementById('btn-apikey-cancel').style.display = on ? '' : 'none';
-  document.getElementById('btn-apikey-verify').style.display = (!on && _hasApiKey) ? '' : 'none';
-  document.getElementById('btn-apikey-delete').style.display = (!on && _hasApiKey) ? '' : 'none';
+  document.getElementById('btn-apikey-add').disabled    = on || _hasApiKey;
+  document.getElementById('btn-apikey-edit').disabled   = on || !_hasApiKey;
+  document.getElementById('btn-apikey-verify').disabled = on || !_hasApiKey;
+  document.getElementById('btn-apikey-delete').disabled = on || !_hasApiKey;
   if (on) {
     document.getElementById('apikey-input').value = '';
     document.getElementById('apikey-input').focus();
@@ -442,59 +443,144 @@ async function _loadTiingoListInfo() {
 
 // ── Stats ─────────────────────────────────────────────────────
 
+let _statsData = null;
+let _statsView = 'timeframes';
+
+function _fmtBars(n) {
+  return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : String(n);
+}
+
 async function _loadStats() {
   const tbody = document.getElementById('stats-body');
-  let data;
   try {
-    data = await api.get('/api/stats');
+    _statsData = await api.get('/api/stats');
   } catch {
-    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">Failed to load stats.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">Failed to load stats.</td></tr>';
     return;
   }
+  _renderStats();
+}
 
-  const summary   = data.summary || [];
+function _renderStats() {
+  if (!_statsData) return;
+  if (_statsView === 'timeframes') _renderStatsByTimeframe();
+  else _renderStatsByList();
+}
+
+function _renderStatsByTimeframe() {
+  const summary   = _statsData.summary || [];
+  const allRows   = _statsData.stats   || [];
+
+  // compute per-timeframe bar range from detail rows
+  const tfRange = {};
+  for (const r of allRows) {
+    if (!tfRange[r.timeframe]) tfRange[r.timeframe] = { min: r.rows, max: r.rows };
+    else { tfRange[r.timeframe].min = Math.min(tfRange[r.timeframe].min, r.rows);
+           tfRange[r.timeframe].max = Math.max(tfRange[r.timeframe].max, r.rows); }
+  }
+
   const summaryEl = document.getElementById('stats-summary');
-  if (summary.length) {
-    summaryEl.innerHTML = summary.map(s => {
-      const rows = s.rows >= 1e6
-        ? (s.rows / 1e6).toFixed(1) + 'M'
-        : s.rows >= 1e3
-          ? (s.rows / 1e3).toFixed(0) + 'K'
-          : s.rows;
-      return `<span class="stats-summary-pill">
-        <span class="ss-tf">${s.timeframe}</span>
-        <span class="ss-val">${s.tickers} tickers</span>
-        <span class="ss-sep">·</span>
-        <span class="ss-val">${s.first_date} – ${s.last_date}</span>
-        <span class="ss-sep">·</span>
-        <span class="ss-val">${rows} rows</span>
-      </span>`;
-    }).join('');
-  } else {
-    summaryEl.innerHTML = '';
-  }
+  summaryEl.innerHTML = summary.map(s => {
+    const range = tfRange[s.timeframe];
+    const barsStr = range
+      ? (range.min === range.max ? _fmtBars(range.min) : `${_fmtBars(range.min)} – ${_fmtBars(range.max)}`)
+      : '—';
+    return `<span class="stats-summary-pill">
+      <span class="ss-tf">${s.timeframe}</span>
+      <span class="ss-val">${s.tickers} tickers</span>
+      <span class="ss-sep">·</span>
+      <span class="ss-val">${s.first_date} – ${s.last_date}</span>
+      <span class="ss-sep">·</span>
+      <span class="ss-val">${barsStr} bars</span>
+    </span>`;
+  }).join('');
 
-  const rows = data.stats || [];
+  document.getElementById('stats-thead-row').innerHTML =
+    '<th>Ticker</th><th>Timeframe</th><th>List</th><th>Last Date</th><th>Bars</th><th>Fetched</th><th></th>';
+
+  const tbody = document.getElementById('stats-body');
+  const rows  = _statsData.stats || [];
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No data in database yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">No data in database yet.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r => `
-    <tr>
-      <td>${_esc(r.ticker)}</td>
-      <td>${_esc(r.timeframe)}</td>
-      <td>${_esc(r.ticker_list || '—')}</td>
-      <td>${r.last_date || '—'}</td>
-      <td>${r.rows.toLocaleString()}</td>
-      <td>${r.fetched_at || '—'}</td>
-      <td><button class="tbl-del-btn" data-ticker="${_esc(r.ticker)}" title="Delete ${_esc(r.ticker)}">×</button></td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${_esc(r.ticker)}</td>
+    <td>${_esc(r.timeframe)}</td>
+    <td>${_esc(r.ticker_list || '—')}</td>
+    <td>${r.last_date || '—'}</td>
+    <td>${r.rows.toLocaleString()}</td>
+    <td>${r.fetched_at || '—'}</td>
+    <td><button class="tbl-del-btn" data-ticker="${_esc(r.ticker)}" title="Delete ${_esc(r.ticker)}">×</button></td>
+  </tr>`).join('');
   for (const btn of tbody.querySelectorAll('.tbl-del-btn')) {
     btn.addEventListener('click', async () => {
       const ticker = btn.dataset.ticker;
       if (!confirm(`Delete all data for ${ticker}?`)) return;
       await api.del(`/api/data/ohlcv/ticker/${encodeURIComponent(ticker)}`);
+      _loadStats();
+    });
+  }
+}
+
+function _renderStatsByList() {
+  const allRows = _statsData.stats || [];
+  const listMap = {};
+  for (const r of allRows) {
+    const list = r.ticker_list || '—';
+    if (!listMap[list]) listMap[list] = { tickers: new Set(), timeframes: new Set(), bars: 0, lastDate: '' };
+    listMap[list].tickers.add(r.ticker);
+    listMap[list].timeframes.add(r.timeframe);
+    listMap[list].bars += r.rows;
+    if (!listMap[list].lastDate || r.last_date > listMap[list].lastDate) listMap[list].lastDate = r.last_date;
+  }
+  const lists = Object.entries(listMap).sort(([a], [b]) => a.localeCompare(b));
+
+  // compute per-ticker total bars within each list, then get range
+  const listTickerBars = {};
+  for (const r of allRows) {
+    const list = r.ticker_list || '—';
+    if (!listTickerBars[list]) listTickerBars[list] = {};
+    listTickerBars[list][r.ticker] = (listTickerBars[list][r.ticker] || 0) + r.rows;
+  }
+
+  const summaryEl = document.getElementById('stats-summary');
+  summaryEl.innerHTML = lists.map(([name, d]) => {
+    const tickerTotals = Object.values(listTickerBars[name] || {});
+    const minB = tickerTotals.length ? Math.min(...tickerTotals) : 0;
+    const maxB = tickerTotals.length ? Math.max(...tickerTotals) : 0;
+    const barsStr = minB === maxB ? _fmtBars(minB) : `${_fmtBars(minB)} – ${_fmtBars(maxB)}`;
+    return `<span class="stats-summary-pill">
+      <span class="ss-tf">${_esc(name)}</span>
+      <span class="ss-val">${d.tickers.size} tickers</span>
+      <span class="ss-sep">·</span>
+      <span class="ss-val">${d.timeframes.size} tf</span>
+      <span class="ss-sep">·</span>
+      <span class="ss-val">${barsStr} bars</span>
+    </span>`;
+  }).join('');
+
+  document.getElementById('stats-thead-row').innerHTML =
+    '<th>List</th><th>Tickers</th><th>Timeframes</th><th>Total Bars</th><th>Last Date</th><th></th>';
+
+  const tbody = document.getElementById('stats-body');
+  if (!lists.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No data in database yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lists.map(([name, d]) => `<tr>
+    <td>${_esc(name)}</td>
+    <td>${d.tickers.size.toLocaleString()}</td>
+    <td>${[...d.timeframes].join(', ')}</td>
+    <td>${d.bars.toLocaleString()}</td>
+    <td>${d.lastDate || '—'}</td>
+    <td>${name !== '—' ? `<button class="tbl-del-btn" data-list="${_esc(name)}" title="Delete all data for list ${_esc(name)}">×</button>` : ''}</td>
+  </tr>`).join('');
+  for (const btn of tbody.querySelectorAll('.tbl-del-btn')) {
+    btn.addEventListener('click', async () => {
+      const list = btn.dataset.list;
+      if (!confirm(`Delete all data for list "${list}"?`)) return;
+      await api.del(`/api/data/ohlcv/list/${encodeURIComponent(list)}`);
       _loadStats();
     });
   }
@@ -546,6 +632,18 @@ function _wireHistoryTable() {
 // ── Buttons ───────────────────────────────────────────────────
 
 function _wireButtons() {
+  document.getElementById('btn-single-queue-refresh').addEventListener('click', _renderSingleQueue);
+  document.getElementById('btn-single-queue-clear').addEventListener('click', () => {
+    if (_singleRunning) return;
+    _singleQueue = []; _singleResults = {};
+    _saveSingleQueue(); _renderSingleQueue();
+  });
+  document.getElementById('btn-batch-queue-refresh').addEventListener('click', _renderBatchQueue);
+  document.getElementById('btn-batch-queue-clear').addEventListener('click', () => {
+    if (_batchRunning) return;
+    _batchQueue = []; _batchResults = {};
+    _saveBatchQueue(); _renderBatchQueue();
+  });
   document.getElementById('btn-single-fetch').addEventListener('click', _runSingleQueue);
   document.getElementById('btn-fetch').addEventListener('click', _runBatchQueue);
 
@@ -616,12 +714,32 @@ function _wireButtons() {
     btn.textContent = 'Update';
   });
 
+  document.getElementById('btn-stats-tf').addEventListener('click', () => {
+    _statsView = 'timeframes';
+    document.getElementById('btn-stats-tf').classList.add('active');
+    document.getElementById('btn-stats-list').classList.remove('active');
+    _renderStats();
+  });
+  document.getElementById('btn-stats-list').addEventListener('click', () => {
+    _statsView = 'lists';
+    document.getElementById('btn-stats-list').classList.add('active');
+    document.getElementById('btn-stats-tf').classList.remove('active');
+    _renderStats();
+  });
   document.getElementById('btn-refresh-stats').addEventListener('click', () => {
     _loadStats();
     _loadHistory();
   });
 
   document.getElementById('btn-refresh-lists').addEventListener('click', () => _loadTickerLists());
+  document.getElementById('ticker-list-items').addEventListener('click', async e => {
+    const btn = e.target.closest('.ticker-list-del');
+    if (!btn) return;
+    const name = btn.dataset.list;
+    if (!confirm(`Delete list "${name}"?`)) return;
+    await api.del(`/api/ticker-lists/${encodeURIComponent(name)}`);
+    _loadTickerLists();
+  });
   document.getElementById('btn-history-refresh').addEventListener('click', () => _loadHistory());
   document.getElementById('btn-history-clear').addEventListener('click', async () => {
     if (!confirm('Clear all fetch history?')) return;
