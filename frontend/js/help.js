@@ -7,7 +7,7 @@ const _GLOBAL_ROWS = `
   <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages forward / backward (tickers → indicators → scanner → chart)</td></tr>
   <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>S</kbd> / <kbd>C</kbd></td><td>Jump to tickers / indicators / scanner / chart</td></tr>
   <tr><td><kbd>?</kbd></td><td>Toggle this help panel</td></tr>
-  <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
+  <tr><td><kbd>-</kbd> / <kbd>=</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
   <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>`;
 
 const _PAGES = [
@@ -121,7 +121,7 @@ function _createOverlay() {
     <div id="help-panel">
       <div id="help-header">
         <div id="help-tabs">${tabsHtml}</div>
-        <span id="help-nav-hint"><kbd>=</kbd> / <kbd>-</kbd></span>
+        <span id="help-nav-hint"><kbd>-</kbd> / <kbd>=</kbd></span>
         <button id="help-close" title="Close (Escape)">&#x2715;</button>
       </div>
       <div id="help-body"></div>

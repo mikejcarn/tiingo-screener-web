@@ -3,10 +3,14 @@ import { initHelp }  from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
 
 // ── State ─────────────────────────────────────────────────────
-let _configs    = [];
-let _criteria   = [];
-let _confs      = [];
-let _timeframes = [];
+const _FIXED_TFS = ['daily', 'weekly', '1hour', '4hour', '5min'];
+let _configs      = [];
+let _criteria     = [];
+let _confs        = [];           // all ind_configs [{id, name}]
+let _confsWithData = new Set();   // ind_conf ids that have computed data
+let _tickerLists  = [];           // available ticker list names
+let _timeframes   = [];
+let _indConfTfs   = new Set();   // timeframes with indicator data for selected ind_conf
 let _activeId   = null;
 let _dirty      = false;
 let _lastResults = null;
@@ -46,16 +50,19 @@ function _loadRunQueue() {
 (async function init() {
   initTheme();
   initHelp('scanner');
-  const [tickerData, criteriaData] = await Promise.all([
+  const [tickerData, criteriaData, indConfsData] = await Promise.all([
     api.get('/api/tickers'),
     api.get('/api/criteria'),
+    api.get('/api/ind-configs'),
   ]);
-  _confs      = tickerData.ind_confs  || [];
-  _timeframes = tickerData.timeframes || [];
+  _confs         = indConfsData.configs  || [];
+  _confsWithData = new Set((tickerData.ind_confs || []).map(c => c.id));
+  _tickerLists   = tickerData.lists      || [];
+  _timeframes    = tickerData.timeframes || [];
   _criteria   = criteriaData.criteria || [];
   _criteriaParamDescriptions = criteriaData.param_descriptions || {};
   for (const c of _criteria) _criteriaDescriptions[c.name] = c.description || '';
-  _activeTf   = _timeframes[0] || 'daily';
+  _activeTf   = 'daily';
   _populateIndConfs();
   _wireScanTooltip();
   _wireGlobal();
@@ -64,12 +71,56 @@ function _loadRunQueue() {
 
 function _populateIndConfs() {
   const sel = document.getElementById('scan-ind-conf');
-  sel.innerHTML = '<option value="">— select —</option>';
-  for (const c of _confs) {
-    const o = document.createElement('option');
-    o.value = c.id; o.textContent = c.name;
-    sel.appendChild(o);
+  sel.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = ''; placeholder.textContent = '— select —';
+  placeholder.disabled = true;
+  sel.appendChild(placeholder);
+
+  if (_confs.length) {
+    const grp = document.createElement('optgroup');
+    grp.label = '— Indicator Configs —';
+    for (const c of _confs) {
+      const o = document.createElement('option');
+      o.value = `conf:${c.id}`;
+      o.textContent = c.name;
+      grp.appendChild(o);
+    }
+    sel.appendChild(grp);
   }
+
+  if (_tickerLists.length) {
+    const grp = document.createElement('optgroup');
+    grp.label = '— Tickers Only —';
+    for (const list of _tickerLists) {
+      const o = document.createElement('option');
+      o.value = `list:${list}`; o.textContent = list;
+      grp.appendChild(o);
+    }
+    sel.appendChild(grp);
+  }
+}
+
+// ── Dropdown value helpers ────────────────────────────────────
+// Encode: ind_conf → "conf:ID", ticker list → "list:NAME", none → ""
+function _encodeSource(indConfId, tickerList) {
+  if (indConfId) return `conf:${indConfId}`;
+  if (tickerList) return `list:${tickerList}`;
+  return '';
+}
+function _decodeSource(val) {
+  if (!val) return { indConfId: null, tickerList: null };
+  if (val.startsWith('conf:')) return { indConfId: parseInt(val.slice(5)) || null, tickerList: null };
+  if (val.startsWith('list:')) return { indConfId: null, tickerList: val.slice(5) };
+  return { indConfId: null, tickerList: null };
+}
+function _updateNoDataWarning() {
+  const warn = document.getElementById('scan-no-data-warn');
+  if (!warn) return;
+  const val = document.getElementById('scan-ind-conf')?.value || '';
+  const { indConfId } = _decodeSource(val);
+  const show = indConfId && !_confsWithData.has(indConfId);
+  warn.style.display = show ? '' : 'none';
 }
 
 // ── Criteria tooltip ──────────────────────────────────────────
@@ -102,21 +153,37 @@ function _wireScanTooltip() {
 // ── Timeframe tabs ────────────────────────────────────────────
 function _buildTfTabs() {
   const container = document.getElementById('scan-tf-tabs');
+  if (!container) return;
   container.innerHTML = '';
-  for (const tf of _timeframes) {
+  for (const tf of _FIXED_TFS) {
     const btn = document.createElement('button');
-    btn.className   = 'tf-tab' + (tf === _activeTf ? ' active' : '');
-    btn.dataset.tf  = tf;
+    btn.className  = 'tf-tab';
+    btn.dataset.tf = tf;
     btn.textContent = tf;
     btn.addEventListener('click', () => _setActiveTf(tf));
     container.appendChild(btn);
   }
-  const hint = document.createElement('span');
-  hint.className   = 'scan-tf-hint';
-  hint.textContent = 'tabs reflect fetched timeframes';
-  hint.title       = 'Fetch additional timeframes on the Tickers page to add more tabs here.';
-  container.appendChild(hint);
+  _updateTfTabStates();
+}
+
+function _updateTfTabStates() {
+  const { indConfId } = _decodeSource(document.getElementById('scan-ind-conf')?.value || '');
+  const hasIndConf = !!indConfId;
+  for (const btn of document.querySelectorAll('#scan-tf-tabs .tf-tab')) {
+    const tf = btn.dataset.tf;
+    btn.classList.toggle('active',    tf === _activeTf);
+    btn.classList.toggle('has-data',  !hasIndConf || _indConfTfs.has(tf));
+  }
   _updateTfCounts();
+}
+
+async function _fetchIndConfTfs(indConfId) {
+  if (!indConfId) { _indConfTfs = new Set(); _updateTfTabStates(); return; }
+  try {
+    const data = await api.get(`/api/criteria/ind_conf_timeframes/${indConfId}`);
+    _indConfTfs = new Set(data.timeframes || []);
+  } catch { _indConfTfs = new Set(); }
+  _updateTfTabStates();
 }
 
 function _updateTfCounts() {
@@ -135,11 +202,9 @@ function _updateTfCounts() {
 
 function _setActiveTf(tf) {
   _activeTf = tf;
-  document.querySelectorAll('#scan-tf-tabs .tf-tab').forEach(b =>
-    b.classList.toggle('active', b.dataset.tf === tf)
-  );
+  _updateTfTabStates();
   document.querySelectorAll('.scan-crit-card').forEach(card => card._update?.(tf));
-  const indConfId = parseInt(document.getElementById('scan-ind-conf')?.value) || 0;
+  const { indConfId } = _decodeSource(document.getElementById('scan-ind-conf')?.value || '');
   _checkCompat(indConfId, tf);
 }
 
@@ -149,10 +214,17 @@ async function _loadConfigs() {
   _configs = data.configs || [];
   _loadRunQueue();
   _renderList();
-  if (_activeId && _configs.find(c => c.id === _activeId)) {
-    await _selectConfig(_activeId);
-  } else if (_configs.length) {
-    await _selectConfig(_configs[0].id);
+  if (!_activeId) {
+    try {
+      const stored = parseInt(localStorage.getItem('scan_active_id')) || 0;
+      if (stored && _configs.find(c => c.id === stored)) _activeId = stored;
+    } catch {}
+  }
+  const target = (_activeId && _configs.find(c => c.id === _activeId))
+    ? _activeId
+    : _configs.length ? _configs[0].id : null;
+  if (target) {
+    try { await _selectConfig(target); } catch { _showEmpty(true); }
   } else {
     _showEmpty(true);
   }
@@ -198,24 +270,18 @@ function _renderList() {
 async function _selectConfig(id) {
   if (_dirty && _activeId && !confirm('Discard unsaved changes?')) return;
   _activeId = id; _dirty = false; _focusedIdx = -1;
+  try { localStorage.setItem('scan_active_id', String(id)); } catch {}
   _renderList();
   const cfg = await api.get(`/api/scan-configs/${id}`);
   _showEmpty(false);
   document.getElementById('scan-name').value     = cfg.name;
-  document.getElementById('scan-ind-conf').value = cfg.ind_conf_id || '';
-  const created = (cfg.created_at || '').slice(0, 10);
-  const updated = (cfg.updated_at || '').slice(0, 10);
-  const datesEl = document.getElementById('scan-conf-dates');
-  if (updated && updated !== created) {
-    datesEl.textContent = `created ${created} · updated ${updated}`;
-  } else if (created) {
-    datesEl.textContent = `created ${created}`;
-  } else {
-    datesEl.textContent = '';
-  }
+  document.getElementById('scan-ind-conf').value = _encodeSource(cfg.ind_conf_id, cfg.ticker_list);
+  _updateNoDataWarning();
+  _renderScanDates(cfg);
   _loadFromConfig(cfg.criteria || []);
   _clearResults();
-  const indConfId = parseInt(document.getElementById('scan-ind-conf').value) || 0;
+  const { indConfId } = _decodeSource(document.getElementById('scan-ind-conf').value);
+  _fetchIndConfTfs(indConfId);
   _checkCompat(indConfId, _activeTf);
 }
 
@@ -239,6 +305,27 @@ function _loadFromConfig(entries) {
   }
   _buildTfTabs();
   _rebuildCards();
+}
+
+// ── Date helpers ─────────────────────────────────────────────
+function _fmtDate(str) {
+  if (!str) return '';
+  const d = new Date(str);
+  return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function _renderScanDates(cfg) {
+  const el = document.getElementById('scan-conf-dates');
+  if (!el) return;
+  const created = _fmtDate(cfg.created_at);
+  const updated = _fmtDate(cfg.updated_at);
+  if (updated && updated !== created) {
+    el.textContent = `created ${created} · updated ${updated}`;
+  } else if (created) {
+    el.textContent = `created ${created}`;
+  } else {
+    el.textContent = '';
+  }
 }
 
 // ── Cards ─────────────────────────────────────────────────────
@@ -332,10 +419,7 @@ function _buildCard(crit, idx) {
   btnAnd.addEventListener('click', e => _setLogic('AND', e));
   btnOr.addEventListener('click',  e => _setLogic('OR',  e));
 
-  const arrow = document.createElement('span');
-  arrow.className = 'ind-expand-arrow'; arrow.textContent = '▸';
-
-  head.append(cbxWrap, logicSwitch, nameWrap, countBadge, arrow);
+  head.append(cbxWrap, logicSwitch, nameWrap, countBadge);
   card.appendChild(head);
 
   // ── Body ──────────────────────────────────────────────────
@@ -364,6 +448,18 @@ function _buildCard(crit, idx) {
     card.classList.toggle('enabled', en);
     const n = _tfCount();
     countBadge.textContent = n > 1 ? `×${n}` : '';
+    let arrow = head.querySelector('.ind-expand-arrow');
+    if (n > 0) {
+      if (!arrow) {
+        arrow = document.createElement('span');
+        arrow.className = 'ind-expand-arrow';
+        arrow.textContent = '▾';
+        head.appendChild(arrow);
+      }
+    } else {
+      arrow?.remove();
+      body.classList.add('collapsed');
+    }
   }
 
   function _refreshBody(tf) {
@@ -387,26 +483,22 @@ function _buildCard(crit, idx) {
     if (cbx.checked) {
       if (!_enabled[tf]) _enabled[tf] = new Set();
       _enabled[tf].add(crit.name);
-      card.classList.add('enabled');
+      body.classList.remove('collapsed');
     } else {
       _enabled[tf]?.delete(crit.name);
-      card.classList.remove('enabled');
     }
-    const n = _tfCount();
-    countBadge.textContent = n > 1 ? `×${n}` : '';
+    _refreshHead(tf);
     _updateTfCounts();
     _markDirty();
   });
 
-  // ── Head click: toggle select + open together ─────────────
+  // ── Head click: toggle enabled state for current tf ───────
   head.addEventListener('click', e => {
     if (cbxWrap.contains(e.target)) return;
     if (logicSwitch.contains(e.target)) return;
     _setCritFocus(idx);
-    cbx.checked = !cbx.checked;
+    cbx.checked = !_isEnabled(_activeTf);
     cbx.dispatchEvent(new Event('change'));
-    body.classList.toggle('collapsed', !cbx.checked);
-    arrow.textContent = cbx.checked ? '▾' : '▸';
   });
 
   // ── Collect for save ──────────────────────────────────────
@@ -529,10 +621,12 @@ function _collectAllEntries() {
 async function _saveScan() {
   if (!_activeId) return;
   const btn = document.getElementById('btn-save-scan');
+  const { indConfId, tickerList } = _decodeSource(document.getElementById('scan-ind-conf').value);
   const body = {
     name:        document.getElementById('scan-name').value.trim() || 'Unnamed',
     logic:       'AND',
-    ind_conf_id: parseInt(document.getElementById('scan-ind-conf').value) || null,
+    ind_conf_id: indConfId,
+    ticker_list: tickerList,
     criteria:    _collectAllEntries(),
   };
   try {
@@ -541,9 +635,11 @@ async function _saveScan() {
     const listData = await api.get('/api/scan-configs');
     _configs = listData.configs || [];
     _renderList();
-    const datesEl = document.getElementById('scan-conf-dates');
-    const today = (saved.updated_at || '').slice(0, 10);
-    if (today) datesEl.textContent = datesEl.textContent.replace(/· updated \S+$/, '').trimEnd() + ` · updated ${today}`;
+    const el = document.getElementById('scan-conf-dates');
+    if (el && saved.updated_at) {
+      const updated = _fmtDate(saved.updated_at);
+      el.textContent = el.textContent.replace(/· updated .+$/, '').trimEnd() + ` · updated ${updated}`;
+    }
     btn.textContent = 'Saved ✓';
     btn.classList.add('ind-btn-save-ok');
     setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
@@ -857,8 +953,10 @@ function _wireGlobal() {
   document.getElementById('scan-name').addEventListener('input', _markDirty);
   document.getElementById('scan-ind-conf').addEventListener('change', e => {
     _markDirty();
-    const id = parseInt(e.target.value) || 0;
-    _checkCompat(id, _activeTf);
+    const { indConfId } = _decodeSource(e.target.value);
+    _updateNoDataWarning();
+    _fetchIndConfTfs(indConfId);
+    _checkCompat(indConfId, _activeTf);
   });
 
   document.addEventListener('keydown', e => {
@@ -893,12 +991,12 @@ function _wireGlobal() {
 
     // [ / ] cycle timeframe tabs
     if (e.key === '[') {
-      const i = _timeframes.indexOf(_activeTf);
-      if (i > 0) _setActiveTf(_timeframes[i - 1]);
+      const i = _FIXED_TFS.indexOf(_activeTf);
+      if (i > 0) _setActiveTf(_FIXED_TFS[i - 1]);
     }
     if (e.key === ']') {
-      const i = _timeframes.indexOf(_activeTf);
-      if (i < _timeframes.length - 1) _setActiveTf(_timeframes[i + 1]);
+      const i = _FIXED_TFS.indexOf(_activeTf);
+      if (i < _FIXED_TFS.length - 1) _setActiveTf(_FIXED_TFS[i + 1]);
     }
 
     if (e.key === 'ArrowUp')   { e.preventDefault(); _moveCritFocus(-1); }

@@ -167,6 +167,10 @@ def init_db() -> None:
         except Exception:
             pass
         try:
+            con.execute("ALTER TABLE scan_configs ADD COLUMN ticker_list TEXT")
+        except Exception:
+            pass
+        try:
             con.executescript("""
                 CREATE TABLE IF NOT EXISTS scan_results (
                     id      INTEGER PRIMARY KEY AUTOINCREMENT,

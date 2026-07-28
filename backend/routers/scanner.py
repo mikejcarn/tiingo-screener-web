@@ -138,6 +138,16 @@ def check_criteria_compatibility(ind_conf_id: int, timeframe: str = "daily"):
     return {"compatibility": compat}
 
 
+@router.get("/criteria/ind_conf_timeframes/{ind_conf_id}")
+def get_ind_conf_timeframes(ind_conf_id: int):
+    with db._conn() as con:
+        rows = con.execute(
+            "SELECT DISTINCT timeframe FROM indicators WHERE ind_conf=?",
+            (ind_conf_id,)
+        ).fetchall()
+    return {"timeframes": [r[0] for r in rows]}
+
+
 @router.delete("/criteria/{name}")
 def delete_criteria(name: str):
     path = _CRITERIA_DIR / f"{name}.py"
@@ -173,7 +183,7 @@ def create_scan_config():
 def get_scan_config(config_id: int):
     with db._conn() as con:
         row = con.execute(
-            "SELECT id, name, logic, ind_conf_id, created_at, updated_at FROM scan_configs WHERE id=?", (config_id,)
+            "SELECT id, name, logic, ind_conf_id, ticker_list, created_at, updated_at FROM scan_configs WHERE id=?", (config_id,)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Scan config not found")
@@ -183,7 +193,7 @@ def get_scan_config(config_id: int):
         ).fetchall()
     return {
         "id": row[0], "name": row[1], "logic": row[2], "ind_conf_id": row[3],
-        "created_at": row[4], "updated_at": row[5],
+        "ticker_list": row[4], "created_at": row[5], "updated_at": row[6],
         "criteria": [{"id": r[0], "criteria_name": r[1], "timeframe": r[2],
                       "params": json.loads(r[3]), "logic": r[4] or "AND"} for r in crit_rows],
     }
@@ -200,6 +210,7 @@ class SaveScanBody(BaseModel):
     name: str
     logic: str = "AND"
     ind_conf_id: Optional[int] = None
+    ticker_list: Optional[str] = None
     criteria: list[CriteriaEntry] = []
 
 
@@ -211,8 +222,8 @@ def save_scan_config(config_id: int, body: SaveScanBody):
         if not con.execute("SELECT id FROM scan_configs WHERE id=?", (config_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Scan config not found")
         con.execute(
-            "UPDATE scan_configs SET name=?, logic=?, ind_conf_id=?, updated_at=? WHERE id=?",
-            (body.name.strip() or "Unnamed", logic, body.ind_conf_id, now, config_id)
+            "UPDATE scan_configs SET name=?, logic=?, ind_conf_id=?, ticker_list=?, updated_at=? WHERE id=?",
+            (body.name.strip() or "Unnamed", logic, body.ind_conf_id, body.ticker_list, now, config_id)
         )
         con.execute("DELETE FROM scan_criteria WHERE config_id=?", (config_id,))
         for i, c in enumerate(body.criteria):
@@ -281,13 +292,11 @@ def _summarize_result(result_df: pd.DataFrame) -> dict:
 def run_scan(req: RunScanRequest):
     with db._conn() as con:
         cfg = con.execute(
-            "SELECT name, logic, ind_conf_id FROM scan_configs WHERE id=?", (req.config_id,)
+            "SELECT name, logic, ind_conf_id, ticker_list FROM scan_configs WHERE id=?", (req.config_id,)
         ).fetchone()
         if not cfg:
             raise HTTPException(status_code=404, detail="Scan config not found")
-        cfg_name, logic, ind_conf_id = cfg
-        if not ind_conf_id:
-            raise HTTPException(status_code=400, detail="Scan config has no indicator config selected")
+        cfg_name, logic, ind_conf_id, ticker_list = cfg
         crit_rows = con.execute(
             "SELECT criteria_name, timeframe, params_json, logic FROM scan_criteria "
             "WHERE config_id=? ORDER BY sort_order, id", (req.config_id,)
@@ -295,23 +304,28 @@ def run_scan(req: RunScanRequest):
 
     if not crit_rows:
         raise HTTPException(status_code=400, detail="Add at least one criteria entry before running")
+    if not ind_conf_id and not ticker_list:
+        raise HTTPException(status_code=400, detail="Select an indicator config or a ticker list before running")
 
     criteria_list = [{"name": r[0], "timeframe": r[1], "params": json.loads(r[2]), "logic": r[3] or "AND"} for r in crit_rows]
     needed_tfs    = list({c["timeframe"] for c in criteria_list})
 
-    # Tickers with indicator data for this conf
+    # Tickers: from indicator data (ind_conf mode) or OHLCV (tickers-only mode)
     with db._conn() as con:
-        tickers = [r[0] for r in con.execute(
-            "SELECT DISTINCT ticker FROM indicators WHERE ind_conf=? ORDER BY ticker",
-            (ind_conf_id,)
-        ).fetchall()]
+        if ind_conf_id:
+            tickers = [r[0] for r in con.execute(
+                "SELECT DISTINCT ticker FROM indicators WHERE ind_conf=? ORDER BY ticker",
+                (ind_conf_id,)
+            ).fetchall()]
+        else:
+            tickers = db.list_tickers(ticker_list=ticker_list)
 
     results = []
     for ticker in tickers:
         # Load DataFrames per timeframe (cache within this ticker)
         dfs: dict[str, pd.DataFrame | None] = {}
         for tf in needed_tfs:
-            dfs[tf] = db.load_indicators(ticker, tf, ind_conf_id)
+            dfs[tf] = db.load_indicators(ticker, tf, ind_conf_id) if ind_conf_id else db.load_ohlcv(ticker, tf)
 
         signals:     dict[str, dict] = {}
         and_passes:  list[bool]      = []
