@@ -21,7 +21,8 @@ def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = No
     timeframes = db.list_timeframes()
     confs = db.list_ind_confs_named()
     lists = db.list_ticker_lists()
-    return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs, "lists": lists}
+    has_singles = db.has_single_tickers()
+    return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs, "lists": lists, "has_singles": has_singles}
 
 
 @router.get("/data/{ticker}/{timeframe}")

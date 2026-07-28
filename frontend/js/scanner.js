@@ -9,6 +9,7 @@ let _criteria     = [];
 let _confs        = [];           // all ind_configs [{id, name}]
 let _confsWithData = new Set();   // ind_conf ids that have computed data
 let _tickerLists  = [];           // available ticker list names
+let _hasSingles   = false;        // any tickers fetched without a list
 let _timeframes   = [];
 let _indConfTfs   = new Set();   // timeframes with indicator data for selected ind_conf
 let _activeId   = null;
@@ -58,6 +59,7 @@ function _loadRunQueue() {
   _confs         = indConfsData.configs  || [];
   _confsWithData = new Set((tickerData.ind_confs || []).map(c => c.id));
   _tickerLists   = tickerData.lists      || [];
+  _hasSingles    = !!tickerData.has_singles;
   _timeframes    = tickerData.timeframes || [];
   _criteria   = criteriaData.criteria || [];
   _criteriaParamDescriptions = criteriaData.param_descriptions || {};
@@ -84,17 +86,26 @@ function _populateIndConfs() {
       const o = document.createElement('option');
       o.value = `conf:${c.id}`;
       o.textContent = c.name;
+      if (!_confsWithData.has(c.id)) o.disabled = true;
       grp.appendChild(o);
     }
     sel.appendChild(grp);
   }
 
-  if (_tickerLists.length) {
+  if (_hasSingles || _tickerLists.length) {
     const grp = document.createElement('optgroup');
     grp.label = '— Tickers Only —';
-    for (const list of _tickerLists) {
+    const tickerOpts = [];
+    if (_hasSingles) tickerOpts.push({ value: 'list:__single__', text: 'SINGLE' });
+    for (const list of _tickerLists) tickerOpts.push({ value: `list:${list}`, text: list });
+    if (tickerOpts.length >= 2) {
       const o = document.createElement('option');
-      o.value = `list:${list}`; o.textContent = list;
+      o.value = 'list:__all__'; o.textContent = 'ALL';
+      grp.appendChild(o);
+    }
+    for (const opt of tickerOpts) {
+      const o = document.createElement('option');
+      o.value = opt.value; o.textContent = opt.text;
       grp.appendChild(o);
     }
     sel.appendChild(grp);

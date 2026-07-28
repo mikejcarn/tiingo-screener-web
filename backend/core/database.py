@@ -284,6 +284,18 @@ def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = N
         if timeframe:
             query += " AND timeframe=?"
             params.append(timeframe)
+    elif ticker_list == '__all__':
+        query = "SELECT DISTINCT ticker FROM ohlcv"
+        if timeframe:
+            query += " WHERE timeframe=?"
+            params.append(timeframe)
+    elif ticker_list == '__single__':
+        query = ("SELECT DISTINCT o.ticker FROM ohlcv o "
+                 "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list IS NULL) fl "
+                 "ON o.ticker = fl.ticker")
+        if timeframe:
+            query += " WHERE o.timeframe=?"
+            params.append(timeframe)
     elif ticker_list:
         query = ("SELECT DISTINCT o.ticker FROM ohlcv o "
                  "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
@@ -307,6 +319,14 @@ def list_ticker_lists() -> list[str]:
             "SELECT DISTINCT ticker_list FROM fetch_log "
             "WHERE ticker_list IS NOT NULL ORDER BY ticker_list"
         ).fetchall()]
+
+
+def has_single_tickers() -> bool:
+    with _conn() as con:
+        row = con.execute(
+            "SELECT COUNT(*) FROM fetch_log WHERE ticker_list IS NULL"
+        ).fetchone()
+    return row[0] > 0
 
 
 def list_timeframes(ticker: Optional[str] = None) -> list[str]:

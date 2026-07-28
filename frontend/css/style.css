@@ -2209,7 +2209,6 @@ body.scan-page {
   border: 2px solid rgba(var(--teal-rgb), 0.85);
   color: rgba(var(--teal-rgb), 0.85);
 }
-.scan-crit-card:not(.enabled) .scan-compat-badge { display: none; }
 
 /* Results */
 .scan-signal-cell { font-size: 11px; color: var(--t5); }
