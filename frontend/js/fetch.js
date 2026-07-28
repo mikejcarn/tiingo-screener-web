@@ -1,5 +1,5 @@
 import { initHelp } from './help.js';
-import { initTheme } from './theme.js';
+import { initTheme, toggleTheme } from './theme.js';
 import { api } from './api.js';
 
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
@@ -966,6 +966,7 @@ function _moveList(dir) {
 }
 
 document.addEventListener('keydown', e => {
+  if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
   if (e.key === '`') { e.preventDefault(); window.location.href = '/indicators'; return; }
   if (e.key === '~') { e.preventDefault(); window.location.href = '/'; return; }
   if (e.key === 'Escape') {

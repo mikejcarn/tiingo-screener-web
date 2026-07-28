@@ -28,6 +28,10 @@ function _apply(theme) {
   _onChangeCallbacks.forEach(cb => cb(theme));
 }
 
+export function toggleTheme() {
+  _apply(isDark() ? 'light' : 'dark');
+}
+
 export function initTheme() {
   const saved = (() => { try { return localStorage.getItem(LS_KEY); } catch { return null; } })();
   const theme = saved || 'dark';

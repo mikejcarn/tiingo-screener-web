@@ -9,7 +9,7 @@
 import { initReplay, jump, getCurrentBarInfo, applyRangeLock } from './replay.js';
 import { initHelp, isHelpVisible } from './help.js';
 import { api } from './api.js';
-import { initTheme } from './theme.js';
+import { initTheme, toggleTheme } from './theme.js';
 
 let tickers    = [];
 let timeframes = [];
@@ -218,10 +218,10 @@ async function _applyScanRun() {
 function _wireNav() {
   document.getElementById('btn-prev-ticker').addEventListener('click', () => _loadTicker(tickerIdx - 1));
   document.getElementById('btn-next-ticker').addEventListener('click', () => _loadTicker(tickerIdx + 1));
-  listSelect.addEventListener('change',  () => { listSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; _refreshTickers(); } });
-  tfSelect.addEventListener('change',    () => { tfSelect.blur();    if (!_scanLocked) { scanSelect.value = ''; _refreshTickers(); } });
-  confSelect.addEventListener('change',  () => { confSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; _refreshTickers(); } });
-  scanSelect.addEventListener('change',  () => { scanSelect.blur();  _applyScanRun(); });
+  listSelect.addEventListener('change',  () => { listSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
+  tfSelect.addEventListener('change',    () => { tfSelect.blur();    if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
+  confSelect.addEventListener('change',  () => { confSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
+  scanSelect.addEventListener('change',  () => { scanSelect.blur();  scanSelect.classList.toggle('active', !!scanSelect.value); _applyScanRun(); });
 
   // Ticker search
   tickerInput.addEventListener('focus', () => { tickerInput.select(); _buildDropdown(''); });
@@ -336,7 +336,7 @@ function _wireNav() {
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
     if (e.key === 'f' || e.key === 'F') { e.preventDefault(); _toggleFullscreen(); return; }
     if (e.key === '`') { e.preventDefault(); window.location.href = '/fetch'; return; }
-    if (e.key === '~') { e.preventDefault(); window.location.href = '/indicators'; return; }
+    if (e.key === '~') { e.preventDefault(); window.location.href = '/scanner'; return; }
     if (isHelpVisible()) return;
     if (e.key === '\\') {
       e.preventDefault();
@@ -361,7 +361,7 @@ function _wireNav() {
     if (e.key === ']' ) { e.preventDefault(); _cycleSelect(tfSelect,     1); }
     if (e.key === '{' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
     if (e.key === '}' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
-    if (e.key === '/' ) { e.preventDefault(); tickerInput.focus(); }
+    if (e.key === '/' ) { e.preventDefault(); toggleTheme(); return; }
     if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; return; }

@@ -84,7 +84,7 @@
   <!-- ── Right: run + history ───────────────────────────── -->
   <div class="ind-right">
 
-    <!-- Run + DB output card -->
+    <!-- Run card (queue + output) -->
     <div class="ind-run">
       <div class="ind-run-head">
         <span>Run Indicator Configs</span>
@@ -96,27 +96,46 @@
         </div>
       </div>
       <div class="ind-run-body">
-
         <div id="run-conf-list" class="run-queue-list"></div>
 
-        <div class="ind-overall-section" id="comp-overall" style="display:none;">
-          <div class="ind-overall-header">
-            <span class="ind-overall-label">total run</span>
-            <span id="run-queue-status" class="run-queue-status" style="display:none;"></span>
-          </div>
-          <div class="dash-progress" id="comp-progress">
-            <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
-            <div id="comp-meta" class="progress-meta">
-              <span id="comp-count"   class="dash-count-text"></span>
-              <span id="comp-pct"     class="dash-pct"></span>
-              <span id="comp-current" class="dash-current"></span>
-              <span id="comp-errors"  class="dash-errors"></span>
+        <!-- Output section -->
+        <div class="ind-run-output-sep">
+          <div id="comp-output-idle" class="run-output-idle">Queue configs and hit &#9654; Run to compute.</div>
+
+          <!-- Queue-level bar: Config X / N (only when multiple configs queued) -->
+          <div class="ind-overall-section" id="comp-queue-section" style="display:none;">
+            <div class="ind-overall-header">
+              <span class="ind-overall-label">queue</span>
+              <span id="comp-queue-conf" class="run-queue-status"></span>
+            </div>
+            <div class="dash-progress">
+              <div id="comp-queue-track" class="progress-track"><div id="comp-queue-bar" class="progress-fill"></div></div>
+              <div id="comp-queue-meta" class="progress-meta">
+                <span id="comp-queue-count" class="dash-count-text"></span>
+                <span id="comp-queue-pct"   class="dash-pct"></span>
+              </div>
             </div>
           </div>
+
+          <!-- Per-ticker bar: progress within the current config -->
+          <div class="ind-overall-section" id="comp-overall" style="display:none;">
+            <div class="ind-overall-header">
+              <span class="ind-overall-label">current config</span>
+              <span id="run-queue-status" class="run-queue-status" style="display:none;"></span>
+            </div>
+            <div class="dash-progress" id="comp-progress">
+              <div id="comp-track" class="progress-track"><div id="comp-bar" class="progress-fill"></div></div>
+              <div id="comp-meta" class="progress-meta">
+                <span id="comp-count"   class="dash-count-text"></span>
+                <span id="comp-pct"     class="dash-pct"></span>
+                <span id="comp-current" class="dash-current"></span>
+                <span id="comp-errors"  class="dash-errors"></span>
+              </div>
+            </div>
+          </div>
+
+          <div id="comp-feed" class="ind-feed" style="display:none;"></div>
         </div>
-
-        <div id="comp-feed" class="ind-feed" style="display:none;"></div>
-
       </div>
     </div>
 

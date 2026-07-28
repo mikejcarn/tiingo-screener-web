@@ -1,6 +1,6 @@
 import { api }       from './api.js';
 import { initHelp }  from './help.js';
-import { initTheme } from './theme.js';
+import { initTheme, toggleTheme } from './theme.js';
 
 // ── State ─────────────────────────────────────────────────────
 let _configs    = [];
@@ -596,6 +596,7 @@ function _renderRunConfigs() {
 
 function _updateScanOverall() {
   const overall  = document.getElementById('scan-overall');
+  const idleEl   = document.getElementById('scan-output-idle');
   const totalEl  = document.getElementById('scan-run-total');
   const track    = document.getElementById('scan-track');
   const bar      = document.getElementById('scan-bar');
@@ -609,9 +610,11 @@ function _updateScanOverall() {
 
   if (!inRun && !_scanDone) {
     overall.style.display = 'none';
+    if (idleEl) idleEl.style.display = '';
     return;
   }
 
+  if (idleEl) idleEl.style.display = 'none';
   overall.style.display = '';
 
   if (inRun) {
@@ -863,7 +866,8 @@ function _wireGlobal() {
     const ctrl    = e.ctrlKey || e.metaKey;
     const inInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
 
-    if (e.key === '`') { e.preventDefault(); window.location.href = '/fetch'; return; }
+    if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
+    if (e.key === '`') { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === '~') { e.preventDefault(); window.location.href = '/indicators'; return; }
 
     if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveScan(); return; }

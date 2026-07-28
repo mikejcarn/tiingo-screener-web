@@ -1,5 +1,5 @@
 import { initHelp } from './help.js';
-import { initTheme } from './theme.js';
+import { initTheme, toggleTheme } from './theme.js';
 import { api } from './api.js';
 
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
@@ -1012,6 +1012,7 @@ async function _poll() {
 
 function _updateProgress(state) {
   const progress  = document.getElementById('comp-overall');
+  const idleEl    = document.getElementById('comp-output-idle');
   const track     = document.getElementById('comp-track');
   const bar       = document.getElementById('comp-bar');
   const meta      = document.getElementById('comp-meta');
@@ -1021,6 +1022,30 @@ function _updateProgress(state) {
   const errorsEl  = document.getElementById('comp-errors');
   const btn       = document.getElementById('btn-compute');
   const btnCancel = document.getElementById('btn-compute-cancel');
+
+  // Queue-level bar elements
+  const qSection  = document.getElementById('comp-queue-section');
+  const qTrack    = document.getElementById('comp-queue-track');
+  const qBar      = document.getElementById('comp-queue-bar');
+  const qMeta     = document.getElementById('comp-queue-meta');
+  const qCount    = document.getElementById('comp-queue-count');
+  const qPct      = document.getElementById('comp-queue-pct');
+  const qConf     = document.getElementById('comp-queue-conf');
+
+  const _updateQueueBar = (active) => {
+    const qTotal = _runQueue.length;
+    if (!qSection || qTotal <= 1) { if (qSection) qSection.style.display = 'none'; return; }
+    const qDone  = Math.max(0, _runQueueIdx);
+    const qp     = Math.round(qDone / qTotal * 100);
+    qSection.style.display = '';
+    qBar.style.width  = `${qDone / qTotal * 100}%`;
+    qCount.textContent = `${qDone} / ${qTotal}`;
+    qPct.textContent   = `${qp}%`;
+    qConf.textContent  = `Config ${_runQueueIdx + 1} / ${qTotal}`;
+    qTrack.classList.toggle('active', active);
+    qBar.classList.toggle('active', active);
+    qMeta.classList.toggle('active', active);
+  };
 
   const pct = state.total > 0 ? (state.done / state.total * 100) : 0;
   bar.style.width = `${pct}%`;
@@ -1033,12 +1058,16 @@ function _updateProgress(state) {
 
   if (state.status === 'idle') {
     progress.style.display = 'none';
+    if (qSection) qSection.style.display = 'none';
+    if (idleEl) idleEl.style.display = '';
     _setActive(false);
     count.textContent = pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
     btn.disabled = false;
     btn.textContent = '▶ Run';
     btnCancel.style.display = 'none';
   } else if (state.status === 'running') {
+    if (idleEl) idleEl.style.display = 'none';
+    _updateQueueBar(true);
     progress.style.display = '';
     _setActive(true);
     count.textContent    = `${state.done} / ${state.total || '?'}`;
@@ -1056,6 +1085,8 @@ function _updateProgress(state) {
       _updateRunQueueStatus();
     }
   } else if (state.status === 'done') {
+    if (idleEl) idleEl.style.display = 'none';
+    _updateQueueBar(false);
     progress.style.display = '';
     _setActive(false);
     count.textContent     = `${state.done} / ${state.total}`;
@@ -1077,6 +1108,8 @@ function _updateProgress(state) {
       _updateRunQueueStatus();
     }
   } else if (state.status === 'cancelled') {
+    if (idleEl) idleEl.style.display = 'none';
+    _updateQueueBar(false);
     progress.style.display = '';
     _setActive(false);
     count.textContent     = `${state.done} / ${state.total}`;
@@ -1088,6 +1121,8 @@ function _updateProgress(state) {
     btnCancel.style.display = 'none';
     _renderFeed(state.log || []);
   } else if (state.status === 'error') {
+    if (idleEl) idleEl.style.display = 'none';
+    _updateQueueBar(false);
     progress.style.display = '';
     _setActive(false);
     count.textContent = 'failed';
@@ -1403,7 +1438,8 @@ function _selectFirstFilteredIndicator() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === '`') { e.preventDefault(); window.location.href = '/'; return; }
+  if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
+  if (e.key === '`') { e.preventDefault(); window.location.href = '/scanner'; return; }
   if (e.key === '~') { e.preventDefault(); window.location.href = '/fetch'; return; }
 
   // Universal Esc reset

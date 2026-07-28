@@ -1,64 +1,43 @@
 // Shared keyboard-shortcuts help overlay — used by all pages.
 // Call initHelp('chart' | 'tickers' | 'indicators' | 'scanner') once per page.
 
+const _GLOBAL_ROWS = `
+  <tr class="help-section help-section-global"><td colspan="2">Global — all pages</td></tr>
+  <tr><td><kbd>/</kbd></td><td>Toggle light / dark theme</td></tr>
+  <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages forward / backward (tickers → indicators → scanner → chart)</td></tr>
+  <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>S</kbd> / <kbd>C</kbd></td><td>Jump to tickers / indicators / scanner / chart</td></tr>
+  <tr><td><kbd>?</kbd></td><td>Toggle this help panel</td></tr>
+  <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
+  <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>`;
+
 const _PAGES = [
-  {
-    id: 'scanner',
-    label: 'scanner',
-    html: `<table class="help-table"><tbody>
-      <tr class="help-section"><td colspan="2">Scan Configs</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate scan configs</td></tr>
-      <tr><td><kbd>N</kbd></td><td>New scan config</td></tr>
-      <tr><td><kbd>S</kbd></td><td>Save scan config</td></tr>
-      <tr><td><kbd>D</kbd></td><td>Delete scan config</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Run scan</td></tr>
-
-      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
-      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
-
-      <tr class="help-section"><td colspan="2">This Panel</td></tr>
-      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
-    </tbody></table>`,
-  },
   {
     id: 'tickers',
     label: 'tickers',
     html: `<table class="help-table"><tbody>
       <tr class="help-section"><td colspan="2">Ticker Search</td></tr>
       <tr><td>Type any letter</td><td>Search tickers in the Single Ticker box</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate suggestions</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next suggestion (same as ↑ / ↓)</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate suggestions</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Add selected ticker to queue</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Clear search box / close dropdown / cancel API key edit</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Clear search / close dropdown / cancel API key edit</td></tr>
 
-      <tr class="help-section"><td colspan="2">Ticker Lists</td></tr>
-      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next list in Batch Fetch select</td></tr>
-
-      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
-      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
-
-      <tr class="help-section"><td colspan="2">This Panel</td></tr>
-      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
-    </tbody></table>`,
+      <tr class="help-section"><td colspan="2">Batch Fetch</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next list in the batch fetch selector</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Trigger batch fetch for the selected list</td></tr>
+      ${_GLOBAL_ROWS}
+    </tbody></table>
+    <div class="help-summary">The tickers page manages your local price database. Add individual tickers via search or batch-fetch entire lists from Tiingo. OHLCV data is stored per timeframe and feeds everything else — the chart and indicator pages both draw from here.</div>`,
   },
   {
     id: 'indicators',
     label: 'indicators',
     html: `<table class="help-table"><tbody>
       <tr class="help-section"><td colspan="2">Config List</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate configs</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next config (same as ↑ / ↓)</td></tr>
-      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next config</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>_</kbd> / <kbd>+</kbd></td><td>Navigate configs</td></tr>
 
       <tr class="help-section"><td colspan="2">Config Actions</td></tr>
       <tr><td><kbd>N</kbd></td><td>New config</td></tr>
-      <tr><td><kbd>S</kbd></td><td>Save config</td></tr>
+      <tr><td><kbd>Ctrl+S</kbd></td><td>Save config</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete config</td></tr>
       <tr><td><kbd>R</kbd></td><td>Run selected configs</td></tr>
       <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
@@ -68,18 +47,25 @@ const _PAGES = [
 
       <tr class="help-section"><td colspan="2">Indicator Cards</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate indicator cards</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator (select / deselect)</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator on / off</td></tr>
       <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Toggle focused indicator in / out of run queue</td></tr>
-
-      <tr class="help-section"><td colspan="2">Page Navigation</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
-      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
-
-      <tr class="help-section"><td colspan="2">This Panel</td></tr>
-      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Close panel</td></tr>
-    </tbody></table>`,
+      ${_GLOBAL_ROWS}
+    </tbody></table>
+    <div class="help-summary">The indicators page configures and computes technical overlays. Each config pairs a set of indicators with one or more timeframes. Computed results are stored alongside OHLCV data and can be overlaid on the chart page.</div>`,
+  },
+  {
+    id: 'scanner',
+    label: 'scanner',
+    html: `<table class="help-table"><tbody>
+      <tr class="help-section"><td colspan="2">Scan Configs</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate scan configs</td></tr>
+      <tr><td><kbd>N</kbd></td><td>New scan config</td></tr>
+      <tr><td><kbd>Ctrl+S</kbd></td><td>Save scan config</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Delete scan config</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run scan</td></tr>
+      ${_GLOBAL_ROWS}
+    </tbody></table>
+    <div class="help-summary">The scanner page tests your ticker database against configurable criteria. Each scan config is linked to an indicator config, so criteria can reference both OHLCV data and computed indicators. Results can be opened directly in the chart page for bar-by-bar review.</div>`,
   },
   {
     id: 'chart',
@@ -90,42 +76,30 @@ const _PAGES = [
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step one bar backward / forward</td></tr>
       <tr><td><kbd>Shift+←</kbd> <kbd>Shift+→</kbd></td><td>Jump 20 bars</td></tr>
       <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>First bar / last bar</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Increase / decrease FPS</td></tr>
-      <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles during playback)</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Increase / decrease playback FPS</td></tr>
+      <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles in view)</td></tr>
       <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
 
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
-      <tr><td><kbd>=</kbd></td><td>Previous ticker</td></tr>
-      <tr><td><kbd>-</kbd></td><td>Next ticker</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>
-      <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next indicator conf</td></tr>
-      <tr><td>Any lowercase letter</td><td>Focus ticker search</td></tr>
+      <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next indicator config</td></tr>
+      <tr><td>Any lowercase letter</td><td>Focus ticker search input</td></tr>
 
-      <tr class="help-section"><td colspan="2">Jump Inputs (press Enter)</td></tr>
-      <tr><td>Any digit key</td><td>Focus the bar # input and start typing</td></tr>
-      <tr><td>Bar # input</td><td>Jump to bar number</td></tr>
-      <tr><td>Date input</td><td>Jump to date (YYYY-MM-DD)</td></tr>
-      <tr><td>FPS input</td><td>Set playback speed (1–60)</td></tr>
+      <tr class="help-section"><td colspan="2">Jump Inputs</td></tr>
+      <tr><td>Any digit key</td><td>Focus bar # input</td></tr>
+      <tr><td>Bar # / Date input</td><td>Type value then Enter to jump</td></tr>
 
-      <tr class="help-section"><td colspan="2">Load Position (nav bar dropdown)</td></tr>
-      <tr><td><kbd>\\</kbd></td><td>Cycle load mode: start → end → bar → date</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Enter the value field (when bar or date mode active)</td></tr>
-      <tr><td>start</td><td>Each ticker loads at bar 0, ready for playback</td></tr>
-      <tr><td>end</td><td>Each ticker loads at the last bar (full chart)</td></tr>
-      <tr><td>bar</td><td>Each ticker loads at the given bar index</td></tr>
-      <tr><td>date</td><td>Each ticker loads at the bar closest to the given date</td></tr>
+      <tr class="help-section"><td colspan="2">Load Position</td></tr>
+      <tr><td><kbd>\\</kbd></td><td>Cycle mode: start → end → bar → date</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Focus value field (bar / date mode)</td></tr>
 
       <tr class="help-section"><td colspan="2">View</td></tr>
-      <tr><td><kbd>F</kbd></td><td>Toggle fullscreen (hides nav &amp; controls bars)</td></tr>
-      <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages</td></tr>
-      <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>A</kbd> / <kbd>C</kbd></td><td>Go to tickers / indicators / scanner / chart</td></tr>
-
-      <tr class="help-section"><td colspan="2">This Panel</td></tr>
-      <tr><td><kbd>?</kbd></td><td>Toggle help</td></tr>
-      <tr><td><kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle between page shortcut views</td></tr>
-      <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>
-    </tbody></table>`,
+      <tr><td><kbd>F</kbd></td><td>Toggle fullscreen</td></tr>
+      ${_GLOBAL_ROWS}
+    </tbody></table>
+    <div class="help-summary">The chart page displays price action with indicator overlays in a bar-by-bar replay format. Navigate your ticker list, switch timeframes and indicator configs, and step through history manually or at a set playback speed. Scanner results can be loaded to review matched tickers in sequence.</div>`,
   },
 ];
 
@@ -199,7 +173,7 @@ export function initHelp(currentPage) {
 
   document.addEventListener('keydown', (e) => {
     if (_overlay.classList.contains('visible')) {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); _hide(); return; }
+      if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); e.stopPropagation(); _hide(); return; }
       if (e.key === 'ArrowLeft'  || e.key === '[' || e.key === '=') { e.preventDefault(); e.stopPropagation(); _switchTab(_activeIdx - 1); return; }
       if (e.key === 'ArrowRight' || e.key === ']' || e.key === '-') { e.preventDefault(); e.stopPropagation(); _switchTab(_activeIdx + 1); return; }
       e.stopPropagation(); // swallow all other keys while panel is open
