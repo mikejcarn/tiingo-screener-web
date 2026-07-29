@@ -1483,25 +1483,28 @@ body.ind-page {
   background: var(--c-bg);
 }
 .run-queue-table { width: 100%; border-collapse: separate; border-spacing: 0 3px; font-size: 12px; }
-.run-queue-item > td { background: rgba(var(--teal-rgb), 0.07); vertical-align: middle; }
-.run-queue-item > .run-queue-td-pos { background: transparent; border-radius: 0; }
+.run-queue-item { cursor: pointer; }
+.run-queue-item > td { background: rgba(var(--teal-rgb), 0.07); vertical-align: middle; transition: background 0.1s; }
+.run-queue-item > .run-queue-td-pos { background: transparent; }
 .run-queue-item > .run-queue-td-name { vertical-align: top; border-radius: 3px 0 0 3px; }
+.run-queue-item > .run-queue-td-del  { border-radius: 0 3px 3px 0; }
+.run-queue-item:hover > td { background: rgba(var(--teal-rgb), 0.13); }
+.run-queue-item:hover > .run-queue-td-pos { background: transparent; }
+.run-queue-item.rq-selected > td { background: rgba(var(--teal-rgb), 0.18) !important; }
+.run-queue-item.rq-selected > .run-queue-td-pos { background: transparent !important; }
 .run-queue-item:has(.run-queue-remove:hover) > .run-queue-td-name,
+.run-queue-item:has(.run-queue-remove:hover) > .run-queue-td-tfs,
 .run-queue-item:has(.run-queue-remove:hover) > .run-queue-td-del { background: rgba(220,0,50,0.1) !important; }
-.run-queue-td-pos {
-  font-size: 10px;
-  color: var(--b6);
-  text-align: right;
-  white-space: nowrap;
-  padding: 6px 10px 6px 6px;
-  width: 1%;
-}
+.run-queue-td-pos  { font-size: 11px; color: var(--t2); text-align: right; white-space: nowrap; padding: 6px 8px 6px 6px; width: 1%; }
 .run-queue-td-name { padding: 5px 6px 4px; }
-.run-queue-td-del  { padding: 4px 8px 4px 0; white-space: nowrap; width: 1%; border-radius: 0 3px 3px 0; }
-.run-queue-name   { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t7); }
-.run-queue-remove { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 1px 4px; line-height: 1; }
+.run-queue-td-tfs  { font-size: 11px; color: var(--t3); white-space: nowrap; padding: 5px 8px 4px; width: 1%; }
+.run-queue-td-del  { padding: 4px 6px 4px 0; white-space: nowrap; width: 1%; }
+.run-queue-name-row { display: flex; align-items: center; gap: 6px; }
+.run-queue-name    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t7); font-size: 12px; }
+.run-queue-remove  { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 1px 4px; line-height: 1; }
 .run-queue-remove:hover { color: #e05; background: none; }
-.run-queue-detail { padding-left: 6px; display: flex; flex-direction: column; gap: 2px; }
+.run-queue-detail  { padding-left: 2px; display: flex; flex-direction: column; gap: 2px; }
+.rq-selected .run-queue-td-tfs { color: rgba(var(--teal-rgb), 0.8); }
 /* Per-conf status bars inside queue items */
 .rq-status { display: flex; flex-direction: column; gap: 3px; padding-top: 3px; min-height: 0; }
 .rq-status:empty { display: none; }

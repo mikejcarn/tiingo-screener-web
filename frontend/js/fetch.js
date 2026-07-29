@@ -19,6 +19,10 @@ let _batchResults   = {};
 let _batchRunning   = false;
 let _batchCancelled = false;
 
+// Queue selection state (which item's timeframes the global checkboxes control)
+let _selectedSingleIdx = null;
+let _selectedBatchIdx  = null;
+
 // ── Bootstrap ─────────────────────────────────────────────────
 
 async function init() {
@@ -59,7 +63,10 @@ function _saveSingleQueue() {
 }
 
 function _loadSingleQueue() {
-  try { _singleQueue = JSON.parse(localStorage.getItem('fetch_single_queue') || '[]'); } catch { _singleQueue = []; }
+  try {
+    const saved = JSON.parse(localStorage.getItem('fetch_single_queue') || '[]');
+    _singleQueue = saved.map(item => typeof item === 'string' ? { ticker: item, timeframes: ['daily'] } : item);
+  } catch { _singleQueue = []; }
 }
 
 function _saveBatchQueue() {
@@ -70,21 +77,33 @@ function _loadBatchQueue() {
   try {
     const saved = JSON.parse(localStorage.getItem('fetch_batch_queue') || '[]');
     const valid = new Set(_tickerLists.map(l => l.name));
-    _batchQueue = saved.filter(n => valid.has(n));
+    _batchQueue = saved
+      .map(item => typeof item === 'string' ? { name: item, timeframes: ['daily'] } : item)
+      .filter(item => valid.has(item.name));
   } catch { _batchQueue = []; }
 }
 
 // ── Queue rendering ───────────────────────────────────────────
+
+function _syncTfChecks(containerId, timeframes) {
+  for (const cb of document.querySelectorAll(`#${containerId} input[type="checkbox"]`)) {
+    cb.checked = timeframes.includes(cb.value);
+  }
+}
 
 function _renderSingleQueue() {
   const el = document.getElementById('single-queue');
   if (!el) return;
   if (!_singleQueue.length) {
     el.innerHTML = '<div class="run-queue-empty">No tickers queued — type above to add</div>';
+    _selectedSingleIdx = null;
     return;
   }
-  el.innerHTML = _singleQueue.map((ticker, i) => {
-    const r = _singleResults[ticker];
+  const table = document.createElement('table');
+  table.className = 'run-queue-table';
+  const tbody = document.createElement('tbody');
+  _singleQueue.forEach((item, i) => {
+    const r = _singleResults[item.ticker];
     let statusHtml = '';
     if (r) {
       if (r.status === 'pending') {
@@ -97,15 +116,34 @@ function _renderSingleQueue() {
         statusHtml = `<div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(r.message || 'error')}</span></div>`;
       }
     }
-    return `<div class="run-queue-item">
-      <div class="run-queue-header">
-        <span class="run-queue-pos">${i + 1}</span>
-        <span class="run-queue-name">${_esc(ticker)}</span>
-        <button class="run-queue-remove" data-ticker="${ticker}"${_singleRunning ? ' disabled' : ''} title="Remove ${_esc(ticker)} from the queue">×</button>
-      </div>
-      ${statusHtml ? `<div class="run-queue-detail">${statusHtml}</div>` : ''}
-    </div>`;
-  }).join('');
+    const tr = document.createElement('tr');
+    tr.className = 'run-queue-item' + (i === _selectedSingleIdx ? ' rq-selected' : '');
+    tr.innerHTML = `
+      <td class="run-queue-td-pos">${i + 1}</td>
+      <td class="run-queue-td-name">
+        <span class="run-queue-name">${_esc(item.ticker)}</span>
+        ${statusHtml ? `<div class="run-queue-detail">${statusHtml}</div>` : ''}
+      </td>
+      <td class="run-queue-td-tfs">${item.timeframes.join(' · ')}</td>
+      <td class="run-queue-td-del"><button class="run-queue-remove" data-ticker="${_esc(item.ticker)}"${_singleRunning ? ' disabled' : ''} title="Remove ${_esc(item.ticker)} from the queue">×</button></td>
+    `;
+    if (!_singleRunning) {
+      tr.addEventListener('click', e => {
+        if (e.target.closest('.run-queue-remove')) return;
+        if (i === _selectedSingleIdx) {
+          _selectedSingleIdx = null;
+        } else {
+          _selectedSingleIdx = i;
+          _syncTfChecks('single-tfs', item.timeframes);
+        }
+        _renderSingleQueue();
+      });
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  el.innerHTML = '';
+  el.appendChild(table);
 }
 
 function _renderBatchQueue() {
@@ -113,21 +151,46 @@ function _renderBatchQueue() {
   if (!el) return;
   if (!_batchQueue.length) {
     el.innerHTML = '<div class="run-queue-empty">No lists queued — select one above to add</div>';
+    _selectedBatchIdx = null;
     return;
   }
-  el.innerHTML = _batchQueue.map((listName, i) => {
-    const info = _tickerLists.find(l => l.name === listName);
+  const table = document.createElement('table');
+  table.className = 'run-queue-table';
+  const tbody = document.createElement('tbody');
+  _batchQueue.forEach((item, i) => {
+    const info = _tickerLists.find(l => l.name === item.name);
     const countStr = info ? `${info.count.toLocaleString()} tickers` : '';
-    return `<div class="run-queue-item">
-      <div class="run-queue-header">
-        <span class="run-queue-pos">${i + 1}</span>
-        <span class="run-queue-name">${_esc(listName)}</span>
-        ${countStr ? `<span class="fetch-list-count-tag">${countStr}</span>` : ''}
-        <button class="run-queue-remove" data-list="${listName}"${_batchRunning ? ' disabled' : ''} title="Remove ${_esc(listName)} from the queue">×</button>
-      </div>
-      <div class="rq-status" data-list="${listName}"></div>
-    </div>`;
-  }).join('');
+    const tr = document.createElement('tr');
+    tr.className = 'run-queue-item' + (i === _selectedBatchIdx ? ' rq-selected' : '');
+    tr.innerHTML = `
+      <td class="run-queue-td-pos">${i + 1}</td>
+      <td class="run-queue-td-name">
+        <div class="run-queue-name-row">
+          <span class="run-queue-name">${_esc(item.name)}</span>
+          ${countStr ? `<span class="fetch-list-count-tag">${countStr}</span>` : ''}
+        </div>
+        <div class="rq-status" data-list="${_esc(item.name)}"></div>
+      </td>
+      <td class="run-queue-td-tfs">${item.timeframes.join(' · ')}</td>
+      <td class="run-queue-td-del"><button class="run-queue-remove" data-list="${_esc(item.name)}"${_batchRunning ? ' disabled' : ''} title="Remove ${_esc(item.name)} from the queue">×</button></td>
+    `;
+    if (!_batchRunning) {
+      tr.addEventListener('click', e => {
+        if (e.target.closest('.run-queue-remove')) return;
+        if (i === _selectedBatchIdx) {
+          _selectedBatchIdx = null;
+        } else {
+          _selectedBatchIdx = i;
+          _syncTfChecks('fetch-tfs', item.timeframes);
+        }
+        _renderBatchQueue();
+      });
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  el.innerHTML = '';
+  el.appendChild(table);
   _renderBatchQueueStatus();
 }
 
@@ -167,8 +230,6 @@ function _renderBatchQueueStatus() {
 
 async function _runSingleQueue() {
   if (!_singleQueue.length || _singleRunning) return;
-  const timeframes = _getChecked('single-tfs');
-  if (!timeframes.length) return;
 
   _singleRunning = true;
   _singleResults = {};
@@ -176,25 +237,29 @@ async function _runSingleQueue() {
   btn.disabled = true;
   btn.textContent = 'Fetching…';
 
-  for (const ticker of _singleQueue) _singleResults[ticker] = { status: 'pending' };
+  for (const item of _singleQueue) _singleResults[item.ticker] = { status: 'pending' };
   _renderSingleQueue();
 
-  for (const ticker of _singleQueue) {
-    _singleResults[ticker] = { status: 'running' };
+  for (const item of _singleQueue) {
+    const timeframes = item.timeframes;
+    if (!timeframes.length) {
+      _singleResults[item.ticker] = { status: 'error', message: 'No timeframes selected' };
+      _renderSingleQueue();
+      continue;
+    }
+    _singleResults[item.ticker] = { status: 'running' };
     _renderSingleQueue();
     try {
-      const data = await api.post('/api/fetch/ticker', { ticker, timeframes });
-      {
-        const lines = [
-          ...(data.results || []).map(r =>
-            `<span class="rq-state rq-done fetch-tf-line">✓ ${r.timeframe} — ${r.rows.toLocaleString()} rows</span>`),
-          ...(data.errors || []).map(e =>
-            `<span class="rq-state rq-errors fetch-tf-line">✗ ${e.timeframe} — ${_esc(e.reason)}</span>`),
-        ].join('');
-        _singleResults[ticker] = { status: 'done', linesHtml: `<div class="rq-info" style="flex-wrap:wrap;gap:3px 10px;">${lines}</div>` };
-      }
+      const data = await api.post('/api/fetch/ticker', { ticker: item.ticker, timeframes });
+      const lines = [
+        ...(data.results || []).map(r =>
+          `<span class="rq-state rq-done fetch-tf-line">✓ ${r.timeframe} — ${r.rows.toLocaleString()} rows</span>`),
+        ...(data.errors || []).map(e =>
+          `<span class="rq-state rq-errors fetch-tf-line">✗ ${e.timeframe} — ${_esc(e.reason)}</span>`),
+      ].join('');
+      _singleResults[item.ticker] = { status: 'done', linesHtml: `<div class="rq-info" style="flex-wrap:wrap;gap:3px 10px;">${lines}</div>` };
     } catch (err) {
-      _singleResults[ticker] = { status: 'error', message: err.message || 'Network error' };
+      _singleResults[item.ticker] = { status: 'error', message: err.message || 'Network error' };
     }
     _renderSingleQueue();
   }
@@ -220,12 +285,6 @@ async function _runBatchQueue() {
     _addBatchList();
   }
 
-  const timeframes = _getChecked('fetch-tfs');
-  if (!timeframes.length) {
-    alert('Select at least one timeframe.');
-    return;
-  }
-
   _batchRunning   = true;
   _batchCancelled = false;
   _batchResults   = {};
@@ -235,22 +294,28 @@ async function _runBatchQueue() {
   btn.textContent = 'Fetching…';
   btnCancel.style.display = '';
 
-  for (const n of _batchQueue) _batchResults[n] = { status: 'pending' };
+  for (const item of _batchQueue) _batchResults[item.name] = { status: 'pending' };
   _renderBatchQueue();
 
-  for (const listName of _batchQueue) {
+  for (const item of _batchQueue) {
     if (_batchCancelled) {
-      _batchResults[listName] = { status: 'cancelled' };
+      _batchResults[item.name] = { status: 'cancelled' };
       _renderBatchQueueStatus();
       continue;
     }
-    _batchResults[listName] = { status: 'running', done: 0, total: 0, errors: 0, current: '' };
+    const timeframes = item.timeframes;
+    if (!timeframes.length) {
+      _batchResults[item.name] = { status: 'error', message: 'No timeframes selected' };
+      _renderBatchQueueStatus();
+      continue;
+    }
+    _batchResults[item.name] = { status: 'running', done: 0, total: 0, errors: 0, current: '' };
     _renderBatchQueueStatus();
 
     try {
-      await api.post('/api/fetch/batch', { ticker_list: listName, timeframes });
+      await api.post('/api/fetch/batch', { ticker_list: item.name, timeframes });
     } catch (err) {
-      _batchResults[listName] = { status: 'error', message: err.message || 'Failed to start' };
+      _batchResults[item.name] = { status: 'error', message: err.message || 'Failed to start' };
       _renderBatchQueueStatus();
       continue;
     }
@@ -260,13 +325,13 @@ async function _runBatchQueue() {
         const data  = await api.get('/api/jobs/status');
         const state = data.fetch;
         if (state.status === 'running') {
-          _batchResults[listName] = { status: 'running', done: state.done, total: state.total, errors: state.errors, current: state.current };
+          _batchResults[item.name] = { status: 'running', done: state.done, total: state.total, errors: state.errors, current: state.current };
           _renderBatchQueueStatus();
         } else {
           if (state.status === 'done') {
-            _batchResults[listName] = { status: 'done', done: state.done, total: state.total, errors: state.errors };
+            _batchResults[item.name] = { status: 'done', done: state.done, total: state.total, errors: state.errors };
           } else {
-            _batchResults[listName] = {
+            _batchResults[item.name] = {
               status: state.status === 'cancelled' ? 'cancelled' : 'error',
               done: state.done, total: state.total,
             };
@@ -297,9 +362,13 @@ async function _runBatchQueue() {
 function _addSingleTicker(ticker) {
   const tickers = ticker.toUpperCase().split(',').map(t => t.trim()).filter(Boolean);
   if (!tickers.length) return;
+  const timeframes = _getChecked('single-tfs');
   let changed = false;
   for (const t of tickers) {
-    if (!_singleQueue.includes(t)) { _singleQueue.push(t); changed = true; }
+    if (!_singleQueue.find(item => item.ticker === t)) {
+      _singleQueue.push({ ticker: t, timeframes: timeframes.length ? [...timeframes] : ['daily'] });
+      changed = true;
+    }
   }
   if (changed) { _saveSingleQueue(); _renderSingleQueue(); }
   document.getElementById('single-ticker').value = '';
@@ -309,8 +378,9 @@ function _addSingleTicker(ticker) {
 function _addBatchList() {
   const listName = document.getElementById('fetch-list').value;
   if (!listName) return;
-  if (!_batchQueue.includes(listName)) {
-    _batchQueue.push(listName);
+  if (!_batchQueue.find(item => item.name === listName)) {
+    const timeframes = _getChecked('fetch-tfs');
+    _batchQueue.push({ name: listName, timeframes: timeframes.length ? [...timeframes] : ['daily'] });
     _saveBatchQueue();
     _renderBatchQueue();
   }
@@ -824,7 +894,12 @@ function _wireButtons() {
     const btn = e.target.closest('.run-queue-remove');
     if (!btn || btn.disabled) return;
     const t = btn.dataset.ticker;
-    _singleQueue = _singleQueue.filter(x => x !== t);
+    const removedIdx = _singleQueue.findIndex(item => item.ticker === t);
+    _singleQueue = _singleQueue.filter(item => item.ticker !== t);
+    if (_selectedSingleIdx !== null) {
+      if (_selectedSingleIdx === removedIdx) _selectedSingleIdx = null;
+      else if (_selectedSingleIdx > removedIdx) _selectedSingleIdx--;
+    }
     delete _singleResults[t];
     _saveSingleQueue();
     _renderSingleQueue();
@@ -834,11 +909,32 @@ function _wireButtons() {
     const btn = e.target.closest('.run-queue-remove');
     if (!btn || btn.disabled) return;
     const n = btn.dataset.list;
-    _batchQueue = _batchQueue.filter(l => l !== n);
+    const removedIdx = _batchQueue.findIndex(item => item.name === n);
+    _batchQueue = _batchQueue.filter(item => item.name !== n);
+    if (_selectedBatchIdx !== null) {
+      if (_selectedBatchIdx === removedIdx) _selectedBatchIdx = null;
+      else if (_selectedBatchIdx > removedIdx) _selectedBatchIdx--;
+    }
     delete _batchResults[n];
     _saveBatchQueue();
     _renderBatchQueue();
   });
+  // Global timeframe checkboxes update the currently selected queue item
+  document.getElementById('single-tfs').addEventListener('change', () => {
+    if (_selectedSingleIdx !== null && _selectedSingleIdx < _singleQueue.length) {
+      _singleQueue[_selectedSingleIdx].timeframes = _getChecked('single-tfs');
+      _saveSingleQueue();
+      _renderSingleQueue();
+    }
+  });
+  document.getElementById('fetch-tfs').addEventListener('change', () => {
+    if (_selectedBatchIdx !== null && _selectedBatchIdx < _batchQueue.length) {
+      _batchQueue[_selectedBatchIdx].timeframes = _getChecked('fetch-tfs');
+      _saveBatchQueue();
+      _renderBatchQueue();
+    }
+  });
+
   document.getElementById('btn-fetch-cancel').addEventListener('click', () => {
     _batchCancelled = true;
     api.post('/api/jobs/fetch/cancel');
