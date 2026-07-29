@@ -91,9 +91,9 @@ def indicator_tickers_list(config_id: int, timeframe: str = 'daily'):
 
 
 @router.get("/indicators/preview")
-def indicator_preview(config_id: int, timeframe: str = 'daily', limit: int = 8,
-                      ticker: Optional[str] = None, offset: int = 0):
-    """Return a page of rows (OHLCV + indicators) for a ticker. offset=0 → most recent rows."""
+def indicator_preview(config_id: int, timeframe: str = 'daily',
+                      ticker: Optional[str] = None):
+    """Return all rows (OHLCV + indicators) for a ticker in chronological order."""
     if ticker:
         ticker = ticker.upper()
         with db._conn() as con:
@@ -119,17 +119,14 @@ def indicator_preview(config_id: int, timeframe: str = 'daily', limit: int = 8,
             (config_id, timeframe, ticker)
         ).fetchone()[0]
 
-    # Fetch DESC with offset, then reverse for chronological display
     with db._conn() as con:
         ind_rows = con.execute(
             "SELECT date, data FROM indicators WHERE ind_conf=? AND timeframe=? AND ticker=? "
-            "ORDER BY date DESC LIMIT ? OFFSET ?",
-            (config_id, timeframe, ticker, limit, offset)
+            "ORDER BY date ASC",
+            (config_id, timeframe, ticker)
         ).fetchall()
     if not ind_rows:
         return {"ticker": ticker, "columns": [], "rows": [], "total_rows": total_rows}
-
-    ind_rows = list(reversed(ind_rows))  # chronological order for display
 
     dates = [r[0] for r in ind_rows]
     placeholders = ','.join('?' * len(dates))
@@ -162,7 +159,7 @@ def indicator_preview(config_id: int, timeframe: str = 'daily', limit: int = 8,
             **{k: _fmt(v) for k, v in ind_data.items()}
         })
     return {"ticker": ticker, "timeframe": timeframe, "columns": all_cols, "rows": result_rows,
-            "total_rows": total_rows, "offset": offset, "limit": limit}
+            "total_rows": total_rows}
 
 
 @router.get("/indicators/columns")

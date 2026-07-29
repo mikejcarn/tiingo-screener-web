@@ -26,25 +26,20 @@ def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = No
 
 
 @router.get("/data/ohlcv/preview")
-def ohlcv_preview(ticker: str, timeframe: str, limit: int = 8, offset: int = 0):
-    """Return paginated OHLCV rows for a ticker+timeframe, most-recent first then reversed."""
+def ohlcv_preview(ticker: str, timeframe: str):
+    """Return all OHLCV rows for a ticker+timeframe in chronological order."""
     ticker = ticker.upper()
     tf = _resolve_tf(timeframe)
     with db._conn() as con:
-        total_rows = con.execute(
-            "SELECT COUNT(*) FROM ohlcv WHERE ticker=? AND timeframe=?",
-            (ticker, tf)
-        ).fetchone()[0]
         rows = con.execute(
             "SELECT date, open, high, low, close, volume FROM ohlcv "
-            "WHERE ticker=? AND timeframe=? ORDER BY date DESC LIMIT ? OFFSET ?",
-            (ticker, tf, limit, offset)
+            "WHERE ticker=? AND timeframe=? ORDER BY date ASC",
+            (ticker, tf)
         ).fetchall()
-    rows = list(reversed(rows))
     def _fmt(v): return round(float(v), 4) if v is not None else None
     return {
         "ticker": ticker, "timeframe": tf,
-        "total_rows": total_rows, "offset": offset, "limit": limit,
+        "total_rows": len(rows),
         "rows": [{"date": r[0], "open": _fmt(r[1]), "high": _fmt(r[2]),
                   "low": _fmt(r[3]), "close": _fmt(r[4]),
                   "volume": int(r[5]) if r[5] is not None else None} for r in rows]

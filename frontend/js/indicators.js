@@ -1140,9 +1140,6 @@ let _dbGroupSort       = { col: 'key', dir: 'asc' };
 let _dbSectionConfigId = null;
 let _dbActiveTf        = 'daily';
 let _dbPreviewTicker   = null;
-let _dbRowOffset       = 0;
-let _dbRowTotal        = 0;
-const _DB_LIMIT        = 8;
 
 const _IND_DIM_COLS = ['config', 'ticker', 'timeframe', 'rows', 'first_date', 'last_date'];
 
@@ -1150,27 +1147,16 @@ const _IND_DIM_COLS = ['config', 'ticker', 'timeframe', 'rows', 'first_date', 'l
 
 function _wireDbSummary() {
   document.getElementById('btn-db-detail-back').addEventListener('click', _closeDbDetail);
-  document.getElementById('db-rows-older').addEventListener('click', () => {
-    _dbRowOffset = Math.min(_dbRowOffset + _DB_LIMIT, Math.max(0, _dbRowTotal - _DB_LIMIT));
-    _loadDbPreview();
-  });
-  document.getElementById('db-rows-newer').addEventListener('click', () => {
-    _dbRowOffset = Math.max(0, _dbRowOffset - _DB_LIMIT);
-    _loadDbPreview();
-  });
   document.getElementById('db-detail-conf-sel').addEventListener('change', async e => {
     _dbSectionConfigId = parseInt(e.target.value);
-    _dbRowOffset = 0;
     await _refreshDetailTfs();
   });
   document.getElementById('db-detail-tf-sel').addEventListener('change', async e => {
     _dbActiveTf = e.target.value;
-    _dbRowOffset = 0;
     await _refreshDetailTickers();
   });
   document.getElementById('db-detail-ticker-sel').addEventListener('change', e => {
     _dbPreviewTicker = e.target.value;
-    _dbRowOffset = 0;
     _loadDbPreview();
   });
 }
@@ -1344,9 +1330,6 @@ function _openDbDetail(configId, ticker, timeframe) {
   _dbSectionConfigId = configId;
   _dbActiveTf        = timeframe;
   _dbPreviewTicker   = ticker;
-  _dbRowOffset       = 0;
-  _dbRowTotal        = 0;
-
   // Populate config selector with all configs that have data
   const confSel = document.getElementById('db-detail-conf-sel');
   const confIds = new Set(_dbSummaryData.map(r => r.config_id));
@@ -1404,7 +1387,6 @@ async function _refreshDetailTickers(preferTicker) {
   tickerSel.value = target;
   tickerSel.disabled = tickers.length <= 1;
   _dbPreviewTicker = target;
-  _dbRowOffset = 0;
   _loadDbPreview();
 }
 
@@ -1415,24 +1397,6 @@ function _closeDbDetail() {
   _dbPreviewTicker   = null;
 }
 
-function _updateDbRowNav(rows) {
-  const older = document.getElementById('db-rows-older');
-  const newer = document.getElementById('db-rows-newer');
-  const label = document.getElementById('db-rows-label');
-  older.disabled = _dbRowOffset + _DB_LIMIT >= _dbRowTotal;
-  newer.disabled = _dbRowOffset <= 0;
-  if (rows && rows.length > 0) {
-    const d0 = rows[0].date?.slice(0, 10) || '';
-    const d1 = rows[rows.length - 1].date?.slice(0, 10) || '';
-    const pos = _dbRowTotal - _dbRowOffset;
-    const from = Math.max(1, pos - rows.length + 1);
-    label.textContent = `rows ${from}–${pos} of ${_dbRowTotal.toLocaleString()}  ·  ${d0} → ${d1}`;
-  } else {
-    label.textContent = '';
-  }
-}
-
-
 async function _loadDbPreview() {
   if (!_dbSectionConfigId) return;
   const tableEl = document.getElementById('comp-db-table');
@@ -1442,7 +1406,7 @@ async function _loadDbPreview() {
   let data;
   try {
     data = await api.get(
-      `/api/indicators/preview?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}&offset=${_dbRowOffset}${tickerParam}`
+      `/api/indicators/preview?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}${tickerParam}`
     );
   } catch {
     tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">Failed to load.</td></tr>';
@@ -1457,9 +1421,6 @@ async function _loadDbPreview() {
     tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">No data for this timeframe.</td></tr>';
     return;
   }
-
-  _dbRowTotal = data.total_rows || 0;
-  _updateDbRowNav(data.rows);
 
   const ohlcvCols = new Set(['date','open','high','low','close','volume']);
   const thead = `<thead><tr>${data.columns.map(c =>

@@ -525,9 +525,6 @@ let _groupSort   = { col: 'key', dir: 'asc' };
 
 let _statsDetailTf     = 'daily';
 let _statsDetailTicker = null;
-let _statsDetailOffset = 0;
-let _statsDetailTotal  = 0;
-const _STATS_DB_LIMIT  = 8;
 
 function _fmtBars(n) {
   return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : String(n);
@@ -706,22 +703,12 @@ async function _deleteStatsGroup(key, g) {
 
 function _wireStatsDetail() {
   document.getElementById('btn-stats-detail-back').addEventListener('click', _closeStatsDetail);
-  document.getElementById('stats-rows-older').addEventListener('click', () => {
-    _statsDetailOffset = Math.min(_statsDetailOffset + _STATS_DB_LIMIT, Math.max(0, _statsDetailTotal - _STATS_DB_LIMIT));
-    _loadStatsPreview();
-  });
-  document.getElementById('stats-rows-newer').addEventListener('click', () => {
-    _statsDetailOffset = Math.max(0, _statsDetailOffset - _STATS_DB_LIMIT);
-    _loadStatsPreview();
-  });
   document.getElementById('stats-detail-tf-sel').addEventListener('change', async e => {
     _statsDetailTf = e.target.value;
-    _statsDetailOffset = 0;
     await _refreshStatsTickers();
   });
   document.getElementById('stats-detail-ticker-sel').addEventListener('change', e => {
     _statsDetailTicker = e.target.value;
-    _statsDetailOffset = 0;
     _loadStatsPreview();
   });
 }
@@ -729,8 +716,6 @@ function _wireStatsDetail() {
 function _openStatsDetail(ticker, timeframe) {
   _statsDetailTicker = ticker;
   _statsDetailTf     = timeframe;
-  _statsDetailOffset = 0;
-  _statsDetailTotal  = 0;
   document.getElementById('stats-db-summary-view').style.display = 'none';
   document.getElementById('stats-db-detail-view').style.display  = 'flex';
   document.getElementById('stats-db-table').innerHTML = '';
@@ -778,7 +763,6 @@ async function _refreshStatsTickers(preferTicker) {
   tickerSel.value    = target;
   tickerSel.disabled = tickers.length <= 1;
   _statsDetailTicker = target;
-  _statsDetailOffset = 0;
   _loadStatsPreview();
 }
 
@@ -789,14 +773,12 @@ async function _loadStatsPreview() {
   let data;
   try {
     data = await api.get(
-      `/api/data/ohlcv/preview?ticker=${encodeURIComponent(_statsDetailTicker)}&timeframe=${encodeURIComponent(_statsDetailTf)}&offset=${_statsDetailOffset}&limit=${_STATS_DB_LIMIT}`
+      `/api/data/ohlcv/preview?ticker=${encodeURIComponent(_statsDetailTicker)}&timeframe=${encodeURIComponent(_statsDetailTf)}`
     );
   } catch {
     tableEl.innerHTML = '<tr><td style="color:var(--t3);padding:8px 12px;font-size:11px;">Failed to load.</td></tr>';
     return;
   }
-  _statsDetailTotal = data.total_rows || 0;
-  _updateStatsRowNav(data.rows || []);
   const COLS = ['date', 'open', 'high', 'low', 'close', 'volume'];
   const thead = `<thead><tr>${COLS.map(c => `<th class="ind-db-th-ohlcv">${_esc(c)}</th>`).join('')}</tr></thead>`;
   const tbody = `<tbody>${(data.rows || []).map(row =>
@@ -807,23 +789,6 @@ async function _loadStatsPreview() {
     }).join('')}</tr>`
   ).join('')}</tbody>`;
   tableEl.innerHTML = thead + tbody;
-}
-
-function _updateStatsRowNav(rows) {
-  const older = document.getElementById('stats-rows-older');
-  const newer = document.getElementById('stats-rows-newer');
-  const label = document.getElementById('stats-rows-label');
-  older.disabled = _statsDetailOffset + _STATS_DB_LIMIT >= _statsDetailTotal;
-  newer.disabled = _statsDetailOffset <= 0;
-  if (rows.length > 0) {
-    const d0   = String(rows[0].date || '').slice(0, 10);
-    const d1   = String(rows[rows.length - 1].date || '').slice(0, 10);
-    const pos  = _statsDetailTotal - _statsDetailOffset;
-    const from = Math.max(1, pos - rows.length + 1);
-    label.textContent = `rows ${from}–${pos} of ${_statsDetailTotal.toLocaleString()}  ·  ${d0} → ${d1}`;
-  } else {
-    label.textContent = '';
-  }
 }
 
 // ── History ───────────────────────────────────────────────────
