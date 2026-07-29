@@ -128,12 +128,14 @@ html.light .dash-btn-cancel:hover {
 }
 html.light .scan-history-del,
 html.light .tbl-del-btn,
-html.light .run-queue-remove {
+html.light .run-queue-remove,
+html.light .ind-db-del-btn {
   color: rgba(var(--red-rgb), 0.55);
 }
 html.light .scan-history-del:hover,
 html.light .tbl-del-btn:hover,
-html.light .run-queue-remove:hover {
+html.light .run-queue-remove:hover,
+html.light .ind-db-del-btn:hover {
   color: rgba(var(--red-rgb), 0.9);
   background: rgba(var(--red-rgb), 0.08);
 }
@@ -1459,18 +1461,13 @@ body.ind-page {
 .ind-run-body {
   flex: 1;
   min-height: 0;
-  padding: 8px 14px 14px;
+  padding: 8px 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
-.run-queue-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-bottom: 10px;
-}
+.run-queue-list { margin-bottom: 10px; }
 .run-queue-list:last-child { margin-bottom: 0; }
 .run-queue-list:last-child .run-queue-empty { margin-bottom: 0; }
 .run-queue-empty {
@@ -1484,25 +1481,26 @@ body.ind-page {
   border-radius: 3px;
   background: var(--c-bg);
 }
-.run-queue-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--b0);
+.run-queue-table { width: 100%; border-collapse: separate; border-spacing: 0 3px; font-size: 12px; }
+.run-queue-item > td { background: rgba(var(--teal-rgb), 0.07); vertical-align: middle; }
+.run-queue-item > .run-queue-td-pos { background: transparent; border-radius: 0; }
+.run-queue-item > .run-queue-td-name { vertical-align: top; border-radius: 3px 0 0 3px; }
+.run-queue-item:has(.run-queue-remove:hover) > .run-queue-td-name,
+.run-queue-item:has(.run-queue-remove:hover) > .run-queue-td-del { background: rgba(220,0,50,0.1) !important; }
+.run-queue-td-pos {
+  font-size: 10px;
+  color: var(--b6);
+  text-align: right;
+  white-space: nowrap;
+  padding: 6px 5px 6px 6px;
+  width: 1%;
 }
-.run-queue-item:last-child { border-bottom: none; padding-bottom: 2px; }
-.run-queue-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.run-queue-pos    { color: var(--b6); font-size: 10px; min-width: 12px; text-align: right; flex-shrink: 0; }
-.run-queue-name   { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t7); }
-.run-queue-remove { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 0 3px; line-height: 1; flex-shrink: 0; border-radius: 3px; }
-.run-queue-remove:hover { color: #e05; background: rgba(220,0,50,0.08); }
-.run-queue-detail { padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
+.run-queue-td-name { padding: 5px 6px 4px; }
+.run-queue-td-del  { padding: 4px 8px 4px 0; white-space: nowrap; width: 1%; border-radius: 0 3px 3px 0; }
+.run-queue-name   { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t7); }
+.run-queue-remove { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 1px 4px; line-height: 1; border-radius: 3px; }
+.run-queue-remove:hover { color: #e05; background: none; }
+.run-queue-detail { padding-left: 6px; display: flex; flex-direction: column; gap: 2px; }
 /* Per-conf status bars inside queue items */
 .rq-status { display: flex; flex-direction: column; gap: 3px; padding-top: 3px; min-height: 0; }
 .rq-status:empty { display: none; }
@@ -1635,6 +1633,7 @@ body.ind-page {
 .ind-db-dim-link { color: rgba(var(--teal-rgb), 0.7); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-style: dotted; }
 .ind-db-dim-link:hover { color: rgba(var(--teal-rgb), 1); }
 .ind-db-th-idx, .ind-db-td-idx { width: 28px; min-width: 28px; padding: 5px 6px 5px 10px !important; color: var(--t2) !important; font-size: 10px; text-align: right; }
+#history-table .ind-db-th-idx, #history-table .ind-db-td-idx { padding-left: 16px !important; }
 .ind-db-td-del { width: 28px; min-width: 28px; padding: 3px 8px 3px 4px !important; text-align: center; }
 .ind-db-del-btn { background: none; border: none; color: var(--t3); font-size: 14px; cursor: pointer; padding: 0 3px; line-height: 1; border-radius: 3px; }
 .ind-db-del-btn:hover { color: var(--red, #c0392b); background: rgba(192,57,43,0.08); }

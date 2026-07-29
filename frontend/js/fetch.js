@@ -462,11 +462,11 @@ function _fmtBars(n) {
 
 async function _loadStats() {
   const tbody = document.getElementById('stats-body');
-  tbody.innerHTML = '<tr><td colspan="7" class="stats-empty" style="color:var(--t3)">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" class="stats-empty" style="color:var(--t3)">Loading…</td></tr>';
   try {
     _statsData = await api.get('/api/stats');
   } catch {
-    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">Failed to load stats.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="stats-empty">Failed to load stats.</td></tr>';
     return;
   }
   _renderStats();
@@ -521,6 +521,7 @@ function _renderStatsGrouped() {
     return `<th class="${cls}" data-col="${col}">${label}${arrow}</th>`;
   };
   theadRow.innerHTML = [
+    '<th class="ind-db-th-idx"></th>',
     mkTh('Ticker',    'ticker'),
     mkTh('Timeframe', 'timeframe'),
     mkTh('List',      'list'),
@@ -550,11 +551,11 @@ function _renderStatsGrouped() {
   // ── Rows ──────────────────────────────────────────────────
   const tbody = document.getElementById('stats-body');
   if (!groupArr.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">No data in database yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="stats-empty">No data in database yet.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = groupArr.map(g => {
+  tbody.innerHTML = groupArr.map((g, i) => {
     const tickerCell = _groupBy === 'ticker'    ? _esc(g.key) : g.tickers.size.toLocaleString();
     const tfCell     = _groupBy === 'timeframe' ? _esc(g.key) : [...g.timeframes].sort().join(', ');
     const listCell   = _groupBy === 'list'      ? _esc(g.key)
@@ -565,6 +566,7 @@ function _renderStatsGrouped() {
         ? `<button class="tbl-del-btn" data-list="${_esc(g.key)}" title="Delete list ${_esc(g.key)}">×</button>`
         : '';
     return `<tr>
+      <td class="ind-db-td-idx">${i + 1}</td>
       <td>${tickerCell}</td>
       <td>${tfCell}</td>
       <td>${listCell}</td>
@@ -601,16 +603,17 @@ async function _loadHistory() {
   try {
     data = await api.get('/api/fetch-history');
   } catch {
-    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">Failed to load history.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="stats-empty">Failed to load history.</td></tr>';
     return;
   }
   const rows = data.history || [];
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="stats-empty">No history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="stats-empty">No history yet.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(r => `
+  tbody.innerHTML = rows.map((r, i) => `
     <tr data-session="${r.session}" data-timeframe="${r.timeframe}" data-list="${r.ticker_list !== '—' ? r.ticker_list : ''}">
+      <td class="ind-db-td-idx">${i + 1}</td>
       <td>${_esc(r.session)}</td>
       <td>${_esc(r.ticker_list)}</td>
       <td>${_esc(r.timeframe)}</td>

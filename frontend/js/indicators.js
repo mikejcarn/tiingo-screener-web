@@ -568,7 +568,8 @@ async function _renderRunConfigs() {
     queued.filter(c => !_confDataCache[c.id])
           .map(c => api.get(`/api/ind-configs/${c.id}`).then(d => { _confDataCache[c.id] = d; }))
   );
-  el.innerHTML = queued.map((c, i) => {
+  const inRun = _runQueueIdx >= 0;
+  el.innerHTML = `<table class="run-queue-table"><tbody>${queued.map((c, i) => {
     const inds = _confDataCache[c.id]?.indicators || {};
     const tfs  = ALL_TIMEFRAMES.filter(tf => inds[tf] && Object.keys(inds[tf]).length);
     const detail = tfs.length
@@ -580,17 +581,16 @@ async function _renderRunConfigs() {
           </div>`;
         }).join('')
       : '<span class="run-summary-empty">No indicators configured</span>';
-    const inRun = _runQueueIdx >= 0;
-    return `<div class="run-queue-item">
-      <div class="run-queue-header">
-        <span class="run-queue-pos">${i + 1}</span>
-        <span class="run-queue-name">${_esc(c.name)}</span>
-        <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''} title="Remove ${_esc(c.name)} from the run queue">×</button>
-      </div>
-      <div class="run-queue-detail">${detail}</div>
-      <div class="rq-status" data-id="${c.id}"></div>
-    </div>`;
-  }).join('');
+    return `<tr class="run-queue-item">
+      <td class="run-queue-td-pos">${i + 1}</td>
+      <td class="run-queue-td-name">
+        <div class="run-queue-name">${_esc(c.name)}</div>
+        <div class="run-queue-detail">${detail}</div>
+        <div class="rq-status" data-id="${c.id}"></div>
+      </td>
+      <td class="run-queue-td-del"><button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''} title="Remove ${_esc(c.name)} from the run queue">×</button></td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
   for (const btn of el.querySelectorAll('.run-queue-remove')) {
     btn.addEventListener('click', () => {
       const id = +btn.dataset.id;
@@ -1506,9 +1506,10 @@ async function _loadHistory() {
     return;
   }
   tbody.innerHTML = '';
-  for (const r of rows) {
+  for (const [i, r] of rows.entries()) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td class="ind-db-td-idx">${i + 1}</td>
       <td>${_esc(r.config_name)}</td>
       <td>${r.timeframes.join(', ')}</td>
       <td>${r.tickers}</td>
