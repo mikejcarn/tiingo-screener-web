@@ -1631,8 +1631,13 @@ body.ind-page {
 .ind-db-summary-table th.stats-th-pivot { color: rgba(var(--teal-rgb), 0.7); }
 .ind-db-summary-table th.stats-th-pivot:hover { color: rgba(var(--teal-rgb), 1); }
 .ind-db-summary-table td { padding: 5px 14px; color: var(--t6); border-bottom: 1px solid var(--c-card); }
-.ind-db-summary-table td:first-child { color: var(--t7); }
 .ind-db-summary-table tbody tr.ind-db-summary-row:hover td { background: var(--c-surface); cursor: pointer; }
+.ind-db-dim-link { color: rgba(var(--teal-rgb), 0.7); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-style: dotted; }
+.ind-db-dim-link:hover { color: rgba(var(--teal-rgb), 1); }
+.ind-db-th-idx, .ind-db-td-idx { width: 28px; min-width: 28px; padding: 5px 6px 5px 10px !important; color: var(--t2) !important; font-size: 10px; text-align: right; }
+.ind-db-td-del { width: 28px; min-width: 28px; padding: 3px 8px 3px 4px !important; text-align: center; }
+.ind-db-del-btn { background: none; border: none; color: var(--t3); font-size: 14px; cursor: pointer; padding: 0 3px; line-height: 1; border-radius: 3px; }
+.ind-db-del-btn:hover { color: var(--red, #c0392b); background: rgba(192,57,43,0.08); }
 
 /* DB detail bar */
 .ind-db-detail-bar {
@@ -1643,14 +1648,27 @@ body.ind-page {
   border-bottom: 1px solid var(--b2);
   flex-shrink: 0;
 }
-.ind-db-detail-label {
+.ind-db-detail-selectors {
   flex: 1;
-  font-size: 11px;
-  color: var(--t5);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
 }
+.ind-db-detail-sep { font-size: 11px; color: var(--t3); flex-shrink: 0; }
+.db-detail-sel {
+  font-size: 11px;
+  color: var(--t7);
+  background: var(--c-ctrl);
+  border: 1px solid var(--b3);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  max-width: 180px;
+}
+.db-detail-sel:hover:not(:disabled) { border-color: var(--b5); color: var(--t9); }
+.db-detail-sel:disabled { color: var(--t3); border-color: var(--b2); background: transparent; cursor: default; }
 
 /* nav rows */
 .ind-db-nav-row {

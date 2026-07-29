@@ -321,6 +321,20 @@ def list_ticker_lists() -> list[str]:
         ).fetchall()]
 
 
+def delete_indicators(ind_conf_id: Optional[int] = None,
+                      ticker: Optional[str] = None,
+                      timeframe: Optional[str] = None) -> int:
+    conditions, params = [], []
+    if ind_conf_id is not None: conditions.append("ind_conf=?");  params.append(ind_conf_id)
+    if ticker      is not None: conditions.append("ticker=?");    params.append(ticker)
+    if timeframe   is not None: conditions.append("timeframe=?"); params.append(timeframe)
+    if not conditions:
+        return 0
+    with _conn() as con:
+        cur = con.execute(f"DELETE FROM indicators WHERE {' AND '.join(conditions)}", params)
+        return cur.rowcount
+
+
 def has_single_tickers() -> bool:
     with _conn() as con:
         row = con.execute(

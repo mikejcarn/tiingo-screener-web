@@ -462,6 +462,7 @@ function _fmtBars(n) {
 
 async function _loadStats() {
   const tbody = document.getElementById('stats-body');
+  tbody.innerHTML = '<tr><td colspan="7" class="stats-empty" style="color:var(--t3)">Loading…</td></tr>';
   try {
     _statsData = await api.get('/api/stats');
   } catch {

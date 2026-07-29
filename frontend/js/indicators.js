@@ -1144,7 +1144,7 @@ let _dbRowOffset       = 0;
 let _dbRowTotal        = 0;
 const _DB_LIMIT        = 8;
 
-const _IND_DIM_COLS = ['config', 'ticker', 'timeframe'];
+const _IND_DIM_COLS = ['config', 'ticker', 'timeframe', 'rows', 'first_date', 'last_date'];
 
 // ── DB card ────────────────────────────────────────────────────
 
@@ -1154,14 +1154,31 @@ function _wireDbSummary() {
     _dbRowOffset = Math.min(_dbRowOffset + _DB_LIMIT, Math.max(0, _dbRowTotal - _DB_LIMIT));
     _loadDbPreview();
   });
-
   document.getElementById('db-rows-newer').addEventListener('click', () => {
     _dbRowOffset = Math.max(0, _dbRowOffset - _DB_LIMIT);
+    _loadDbPreview();
+  });
+  document.getElementById('db-detail-conf-sel').addEventListener('change', async e => {
+    _dbSectionConfigId = parseInt(e.target.value);
+    _dbRowOffset = 0;
+    await _refreshDetailTfs();
+  });
+  document.getElementById('db-detail-tf-sel').addEventListener('change', async e => {
+    _dbActiveTf = e.target.value;
+    _dbRowOffset = 0;
+    await _refreshDetailTickers();
+  });
+  document.getElementById('db-detail-ticker-sel').addEventListener('change', e => {
+    _dbPreviewTicker = e.target.value;
+    _dbRowOffset = 0;
     _loadDbPreview();
   });
 }
 
 async function _loadDbSummary() {
+  document.getElementById('ind-db-summary-thead').innerHTML = '';
+  document.getElementById('ind-db-summary-body').innerHTML =
+    '<tr><td colspan="8" class="stats-empty" style="color:var(--t3)">Loading…</td></tr>';
   let data;
   try { data = await api.get('/api/indicators/summary'); } catch { data = { rows: [] }; }
   _dbSummaryData = data.rows || [];
@@ -1174,21 +1191,31 @@ function _renderDbSummary() {
 
   if (!_dbSummaryData.length) {
     thead.innerHTML = '';
-    tbody.innerHTML = '<tr><td colspan="6" class="stats-empty">No indicator data yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="stats-empty">No indicator data yet.</td></tr>';
     return;
   }
 
+  // Group all rows by the active dimension
+  const _keyOf = row => {
+    switch (_dbGroupBy) {
+      case 'config':     return row.config_name;
+      case 'ticker':     return row.ticker;
+      case 'timeframe':  return row.timeframe;
+      case 'rows':       return String(row.rows);
+      case 'first_date': return row.first_date || '';
+      case 'last_date':  return row.last_date  || '';
+    }
+  };
+
   const groups = {};
   for (const row of _dbSummaryData) {
-    const key = _dbGroupBy === 'config' ? row.config_name :
-                _dbGroupBy === 'ticker' ? row.ticker : row.timeframe;
+    const key = _keyOf(row);
     if (!groups[key]) {
-      groups[key] = { rows: 0, configs: new Set(), tickers: new Set(), timeframes: new Set(),
-                      firstDate: '', lastDate: '',
-                      configId: row.config_id, sampleTicker: row.ticker, sampleTf: row.timeframe };
+      groups[key] = { totalRows: 0, configs: new Set(), tickers: new Set(), timeframes: new Set(),
+                      firstDate: '', lastDate: '', sampleRow: row };
     }
     const g = groups[key];
-    g.rows += row.rows;
+    g.totalRows += row.rows;
     g.configs.add(row.config_name);
     g.tickers.add(row.ticker);
     g.timeframes.add(row.timeframe);
@@ -1196,27 +1223,42 @@ function _renderDbSummary() {
     if (!g.lastDate  || (row.last_date  && row.last_date  > g.lastDate))  g.lastDate  = row.last_date;
   }
 
+  // Sort entries
   let entries = Object.entries(groups);
   const dir = _dbGroupSort.dir === 'asc' ? 1 : -1;
   if (_dbGroupSort.col === 'key') {
-    entries.sort(([a], [b]) => dir * a.localeCompare(b));
-  } else if (_dbGroupSort.col === 'rows') {
-    entries.sort(([, a], [, b]) => dir * (a.rows - b.rows));
-  } else if (_dbGroupSort.col === 'first_date') {
-    entries.sort(([, a], [, b]) => dir * (a.firstDate || '').localeCompare(b.firstDate || ''));
-  } else if (_dbGroupSort.col === 'last_date') {
-    entries.sort(([, a], [, b]) => dir * (a.lastDate || '').localeCompare(b.lastDate || ''));
-  } else if (_dbGroupSort.col === 'config') {
-    entries.sort(([, a], [, b]) => dir * (a.configs.size - b.configs.size));
-  } else if (_dbGroupSort.col === 'ticker') {
-    entries.sort(([, a], [, b]) => dir * (a.tickers.size - b.tickers.size));
-  } else if (_dbGroupSort.col === 'timeframe') {
-    entries.sort(([, a], [, b]) => dir * (a.timeframes.size - b.timeframes.size));
+    if (_dbGroupBy === 'rows') {
+      entries.sort(([a], [b]) => dir * (Number(a) - Number(b)));
+    } else {
+      entries.sort(([a], [b]) => dir * a.localeCompare(b));
+    }
+  } else {
+    const sortFns = {
+      config:     ([, a], [, b]) => a.configs.size    - b.configs.size,
+      ticker:     ([, a], [, b]) => a.tickers.size    - b.tickers.size,
+      timeframe:  ([, a], [, b]) => a.timeframes.size - b.timeframes.size,
+      rows:       ([, a], [, b]) => a.totalRows        - b.totalRows,
+      first_date: ([, a], [, b]) => (a.firstDate || '').localeCompare(b.firstDate || ''),
+      last_date:  ([, a], [, b]) => (a.lastDate  || '').localeCompare(b.lastDate  || ''),
+    };
+    const fn = sortFns[_dbGroupSort.col];
+    if (fn) entries.sort((a, b) => dir * fn(a, b));
   }
 
+  // Column value for a non-key cell
+  const _cellVal = (col, g) => {
+    switch (col) {
+      case 'config':     return `<span class="ind-db-dim-link">${g.configs.size}</span>`;
+      case 'ticker':     return `<span class="ind-db-dim-link">${g.tickers.size}</span>`;
+      case 'timeframe':  return `<span class="ind-db-dim-link">${g.timeframes.size}</span>`;
+      case 'rows':       return `<span class="ind-db-dim-link">${g.totalRows.toLocaleString()}</span>`;
+      case 'first_date': return `<span class="ind-db-dim-link">${g.firstDate || '—'}</span>`;
+      case 'last_date':  return `<span class="ind-db-dim-link">${g.lastDate  || '—'}</span>`;
+    }
+  };
+
   const mkTh = (label, col) => {
-    const isDim   = _IND_DIM_COLS.includes(col);
-    const isGroup = isDim && col === _dbGroupBy;
+    const isGroup = col === _dbGroupBy;
     const isSort  = _dbGroupSort.col === col || (_dbGroupSort.col === 'key' && isGroup);
     const cls = ['stats-th-sort', (isGroup || isSort) ? 'stats-th-pivot' : ''].filter(Boolean).join(' ');
     const arrow = isSort ? (_dbGroupSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
@@ -1224,50 +1266,77 @@ function _renderDbSummary() {
   };
 
   thead.innerHTML = `<tr>
-    ${mkTh('Config', 'config')}
-    ${mkTh('Ticker', 'ticker')}
-    ${mkTh('Timeframe', 'timeframe')}
-    ${mkTh('Rows', 'rows')}
-    ${mkTh('Start Date', 'first_date')}
-    ${mkTh('Last Date', 'last_date')}
+    <th class="ind-db-th-idx"></th>
+    ${mkTh('Config', 'config')}${mkTh('Ticker', 'ticker')}${mkTh('Timeframe', 'timeframe')}
+    ${mkTh('Rows', 'rows')}${mkTh('Start Date', 'first_date')}${mkTh('Last Date', 'last_date')}
+    <th></th>
   </tr>`;
 
   for (const th of thead.querySelectorAll('th[data-col]')) {
     th.addEventListener('click', () => {
       const col = th.dataset.col;
-      if (_IND_DIM_COLS.includes(col)) {
-        if (col === _dbGroupBy) {
-          _dbGroupSort = { col: 'key', dir: _dbGroupSort.dir === 'asc' ? 'desc' : 'asc' };
-        } else {
-          _dbGroupBy   = col;
-          _dbGroupSort = { col: 'key', dir: 'asc' };
-        }
+      if (col === _dbGroupBy) {
+        _dbGroupSort = { col: 'key', dir: _dbGroupSort.dir === 'asc' ? 'desc' : 'asc' };
       } else {
-        _dbGroupSort = { col, dir: _dbGroupSort.col === col && _dbGroupSort.dir === 'asc' ? 'desc' : 'asc' };
+        _dbGroupBy   = col;
+        _dbGroupSort = { col: 'key', dir: 'asc' };
       }
       _renderDbSummary();
     });
   }
 
+  const COLS = ['config', 'ticker', 'timeframe', 'rows', 'first_date', 'last_date'];
   tbody.innerHTML = '';
-  for (const [key, g] of entries) {
+  entries.forEach(([key, g], rowIdx) => {
     const tr = document.createElement('tr');
     tr.className = 'ind-db-summary-row';
-    const configCell = _dbGroupBy === 'config'    ? `<td>${_esc(key)}</td>` : `<td>${g.configs.size}</td>`;
-    const tickerCell = _dbGroupBy === 'ticker'    ? `<td>${_esc(key)}</td>` : `<td>${g.tickers.size}</td>`;
-    const tfCell     = _dbGroupBy === 'timeframe' ? `<td>${_esc(key)}</td>` : `<td>${g.timeframes.size}</td>`;
-    tr.innerHTML = `${configCell}${tickerCell}${tfCell}
-      <td>${g.rows.toLocaleString()}</td>
-      <td>${g.firstDate || '—'}</td>
-      <td>${g.lastDate || '—'}</td>`;
-    tr.addEventListener('click', () => {
-      const row = _dbSummaryData.find(r =>
-        _dbGroupBy === 'config' ? r.config_name === key :
-        _dbGroupBy === 'ticker' ? r.ticker === key : r.timeframe === key
-      );
-      if (row) _openDbDetail(row.config_id, row.ticker, row.timeframe);
+    const keyDisplay = _dbGroupBy === 'rows' ? Number(key).toLocaleString() : _esc(key || '—');
+    tr.innerHTML = `<td class="ind-db-td-idx">${rowIdx + 1}</td>` +
+      COLS.map(col => `<td>${col === _dbGroupBy ? keyDisplay : _cellVal(col, g)}</td>`).join('') +
+      `<td class="ind-db-td-del"><button class="ind-db-del-btn" title="Delete this group">×</button></td>`;
+
+    // Non-key cells: click switches groupBy
+    const tds = tr.querySelectorAll('td');
+    COLS.forEach((col, idx) => {
+      if (col === _dbGroupBy) return;
+      tds[idx + 1].addEventListener('click', e => {  // +1 for index col offset
+        e.stopPropagation();
+        _dbGroupBy   = col;
+        _dbGroupSort = { col: 'key', dir: 'asc' };
+        _renderDbSummary();
+      });
     });
+
+    tr.querySelector('.ind-db-del-btn').addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm(`Delete indicator data for this group?`)) return;
+      await _deleteIndicatorGroup(key, g);
+      await _loadDbSummary();
+    });
+
+    tr.addEventListener('click', () => _openDbDetail(g.sampleRow.config_id, g.sampleRow.ticker, g.sampleRow.timeframe));
     tbody.appendChild(tr);
+  });
+}
+
+async function _deleteIndicatorGroup(key, g) {
+  const qs = p => Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  if (_dbGroupBy === 'config') {
+    await api.del(`/api/indicators/data?${qs({ ind_conf_id: g.sampleRow.config_id })}`);
+  } else if (_dbGroupBy === 'ticker') {
+    await api.del(`/api/indicators/data?${qs({ ticker: key })}`);
+  } else if (_dbGroupBy === 'timeframe') {
+    await api.del(`/api/indicators/data?${qs({ timeframe: key })}`);
+  } else {
+    // rows/first_date/last_date: delete each specific combo in this group
+    const matching = _dbSummaryData.filter(r => {
+      if (_dbGroupBy === 'rows')       return String(r.rows)        === key;
+      if (_dbGroupBy === 'first_date') return (r.first_date || '') === key;
+      if (_dbGroupBy === 'last_date')  return (r.last_date  || '') === key;
+    });
+    await Promise.all(matching.map(r =>
+      api.del(`/api/indicators/data?${qs({ ind_conf_id: r.config_id, ticker: r.ticker, timeframe: r.timeframe })}`)
+    ));
   }
 }
 
@@ -1277,12 +1346,65 @@ function _openDbDetail(configId, ticker, timeframe) {
   _dbPreviewTicker   = ticker;
   _dbRowOffset       = 0;
   _dbRowTotal        = 0;
-  const conf     = _configList.find(c => c.id === configId);
-  const confName = conf?.name || `Config ${configId}`;
-  document.getElementById('ind-db-detail-label').textContent = `${confName} · ${ticker} · ${timeframe}`;
+
+  // Populate config selector with all configs that have data
+  const confSel = document.getElementById('db-detail-conf-sel');
+  const confIds = new Set(_dbSummaryData.map(r => r.config_id));
+  const confsWithData = _configList.filter(c => confIds.has(c.id));
+  confSel.innerHTML = '';
+  for (const c of confsWithData) {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.name; o.selected = c.id === configId;
+    confSel.appendChild(o);
+  }
+  confSel.disabled = confsWithData.length <= 1;
+
   document.getElementById('ind-db-summary-view').style.display = 'none';
   document.getElementById('ind-db-detail-view').style.display  = 'flex';
   document.getElementById('comp-db-table').innerHTML = '';
+  _refreshDetailTfs(timeframe, ticker);
+}
+
+function _refreshDetailTfs(preferTf, preferTicker) {
+  const tfSel = document.getElementById('db-detail-tf-sel');
+  const TF_ORDER = ['daily', 'weekly', '1hour', '4hour', '5min'];
+  const available = [...new Set(
+    _dbSummaryData.filter(r => r.config_id === _dbSectionConfigId).map(r => r.timeframe)
+  )].sort((a, b) => {
+    const ai = TF_ORDER.indexOf(a), bi = TF_ORDER.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+  tfSel.innerHTML = '';
+  for (const tf of available) {
+    const o = document.createElement('option'); o.value = tf; o.textContent = tf; tfSel.appendChild(o);
+  }
+  const target = preferTf && available.includes(preferTf) ? preferTf : available[0] || '';
+  tfSel.value = target;
+  tfSel.disabled = available.length <= 1;
+  _dbActiveTf = target;
+  _refreshDetailTickers(preferTicker);
+}
+
+async function _refreshDetailTickers(preferTicker) {
+  const tickerSel = document.getElementById('db-detail-ticker-sel');
+  tickerSel.innerHTML = '<option disabled>Loading…</option>';
+  tickerSel.disabled = true;
+  let tickers = [];
+  try {
+    const data = await api.get(
+      `/api/indicators/tickers-list?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}`
+    );
+    tickers = data.tickers || [];
+  } catch {}
+  tickerSel.innerHTML = '';
+  for (const t of tickers) {
+    const o = document.createElement('option'); o.value = t; o.textContent = t; tickerSel.appendChild(o);
+  }
+  const target = preferTicker && tickers.includes(preferTicker) ? preferTicker : tickers[0] || '';
+  tickerSel.value = target;
+  tickerSel.disabled = tickers.length <= 1;
+  _dbPreviewTicker = target;
+  _dbRowOffset = 0;
   _loadDbPreview();
 }
 

@@ -48,6 +48,16 @@ def clear_indicator_history():
     return {"ok": True}
 
 
+@router.delete("/indicators/data")
+def delete_indicator_data(ind_conf_id: Optional[int] = None,
+                          ticker: Optional[str] = None,
+                          timeframe: Optional[str] = None):
+    if ind_conf_id is None and ticker is None and timeframe is None:
+        raise HTTPException(status_code=400, detail="At least one filter required")
+    deleted = db.delete_indicators(ind_conf_id=ind_conf_id, ticker=ticker, timeframe=timeframe)
+    return {"ok": True, "deleted": deleted}
+
+
 @router.get("/indicators/summary")
 def indicator_summary():
     with db._conn() as con:

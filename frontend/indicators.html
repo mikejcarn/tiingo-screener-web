@@ -160,7 +160,13 @@
         <div id="ind-db-detail-view" style="display:none; flex-direction:column; flex:1; min-height:0;">
           <div class="ind-db-detail-bar">
             <button id="btn-db-detail-back" class="dash-btn-sm" title="Back to summary">← Back</button>
-            <span id="ind-db-detail-label" class="ind-db-detail-label"></span>
+            <div class="ind-db-detail-selectors">
+              <select id="db-detail-conf-sel" class="db-detail-sel" title="Indicator configuration"></select>
+              <span class="ind-db-detail-sep">·</span>
+              <select id="db-detail-ticker-sel" class="db-detail-sel" title="Ticker"></select>
+              <span class="ind-db-detail-sep">·</span>
+              <select id="db-detail-tf-sel" class="db-detail-sel" title="Timeframe"></select>
+            </div>
             <div class="ind-db-row-ctrl">
               <button id="db-rows-older" class="ind-db-nav-btn" title="Load older rows">‹ older</button>
               <span id="db-rows-label" class="ind-db-rows-label"></span>
