@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from backend.core import job_state
 from backend.core import database as db
-from backend.core.globals import API_KEY as _FALLBACK_API_KEY
+from backend.core.globals import API_KEY as _FALLBACK_API_KEY, TIMEFRAME_ALIASES
 
 router = APIRouter(prefix="/api")
 
@@ -326,6 +326,33 @@ def delete_ticker_list(list_name: str):
             con.execute(f"DELETE FROM indicators  WHERE ticker IN ({placeholders})", tickers)
             con.execute(f"DELETE FROM fetch_log   WHERE ticker IN ({placeholders})", tickers)
     return {"deleted_list": list_name, "tickers": len(tickers)}
+
+
+@router.delete("/data/ohlcv/timeframe/{timeframe}")
+def delete_timeframe(timeframe: str):
+    """Delete all OHLCV data for a given timeframe across all tickers."""
+    tf = TIMEFRAME_ALIASES.get(timeframe.lower())
+    if tf is None:
+        raise HTTPException(status_code=400, detail=f"Unknown timeframe '{timeframe}'")
+    with db._conn() as con:
+        con.execute("DELETE FROM ohlcv      WHERE timeframe = ?", (tf,))
+        con.execute("DELETE FROM fetch_log  WHERE timeframe = ?", (tf,))
+        con.execute("DELETE FROM indicators WHERE timeframe = ?", (tf,))
+    return {"deleted_timeframe": tf}
+
+
+@router.delete("/data/ohlcv/ticker-tf")
+def delete_ticker_timeframe(ticker: str, timeframe: str):
+    """Delete OHLCV data for a specific ticker + timeframe combination."""
+    ticker = ticker.upper()
+    tf = TIMEFRAME_ALIASES.get(timeframe.lower())
+    if tf is None:
+        raise HTTPException(status_code=400, detail=f"Unknown timeframe '{timeframe}'")
+    with db._conn() as con:
+        con.execute("DELETE FROM ohlcv      WHERE ticker = ? AND timeframe = ?", (ticker, tf))
+        con.execute("DELETE FROM fetch_log  WHERE ticker = ? AND timeframe = ?", (ticker, tf))
+        con.execute("DELETE FROM indicators WHERE ticker = ? AND timeframe = ?", (ticker, tf))
+    return {"deleted": {"ticker": ticker, "timeframe": tf}}
 
 
 @router.delete("/data/indicators")

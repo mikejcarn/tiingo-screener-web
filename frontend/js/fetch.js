@@ -449,12 +449,15 @@ async function _loadTiingoListInfo() {
 
 // ── Stats ─────────────────────────────────────────────────────
 
-let _statsData = null;
-let _groupBy   = 'ticker';
-let _groupSort = { col: 'key', dir: 'asc' };
+let _statsData   = null;
+let _groupBy     = 'ticker';
+let _groupSort   = { col: 'key', dir: 'asc' };
 
-const _DIM_COLS = ['ticker', 'timeframe', 'list'];
-const _NUM_COLS = ['bars', 'tickers', 'tfs'];
+let _statsDetailTf     = 'daily';
+let _statsDetailTicker = null;
+let _statsDetailOffset = 0;
+let _statsDetailTotal  = 0;
+const _STATS_DB_LIMIT  = 8;
 
 function _fmtBars(n) {
   return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : String(n);
@@ -469,129 +472,287 @@ async function _loadStats() {
     tbody.innerHTML = '<tr><td colspan="8" class="stats-empty">Failed to load stats.</td></tr>';
     return;
   }
-  _renderStats();
-}
-
-function _renderStats() {
-  if (!_statsData) return;
   _renderStatsGrouped();
 }
 
 function _renderStatsGrouped() {
-  const raw = _statsData.stats || [];
-
+  const raw = (_statsData && _statsData.stats) || [];
   document.getElementById('stats-summary').innerHTML = '';
 
-  // ── Group raw rows ────────────────────────────────────────
+  const _keyOf = r => {
+    switch (_groupBy) {
+      case 'ticker':     return r.ticker;
+      case 'timeframe':  return r.timeframe;
+      case 'list':       return r.ticker_list || '—';
+      case 'bars':       return String(r.rows);
+      case 'first_date': return r.first_date || '';
+      case 'last_date':  return r.last_date  || '';
+      default:           return r.ticker;
+    }
+  };
+
   const groups = {};
   for (const r of raw) {
-    const key = _groupBy === 'ticker' ? r.ticker
-              : _groupBy === 'timeframe' ? r.timeframe
-              : (r.ticker_list || '—');
-    if (!groups[key]) groups[key] = { key, tickers: new Set(), timeframes: new Set(), lists: new Set(), bars: 0, firstDate: '', lastDate: '' };
-    groups[key].tickers.add(r.ticker);
-    groups[key].timeframes.add(r.timeframe);
-    groups[key].lists.add(r.ticker_list || '—');
-    groups[key].bars += r.rows;
-    if (!groups[key].firstDate || r.first_date < groups[key].firstDate) groups[key].firstDate = r.first_date;
-    if (!groups[key].lastDate  || r.last_date  > groups[key].lastDate)  groups[key].lastDate  = r.last_date;
+    const key = _keyOf(r);
+    if (!groups[key]) groups[key] = {
+      bars: 0, tickers: new Set(), timeframes: new Set(), lists: new Set(),
+      firstDate: '', lastDate: '', sampleRow: r
+    };
+    const g = groups[key];
+    g.tickers.add(r.ticker);
+    g.timeframes.add(r.timeframe);
+    g.lists.add(r.ticker_list || '—');
+    g.bars += r.rows;
+    if (!g.firstDate || (r.first_date && r.first_date < g.firstDate)) g.firstDate = r.first_date;
+    if (!g.lastDate  || (r.last_date  && r.last_date  > g.lastDate))  g.lastDate  = r.last_date;
   }
 
-  // ── Sort ──────────────────────────────────────────────────
-  const sc = _groupSort.col, sd = _groupSort.dir;
-  const groupArr = Object.values(groups).sort((a, b) => {
-    let av, bv;
-    if (sc === 'bars')           { av = a.bars;            bv = b.bars; }
-    else if (sc === 'first_date'){ av = a.firstDate;       bv = b.firstDate; }
-    else if (sc === 'last_date') { av = a.lastDate;        bv = b.lastDate; }
-    else if (sc === 'tickers')   { av = a.tickers.size;    bv = b.tickers.size; }
-    else if (sc === 'tfs')       { av = a.timeframes.size; bv = b.timeframes.size; }
-    else                         { av = a.key;             bv = b.key; }
-    const cmp = _NUM_COLS.includes(sc) ? av - bv : String(av || '').localeCompare(String(bv || ''));
-    return sd === 'asc' ? cmp : -cmp;
-  });
+  let entries = Object.entries(groups);
+  const dir = _groupSort.dir === 'asc' ? 1 : -1;
+  if (_groupSort.col === 'key') {
+    if (_groupBy === 'bars') {
+      entries.sort(([a], [b]) => dir * (Number(a) - Number(b)));
+    } else {
+      entries.sort(([a], [b]) => dir * String(a || '').localeCompare(String(b || '')));
+    }
+  } else {
+    const sortFns = {
+      ticker:     ([, a], [, b]) => a.tickers.size    - b.tickers.size,
+      timeframe:  ([, a], [, b]) => a.timeframes.size - b.timeframes.size,
+      list:       ([, a], [, b]) => a.lists.size      - b.lists.size,
+      bars:       ([, a], [, b]) => a.bars             - b.bars,
+      first_date: ([, a], [, b]) => String(a.firstDate || '').localeCompare(String(b.firstDate || '')),
+      last_date:  ([, a], [, b]) => String(a.lastDate  || '').localeCompare(String(b.lastDate  || '')),
+    };
+    const fn = sortFns[_groupSort.col];
+    if (fn) entries.sort((a, b) => dir * fn(a, b));
+  }
 
-  // ── Headers ───────────────────────────────────────────────
+  const COLS   = ['ticker', 'timeframe', 'list', 'bars', 'first_date', 'last_date'];
+  const LABELS = { ticker: 'Ticker', timeframe: 'Timeframe', list: 'List', bars: 'Bars', first_date: 'Start Date', last_date: 'Last Date' };
+
   const theadRow = document.getElementById('stats-thead-row');
   const mkTh = (label, col) => {
     const isGroup = col === _groupBy;
-    const isSort  = _groupSort.col === (isGroup ? 'key' : col);
-    const arrow   = isSort ? (_groupSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
-    const cls     = ['stats-th-sort', (isGroup || isSort) ? 'stats-th-pivot' : ''].filter(Boolean).join(' ');
+    const isSort  = _groupSort.col === col || (_groupSort.col === 'key' && isGroup);
+    const cls = ['stats-th-sort', (isGroup || isSort) ? 'stats-th-pivot' : ''].filter(Boolean).join(' ');
+    const arrow = isSort ? (_groupSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
     return `<th class="${cls}" data-col="${col}">${label}${arrow}</th>`;
   };
   theadRow.innerHTML = [
     '<th class="ind-db-th-idx"></th>',
-    mkTh('Ticker',    'ticker'),
-    mkTh('Timeframe', 'timeframe'),
-    mkTh('List',      'list'),
-    mkTh('Bars',       'bars'),
-    mkTh('Start Date', 'first_date'),
-    mkTh('Last Date',  'last_date'),
+    ...COLS.map(col => mkTh(LABELS[col], col)),
     '<th></th>',
   ].join('');
 
   for (const th of theadRow.querySelectorAll('.stats-th-sort')) {
     th.addEventListener('click', () => {
       const col = th.dataset.col;
-      if (_DIM_COLS.includes(col)) {
-        if (col === _groupBy) {
-          _groupSort = { col: 'key', dir: _groupSort.col === 'key' && _groupSort.dir === 'asc' ? 'desc' : 'asc' };
-        } else {
-          _groupBy   = col;
-          _groupSort = { col: 'key', dir: 'asc' };
-        }
+      if (col === _groupBy) {
+        _groupSort = { col: 'key', dir: _groupSort.dir === 'asc' ? 'desc' : 'asc' };
       } else {
-        _groupSort = { col, dir: _groupSort.col === col && _groupSort.dir === 'asc' ? 'desc' : 'asc' };
+        _groupBy   = col;
+        _groupSort = { col: 'key', dir: 'asc' };
       }
       _renderStatsGrouped();
     });
   }
 
-  // ── Rows ──────────────────────────────────────────────────
   const tbody = document.getElementById('stats-body');
-  if (!groupArr.length) {
+  if (!entries.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="stats-empty">No data in database yet.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = groupArr.map((g, i) => {
-    const tickerCell = _groupBy === 'ticker'    ? _esc(g.key) : g.tickers.size.toLocaleString();
-    const tfCell     = _groupBy === 'timeframe' ? _esc(g.key) : [...g.timeframes].sort().join(', ');
-    const listCell   = _groupBy === 'list'      ? _esc(g.key)
-                     : g.lists.size === 1 ? _esc([...g.lists][0]) : g.lists.size.toLocaleString();
-    const delBtn = _groupBy === 'ticker'
-      ? `<button class="tbl-del-btn" data-ticker="${_esc(g.key)}" title="Delete ${_esc(g.key)}">×</button>`
-      : _groupBy === 'list' && g.key !== '—'
-        ? `<button class="tbl-del-btn" data-list="${_esc(g.key)}" title="Delete list ${_esc(g.key)}">×</button>`
-        : '';
-    return `<tr>
-      <td class="ind-db-td-idx">${i + 1}</td>
-      <td>${tickerCell}</td>
-      <td>${tfCell}</td>
-      <td>${listCell}</td>
-      <td>${_fmtBars(g.bars)}</td>
-      <td>${g.firstDate || '—'}</td>
-      <td>${g.lastDate || '—'}</td>
-      <td>${delBtn}</td>
-    </tr>`;
-  }).join('');
+  const _cellVal = (col, g) => {
+    switch (col) {
+      case 'ticker':     return `<span class="ind-db-dim-link">${g.tickers.size}</span>`;
+      case 'timeframe':  return `<span class="ind-db-dim-link">${[...g.timeframes].sort().join(', ')}</span>`;
+      case 'list':       return `<span class="ind-db-dim-link">${g.lists.size === 1 ? _esc([...g.lists][0]) : g.lists.size}</span>`;
+      case 'bars':       return `<span class="ind-db-dim-link">${_fmtBars(g.bars)}</span>`;
+      case 'first_date': return `<span class="ind-db-dim-link">${g.firstDate || '—'}</span>`;
+      case 'last_date':  return `<span class="ind-db-dim-link">${g.lastDate  || '—'}</span>`;
+    }
+  };
 
-  for (const btn of tbody.querySelectorAll('.tbl-del-btn[data-ticker]')) {
-    btn.addEventListener('click', async () => {
-      const ticker = btn.dataset.ticker;
-      if (!confirm(`Delete all data for ${ticker}?`)) return;
-      await api.del(`/api/data/ohlcv/ticker/${encodeURIComponent(ticker)}`);
+  tbody.innerHTML = '';
+  entries.forEach(([key, g], rowIdx) => {
+    const tr = document.createElement('tr');
+    tr.className = 'ind-db-summary-row';
+    const keyDisplay = _groupBy === 'bars' ? _fmtBars(Number(key)) : _esc(key || '—');
+    tr.innerHTML = `<td class="ind-db-td-idx">${rowIdx + 1}</td>` +
+      COLS.map(col => `<td>${col === _groupBy ? keyDisplay : _cellVal(col, g)}</td>`).join('') +
+      `<td class="ind-db-td-del"><button class="tbl-del-btn" title="Delete this group">×</button></td>`;
+
+    const tds = tr.querySelectorAll('td');
+    COLS.forEach((col, idx) => {
+      if (col === _groupBy) return;
+      tds[idx + 1].addEventListener('click', e => {
+        e.stopPropagation();
+        _groupBy   = col;
+        _groupSort = { col: 'key', dir: 'asc' };
+        _renderStatsGrouped();
+      });
+    });
+
+    tr.querySelector('.tbl-del-btn').addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm('Delete data for this group?')) return;
+      await _deleteStatsGroup(key, g);
       _loadStats();
     });
+
+    tr.addEventListener('click', () => _openStatsDetail(g.sampleRow.ticker, g.sampleRow.timeframe));
+    tbody.appendChild(tr);
+  });
+}
+
+async function _deleteStatsGroup(key, g) {
+  const qs = p => Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  if (_groupBy === 'ticker') {
+    await api.del(`/api/data/ohlcv/ticker/${encodeURIComponent(key)}`);
+  } else if (_groupBy === 'timeframe') {
+    await api.del(`/api/data/ohlcv/timeframe/${encodeURIComponent(key)}`);
+  } else if (_groupBy === 'list' && key !== '—') {
+    await api.del(`/api/data/ohlcv/list/${encodeURIComponent(key)}`);
+  } else {
+    const raw = (_statsData && _statsData.stats) || [];
+    const matching = raw.filter(r => {
+      switch (_groupBy) {
+        case 'bars':       return String(r.rows)         === key;
+        case 'first_date': return (r.first_date || '')   === key;
+        case 'last_date':  return (r.last_date  || '')   === key;
+        case 'list':       return (r.ticker_list || '—') === key;
+        default:           return false;
+      }
+    });
+    await Promise.all(matching.map(r =>
+      api.del(`/api/data/ohlcv/ticker-tf?${qs({ ticker: r.ticker, timeframe: r.timeframe })}`)
+    ));
   }
-  for (const btn of tbody.querySelectorAll('.tbl-del-btn[data-list]')) {
-    btn.addEventListener('click', async () => {
-      const list = btn.dataset.list;
-      if (!confirm(`Delete all data for list "${list}"?`)) return;
-      await api.del(`/api/data/ohlcv/list/${encodeURIComponent(list)}`);
-      _loadStats();
+}
+
+// ── DB card detail view ───────────────────────────────────────
+
+function _wireStatsDetail() {
+  document.getElementById('btn-stats-detail-back').addEventListener('click', _closeStatsDetail);
+  document.getElementById('stats-rows-older').addEventListener('click', () => {
+    _statsDetailOffset = Math.min(_statsDetailOffset + _STATS_DB_LIMIT, Math.max(0, _statsDetailTotal - _STATS_DB_LIMIT));
+    _loadStatsPreview();
+  });
+  document.getElementById('stats-rows-newer').addEventListener('click', () => {
+    _statsDetailOffset = Math.max(0, _statsDetailOffset - _STATS_DB_LIMIT);
+    _loadStatsPreview();
+  });
+  document.getElementById('stats-detail-tf-sel').addEventListener('change', async e => {
+    _statsDetailTf = e.target.value;
+    _statsDetailOffset = 0;
+    await _refreshStatsTickers();
+  });
+  document.getElementById('stats-detail-ticker-sel').addEventListener('change', e => {
+    _statsDetailTicker = e.target.value;
+    _statsDetailOffset = 0;
+    _loadStatsPreview();
+  });
+}
+
+function _openStatsDetail(ticker, timeframe) {
+  _statsDetailTicker = ticker;
+  _statsDetailTf     = timeframe;
+  _statsDetailOffset = 0;
+  _statsDetailTotal  = 0;
+  document.getElementById('stats-db-summary-view').style.display = 'none';
+  document.getElementById('stats-db-detail-view').style.display  = 'flex';
+  document.getElementById('stats-db-table').innerHTML = '';
+  _refreshDetailSelectors(ticker, timeframe);
+}
+
+function _closeStatsDetail() {
+  document.getElementById('stats-db-detail-view').style.display  = 'none';
+  document.getElementById('stats-db-summary-view').style.display = 'flex';
+}
+
+function _refreshDetailSelectors(preferTicker, preferTf) {
+  const tfSel = document.getElementById('stats-detail-tf-sel');
+  const TF_ORDER = ['daily', 'weekly', '1hour', '4hour', '5min'];
+  const available = [...new Set(((_statsData && _statsData.stats) || []).map(r => r.timeframe))]
+    .sort((a, b) => {
+      const ai = TF_ORDER.indexOf(a), bi = TF_ORDER.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
     });
+  tfSel.innerHTML = '';
+  for (const tf of available) {
+    const o = document.createElement('option'); o.value = tf; o.textContent = tf; tfSel.appendChild(o);
+  }
+  const targetTf = preferTf && available.includes(preferTf) ? preferTf : available[0] || '';
+  tfSel.value    = targetTf;
+  tfSel.disabled = available.length <= 1;
+  _statsDetailTf = targetTf;
+  _refreshStatsTickers(preferTicker);
+}
+
+async function _refreshStatsTickers(preferTicker) {
+  const tickerSel = document.getElementById('stats-detail-ticker-sel');
+  tickerSel.innerHTML = '<option disabled>Loading…</option>';
+  tickerSel.disabled  = true;
+  let tickers = [];
+  try {
+    const data = await api.get(`/api/data/ohlcv/tickers-list?timeframe=${encodeURIComponent(_statsDetailTf)}`);
+    tickers = data.tickers || [];
+  } catch {}
+  tickerSel.innerHTML = '';
+  for (const t of tickers) {
+    const o = document.createElement('option'); o.value = t; o.textContent = t; tickerSel.appendChild(o);
+  }
+  const target = preferTicker && tickers.includes(preferTicker) ? preferTicker : tickers[0] || '';
+  tickerSel.value    = target;
+  tickerSel.disabled = tickers.length <= 1;
+  _statsDetailTicker = target;
+  _statsDetailOffset = 0;
+  _loadStatsPreview();
+}
+
+async function _loadStatsPreview() {
+  if (!_statsDetailTicker || !_statsDetailTf) return;
+  const tableEl = document.getElementById('stats-db-table');
+  tableEl.innerHTML = '<tr><td style="color:var(--t3);padding:8px 12px;font-size:11px;">Loading…</td></tr>';
+  let data;
+  try {
+    data = await api.get(
+      `/api/data/ohlcv/preview?ticker=${encodeURIComponent(_statsDetailTicker)}&timeframe=${encodeURIComponent(_statsDetailTf)}&offset=${_statsDetailOffset}&limit=${_STATS_DB_LIMIT}`
+    );
+  } catch {
+    tableEl.innerHTML = '<tr><td style="color:var(--t3);padding:8px 12px;font-size:11px;">Failed to load.</td></tr>';
+    return;
+  }
+  _statsDetailTotal = data.total_rows || 0;
+  _updateStatsRowNav(data.rows || []);
+  const COLS = ['date', 'open', 'high', 'low', 'close', 'volume'];
+  const thead = `<thead><tr>${COLS.map(c => `<th class="ind-db-th-ohlcv">${_esc(c)}</th>`).join('')}</tr></thead>`;
+  const tbody = `<tbody>${(data.rows || []).map(row =>
+    `<tr>${COLS.map(c => {
+      const v = row[c];
+      const display = v === null || v === undefined ? '<span class="ind-db-null">—</span>' : _esc(String(v));
+      return `<td class="ind-db-td-ohlcv">${display}</td>`;
+    }).join('')}</tr>`
+  ).join('')}</tbody>`;
+  tableEl.innerHTML = thead + tbody;
+}
+
+function _updateStatsRowNav(rows) {
+  const older = document.getElementById('stats-rows-older');
+  const newer = document.getElementById('stats-rows-newer');
+  const label = document.getElementById('stats-rows-label');
+  older.disabled = _statsDetailOffset + _STATS_DB_LIMIT >= _statsDetailTotal;
+  newer.disabled = _statsDetailOffset <= 0;
+  if (rows.length > 0) {
+    const d0   = String(rows[0].date || '').slice(0, 10);
+    const d1   = String(rows[rows.length - 1].date || '').slice(0, 10);
+    const pos  = _statsDetailTotal - _statsDetailOffset;
+    const from = Math.max(1, pos - rows.length + 1);
+    label.textContent = `rows ${from}–${pos} of ${_statsDetailTotal.toLocaleString()}  ·  ${d0} → ${d1}`;
+  } else {
+    label.textContent = '';
   }
 }
 
@@ -599,6 +760,7 @@ function _renderStatsGrouped() {
 
 async function _loadHistory() {
   const tbody = document.getElementById('history-body');
+  tbody.innerHTML = '<tr><td colspan="8" class="stats-empty" style="color:var(--t3)">Loading…</td></tr>';
   let data;
   try {
     data = await api.get('/api/fetch-history');
@@ -746,6 +908,7 @@ document.getElementById('btn-refresh-stats').addEventListener('click', () => {
     _loadHistory();
   });
   _wireHistoryTable();
+  _wireStatsDetail();
 
   document.getElementById('btn-clear-all').addEventListener('click', async () => {
     if (!confirm('Delete ALL data from the database? This includes OHLCV, indicators, and fetch history.')) return;

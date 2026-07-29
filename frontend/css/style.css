@@ -519,6 +519,7 @@ body.dash {
 #stats-table th.stats-th-pivot:hover { color: rgba(var(--teal-rgb), 1); }
 #stats-table td, #history-table td { padding: 5px 16px; color: var(--t6); border-bottom: 1px solid var(--c-card); }
 #stats-table tbody tr:hover td, #history-table tbody tr:hover td { background: var(--c-surface); }
+#stats-table tbody tr.ind-db-summary-row { cursor: pointer; }
 #stats-table td:first-child, #history-table td:first-child { color: var(--t7); }
 .stats-empty { color: var(--t3); font-style: italic; }
 
@@ -1492,13 +1493,13 @@ body.ind-page {
   color: var(--b6);
   text-align: right;
   white-space: nowrap;
-  padding: 6px 5px 6px 6px;
+  padding: 6px 10px 6px 6px;
   width: 1%;
 }
 .run-queue-td-name { padding: 5px 6px 4px; }
 .run-queue-td-del  { padding: 4px 8px 4px 0; white-space: nowrap; width: 1%; border-radius: 0 3px 3px 0; }
 .run-queue-name   { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t7); }
-.run-queue-remove { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 1px 4px; line-height: 1; border-radius: 3px; }
+.run-queue-remove { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 1px 4px; line-height: 1; }
 .run-queue-remove:hover { color: #e05; background: none; }
 .run-queue-detail { padding-left: 6px; display: flex; flex-direction: column; gap: 2px; }
 /* Per-conf status bars inside queue items */

@@ -1493,6 +1493,7 @@ function _renderFeed(entries) {
 
 async function _loadHistory() {
   const tbody = document.getElementById('ind-history-body');
+  tbody.innerHTML = '<tr><td colspan="7" class="stats-empty" style="color:var(--t3)">Loading…</td></tr>';
   let data;
   try {
     data = await api.get('/api/indicators/history');

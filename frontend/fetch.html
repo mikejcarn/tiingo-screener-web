@@ -155,25 +155,48 @@
           <button id="btn-clear-all" class="dash-btn-sm dash-btn-sm-del" title="Delete ALL fetched data from the database">Clear All</button>
         </div>
       </div>
-      <div id="stats-summary"></div>
-      <div id="stats-wrap">
-        <table id="stats-table">
-          <thead>
-            <tr id="stats-thead-row">
-              <th class="ind-db-th-idx"></th>
-              <th>Ticker</th>
-              <th>Timeframe</th>
-              <th>List</th>
-              <th>Last Date</th>
-              <th>Bars</th>
-              <th>Fetched</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="stats-body">
-            <tr><td colspan="8" class="stats-empty">No data yet.</td></tr>
-          </tbody>
-        </table>
+      <!-- Summary view -->
+      <div id="stats-db-summary-view" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+        <div id="stats-summary"></div>
+        <div id="stats-wrap">
+          <table id="stats-table">
+            <thead>
+              <tr id="stats-thead-row">
+                <th class="ind-db-th-idx"></th>
+                <th>Ticker</th>
+                <th>Timeframe</th>
+                <th>List</th>
+                <th>Bars</th>
+                <th>Start Date</th>
+                <th>Last Date</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="stats-body">
+              <tr><td colspan="8" class="stats-empty">No data yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Detail view -->
+      <div id="stats-db-detail-view" style="display:none; flex-direction:column; flex:1; min-height:0;">
+        <div class="ind-db-detail-bar">
+          <button id="btn-stats-detail-back" class="dash-btn-sm" title="Back to summary">← Back</button>
+          <div class="ind-db-detail-selectors">
+            <select id="stats-detail-tf-sel" class="db-detail-sel" title="Timeframe"></select>
+            <span class="ind-db-detail-sep">·</span>
+            <select id="stats-detail-ticker-sel" class="db-detail-sel" title="Ticker"></select>
+          </div>
+          <div class="ind-db-row-ctrl">
+            <button id="stats-rows-older" class="ind-db-nav-btn" title="Load older rows">‹ older</button>
+            <span id="stats-rows-label" class="ind-db-rows-label"></span>
+            <button id="stats-rows-newer" class="ind-db-nav-btn" title="Load newer rows">newer ›</button>
+          </div>
+        </div>
+        <div class="ind-db-table-wrap">
+          <table id="stats-db-table" class="ind-db-table"></table>
+        </div>
       </div>
     </div>
 
