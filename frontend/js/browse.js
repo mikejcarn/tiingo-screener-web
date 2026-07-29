@@ -20,6 +20,9 @@ let _lists     = ['ALL'];
 let _listIdx   = 0;
 let _scanListName = null;  // name of the virtual scan-results list, if present
 let _scanLocked   = false; // true while _applyScanRun is programmatically setting controls
+let _refreshGen   = 0;     // incremented each call; stale async responses are dropped
+let _loadGen      = 0;     // same pattern for _loadTicker async conf-validity check
+const _indTickerCache = new Map(); // "confId:tf" → Set<ticker>, populated lazily
 
 const tickerInput  = document.getElementById('ticker-input');
 const tickerCount  = document.getElementById('ticker-count');
@@ -89,13 +92,35 @@ export async function initBrowse() {
 
 // ── Load a ticker ─────────────────────────────────────────────
 
-function _loadTicker(idx) {
-  if (!tickers.length) return;
-  tickerIdx = ((idx % tickers.length) + tickers.length) % tickers.length;
-  const ticker = tickers[tickerIdx];
-  const tf     = tfSelect.value;
-  const conf   = parseInt(confSelect.value) || 0;
+// Returns true if the conf has data for ticker+tf; caches per conf+tf to avoid redundant fetches.
+async function _validConf(ticker, tf, confId) {
+  const key = `${confId}:${tf}`;
+  if (!_indTickerCache.has(key)) {
+    try {
+      const data = await api.get(`/api/indicators/tickers-list?config_id=${confId}&timeframe=${tf}`);
+      _indTickerCache.set(key, new Set(data.tickers || []));
+    } catch {
+      return true; // on network error, don't discard the conf selection
+    }
+  }
+  return _indTickerCache.get(key).has(ticker);
+}
 
+async function _loadTicker(idx) {
+  if (!tickers.length) return;
+  const myGen  = ++_loadGen;
+  const safeIdx = ((idx % tickers.length) + tickers.length) % tickers.length;
+  const ticker = tickers[safeIdx];
+  const tf     = tfSelect.value;
+  let conf     = parseInt(confSelect.value) || 0;
+
+  if (conf) {
+    const valid = await _validConf(ticker, tf, conf);
+    if (myGen !== _loadGen) return; // a newer _loadTicker superseded this one
+    if (!valid) { confSelect.value = ''; conf = 0; }
+  }
+
+  tickerIdx = safeIdx;
   const restoreDate = getCurrentBarInfo()?.date || null;
 
   tickerInput.value        = ticker;
@@ -136,14 +161,17 @@ function _cycleSelect(el, delta) {
   el.dispatchEvent(new Event('change'));
 }
 
-// Re-fetches the ticker list based on current TF + conf + list selection, then loads a ticker.
+// Re-fetches the ticker list based on current TF + list selection, then loads a ticker.
+// ind_conf is intentionally excluded — it affects what the chart shows, not which tickers
+// are browseable. The WS falls back to OHLCV for tickers without computed indicators.
 // preferTicker overrides the "keep current ticker" logic (used on initial load for hash nav).
 async function _refreshTickers(preferTicker) {
   // DB scan run controls the ticker list — don't re-filter
   if (scanSelect.value) return;
 
+  const myGen = ++_refreshGen;
+
   const tf   = tfSelect.value;
-  const conf = parseInt(confSelect.value) || 0;
   const list = listSelect.value;
   _listIdx   = _lists.indexOf(list);
   const prev = preferTicker ?? tickers[tickerIdx];
@@ -159,10 +187,11 @@ async function _refreshTickers(preferTicker) {
 
   const params = new URLSearchParams();
   if (tf)             params.set('timeframe', tf);
-  if (conf)           params.set('ind_conf', String(conf));
   if (list !== 'All') params.set('ticker_list', list);
 
   const data = await api.get(`/api/tickers?${params}`);
+  if (myGen !== _refreshGen) return; // a newer refresh started while we were awaiting
+
   tickers = data.tickers || [];
   if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
   document.getElementById('chart-empty').style.display = 'none';
@@ -361,6 +390,9 @@ function _wireNav() {
     if (e.key === ']' ) { e.preventDefault(); _cycleSelect(tfSelect,     1); }
     if (e.key === '{' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
     if (e.key === '}' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
+    if (e.key === ':' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
+    if (e.key === ';' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
+    if (e.key === "'")  { e.preventDefault(); _cycleSelect(confSelect,  -1); }
     if (e.key === '/' ) { e.preventDefault(); toggleTheme(); return; }
     if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; return; }

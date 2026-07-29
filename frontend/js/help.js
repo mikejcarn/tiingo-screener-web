@@ -84,7 +84,8 @@ const _PAGES = [
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>
-      <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next indicator config</td></tr>
+      <tr><td><kbd>;</kbd> / <kbd>:</kbd></td><td>Next / previous indicator config</td></tr>
+      <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next indicator config (alt)</td></tr>
       <tr><td>Any lowercase letter</td><td>Focus ticker search input</td></tr>
 
       <tr class="help-section"><td colspan="2">Jump Inputs</td></tr>
