@@ -857,11 +857,13 @@ async function _deleteConfig() {
   _selectedId = null;
   _configData = null;
   _pending    = {};
+  _closeDbDetail();
   _renderConfigList();
   if (_configList.length) {
     await _selectConfig(_configList[0].id);
   } else {
     _showEmpty(true);
+    _loadDbSummary();
   }
 }
 
@@ -1296,8 +1298,7 @@ function _renderDbSummary() {
     tr.querySelector('.ind-db-del-btn').addEventListener('click', async e => {
       e.stopPropagation();
       if (!confirm(`Delete indicator data for this group?`)) return;
-      await _deleteIndicatorGroup(key, g);
-      await _loadDbSummary();
+      try { await _deleteIndicatorGroup(key, g); } finally { await _loadDbSummary(); }
     });
 
     tr.addEventListener('click', () => _openDbDetail(g.sampleRow.config_id, g.sampleRow.ticker, g.sampleRow.timeframe));
