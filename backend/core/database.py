@@ -269,10 +269,11 @@ def load_indicators(ticker: str, timeframe: str, ind_conf: int,
 
 # ── Metadata ─────────────────────────────────────────────────
 
-def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None, ind_conf: Optional[int] = None) -> list[str]:
+def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None,
+                 ind_conf: Optional[int] = None, min_bars: Optional[int] = None) -> list[str]:
     params: list = []
     if ind_conf:
-        # Filter to tickers with computed indicator data for this config
+        # Filter to tickers with computed indicator data for this config (min_bars not applied here)
         if ticker_list:
             query = ("SELECT DISTINCT i.ticker FROM indicators i "
                      "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
@@ -285,30 +286,46 @@ def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = N
             query += " AND timeframe=?"
             params.append(timeframe)
     elif ticker_list == '__all__':
-        query = "SELECT DISTINCT ticker FROM ohlcv"
+        query = "SELECT ticker FROM ohlcv"
         if timeframe:
             query += " WHERE timeframe=?"
             params.append(timeframe)
+        query += " GROUP BY ticker"
+        if min_bars:
+            query += " HAVING COUNT(*) >= ?"
+            params.append(min_bars)
     elif ticker_list == '__single__':
-        query = ("SELECT DISTINCT o.ticker FROM ohlcv o "
+        query = ("SELECT o.ticker FROM ohlcv o "
                  "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list IS NULL) fl "
                  "ON o.ticker = fl.ticker")
         if timeframe:
             query += " WHERE o.timeframe=?"
             params.append(timeframe)
+        query += " GROUP BY o.ticker"
+        if min_bars:
+            query += " HAVING COUNT(*) >= ?"
+            params.append(min_bars)
     elif ticker_list:
-        query = ("SELECT DISTINCT o.ticker FROM ohlcv o "
+        query = ("SELECT o.ticker FROM ohlcv o "
                  "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
                  "ON o.ticker = fl.ticker")
         params.append(ticker_list)
         if timeframe:
             query += " WHERE o.timeframe=?"
             params.append(timeframe)
+        query += " GROUP BY o.ticker"
+        if min_bars:
+            query += " HAVING COUNT(*) >= ?"
+            params.append(min_bars)
     else:
-        query = "SELECT DISTINCT ticker FROM ohlcv"
+        query = "SELECT ticker FROM ohlcv"
         if timeframe:
             query += " WHERE timeframe=?"
             params.append(timeframe)
+        query += " GROUP BY ticker"
+        if min_bars:
+            query += " HAVING COUNT(*) >= ?"
+            params.append(min_bars)
     with _conn() as con:
         return [r[0] for r in con.execute(query + " ORDER BY 1", params).fetchall()]
 

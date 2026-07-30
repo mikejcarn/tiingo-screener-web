@@ -14,10 +14,11 @@ def _resolve_tf(timeframe: str) -> str:
 
 
 @router.get("/tickers")
-def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None, ind_conf: Optional[int] = None):
-    """List available tickers, optionally filtered by timeframe, ticker list, and/or ind_conf."""
+def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None,
+                ind_conf: Optional[int] = None, min_bars: Optional[int] = None):
+    """List available tickers, optionally filtered by timeframe, ticker list, ind_conf, and/or min_bars."""
     tf = _resolve_tf(timeframe) if timeframe else None
-    tickers = db.list_tickers(tf, ticker_list, ind_conf)
+    tickers = db.list_tickers(tf, ticker_list, ind_conf, min_bars)
     timeframes = db.list_timeframes()
     confs = db.list_ind_confs_named()
     lists = db.list_ticker_lists()

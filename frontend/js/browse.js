@@ -33,6 +33,7 @@ const btnPrev      = document.getElementById('btn-prev-ticker');
 const btnNext      = document.getElementById('btn-next-ticker');
 const listSelect   = document.getElementById('list-select');
 const scanSelect   = document.getElementById('scan-select');
+const minBarsInput = document.getElementById('min-bars-input');
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -81,6 +82,10 @@ export async function initBrowse() {
 
   // Populate scan select
   await _loadScanRuns();
+
+  // Restore persisted min-bars value
+  const savedMinBars = localStorage.getItem('min_bars');
+  if (savedMinBars) minBarsInput.value = savedMinBars;
 
   _wireNav();
 
@@ -188,6 +193,8 @@ async function _refreshTickers(preferTicker) {
   const params = new URLSearchParams();
   if (tf)             params.set('timeframe', tf);
   if (list !== 'All') params.set('ticker_list', list);
+  const minBars = parseInt(minBarsInput.value);
+  if (minBars > 0)    params.set('min_bars', String(minBars));
 
   const data = await api.get(`/api/tickers?${params}`);
   if (myGen !== _refreshGen) return; // a newer refresh started while we were awaiting
@@ -251,6 +258,12 @@ function _wireNav() {
   tfSelect.addEventListener('change',    () => { tfSelect.blur();    if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
   confSelect.addEventListener('change',  () => { confSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
   scanSelect.addEventListener('change',  () => { scanSelect.blur();  scanSelect.classList.toggle('active', !!scanSelect.value); _applyScanRun(); });
+  minBarsInput.addEventListener('change', () => {
+    const v = parseInt(minBarsInput.value);
+    if (v > 0) { try { localStorage.setItem('min_bars', String(v)); } catch {} }
+    else { minBarsInput.value = ''; try { localStorage.removeItem('min_bars'); } catch {} }
+    _refreshTickers();
+  });
 
   // Ticker search
   tickerInput.addEventListener('focus', () => { tickerInput.select(); _buildDropdown(''); });

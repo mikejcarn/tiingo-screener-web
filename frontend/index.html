@@ -29,6 +29,10 @@
   <select id="conf-select" title="Indicator configuration ({ previous / } next)"></select>
   <span class="nav-label" title="Selecting a scan result sets the ticker list, timeframe, and indicators together">scan</span>
   <select id="scan-select" title="Load a saved scan result — sets ticker list, timeframe, and indicators"></select>
+  <div class="nav-sep"></div>
+  <span class="nav-label" title="Only show tickers with at least this many bars for the active timeframe">min bars</span>
+  <input id="min-bars-input" type="number" class="nav-inp" min="0" step="100" placeholder="off"
+    title="Filter ticker list to those with at least this many bars (leave blank for no filter)" style="width:52px">
   <div class="nav-right">
     <div class="page-nav">
       <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
