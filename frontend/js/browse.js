@@ -24,6 +24,10 @@ let _refreshGen   = 0;     // incremented each call; stale async responses are d
 let _loadGen      = 0;     // same pattern for _loadTicker async conf-validity check
 const _indTickerCache = new Map(); // "confId:tf" → Set<ticker>, populated lazily
 
+// Per-TF preferences: { tf: { min_bars, conf_id } } — persisted to localStorage
+const _tfPrefs = (() => { try { return JSON.parse(localStorage.getItem('tf_prefs') || '{}'); } catch { return {}; } })();
+let _prevTf = ''; // tracks the last active TF so we can save its prefs before switching
+
 const tickerInput  = document.getElementById('ticker-input');
 const tickerCount  = document.getElementById('ticker-count');
 const dropdown     = document.getElementById('dropdown');
@@ -83,9 +87,9 @@ export async function initBrowse() {
   // Populate scan select
   await _loadScanRuns();
 
-  // Restore persisted min-bars value
-  const savedMinBars = localStorage.getItem('min_bars');
-  if (savedMinBars) minBarsInput.value = savedMinBars;
+  // Restore per-TF preferences for the default TF (no flash on initial load)
+  _prevTf = tfSelect.value;
+  _applyTfPrefs(tfSelect.value, false);
 
   _wireNav();
 
@@ -93,6 +97,66 @@ export async function initBrowse() {
   const _qp          = new URLSearchParams(location.search);
   const preferTicker = (_qp.get('ticker') || decodeURIComponent(location.hash.slice(1)) || '').toUpperCase() || undefined;
   await _refreshTickers(preferTicker);
+}
+
+// ── Per-TF preferences ────────────────────────────────────────
+
+function _saveTfPrefs() {
+  try { localStorage.setItem('tf_prefs', JSON.stringify(_tfPrefs)); } catch {}
+}
+
+
+// Briefly flash an element to signal that its value was auto-applied from prefs
+function _flashEl(el) {
+  el.classList.remove('nav-pref-applied');
+  void el.offsetWidth; // force reflow so animation restarts
+  el.classList.add('nav-pref-applied');
+  el.addEventListener('animationend', () => el.classList.remove('nav-pref-applied'), { once: true });
+}
+
+// Save current min_bars + conf for the given TF
+function _saveTfState(tf) {
+  if (!tf) return;
+  _tfPrefs[tf] = {
+    min_bars: parseInt(minBarsInput.value) || 0,
+    conf_id:  confSelect.value,
+  };
+  _saveTfPrefs();
+}
+
+// Increment or decrement min_bars by the input's step value
+function _stepMinBars(dir) {
+  const step = parseInt(minBarsInput.step) || 100;
+  const cur  = parseInt(minBarsInput.value) || 0;
+  const next = Math.max(0, cur + dir * step);
+  minBarsInput.value = next || '';
+  minBarsInput.dispatchEvent(new Event('change'));
+}
+
+// Toggle teal highlight on the min-bars input when it has an active value
+function _updateMinBarsActive() {
+  minBarsInput.classList.toggle('active', (parseInt(minBarsInput.value) || 0) > 0);
+}
+
+// Restore saved min_bars + conf for a TF; flash changed controls if flash=true
+function _applyTfPrefs(tf, flash = true) {
+  const p = _tfPrefs[tf] || {};
+
+  const mb = p.min_bars > 0 ? String(p.min_bars) : '';
+  if (minBarsInput.value !== mb) {
+    minBarsInput.value = mb;
+    if (flash) _flashEl(minBarsInput);
+  }
+
+  const confId = p.conf_id !== undefined ? String(p.conf_id) : '';
+  const confExists = [...confSelect.options].some(o => o.value === confId);
+  const targetConf = confExists ? confId : '';
+  if (confSelect.value !== targetConf) {
+    confSelect.value = targetConf;
+    if (flash) _flashEl(confSelect);
+  }
+
+  _updateMinBarsActive();
 }
 
 // ── Load a ticker ─────────────────────────────────────────────
@@ -229,7 +293,12 @@ async function _loadScanRuns() {
 
 async function _applyScanRun() {
   const runId = scanSelect.value;
-  if (!runId) { await _refreshTickers(); return; }
+  if (!runId) {
+    // Scan cleared — restore saved prefs for the current TF
+    _applyTfPrefs(tfSelect.value);
+    await _refreshTickers();
+    return;
+  }
   try {
     const data = await api.get(`/api/scan/runs/${runId}`);
     tickers = data.tickers || [];
@@ -239,7 +308,10 @@ async function _applyScanRun() {
     const opt = scanSelect.selectedOptions[0];
     // Auto-set timeframe
     const tfs = JSON.parse(opt.dataset.timeframes || '[]');
-    if (tfs.length && timeframes.includes(tfs[0])) tfSelect.value = tfs[0];
+    if (tfs.length && timeframes.includes(tfs[0])) {
+      tfSelect.value = tfs[0];
+      _prevTf = tfs[0]; // keep _prevTf in sync with programmatic TF change
+    }
     // Auto-set indicator conf
     const confId = opt.dataset.indConfId;
     if (confId) confSelect.value = confId;
@@ -254,16 +326,42 @@ async function _applyScanRun() {
 function _wireNav() {
   document.getElementById('btn-prev-ticker').addEventListener('click', () => _loadTicker(tickerIdx - 1));
   document.getElementById('btn-next-ticker').addEventListener('click', () => _loadTicker(tickerIdx + 1));
-  listSelect.addEventListener('change',  () => { listSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
-  tfSelect.addEventListener('change',    () => { tfSelect.blur();    if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
-  confSelect.addEventListener('change',  () => { confSelect.blur();  if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); } });
-  scanSelect.addEventListener('change',  () => { scanSelect.blur();  scanSelect.classList.toggle('active', !!scanSelect.value); _applyScanRun(); });
+  listSelect.addEventListener('change', () => {
+    listSelect.blur();
+    if (!_scanLocked) { scanSelect.value = ''; scanSelect.classList.remove('active'); _refreshTickers(); }
+  });
+  tfSelect.addEventListener('change', () => {
+    tfSelect.blur();
+    if (!_scanLocked) {
+      _saveTfState(_prevTf);          // persist prefs for the TF we're leaving
+      _prevTf = tfSelect.value;
+      scanSelect.value = ''; scanSelect.classList.remove('active');
+      _applyTfPrefs(tfSelect.value);  // restore prefs for the new TF (flashes changed controls)
+      _refreshTickers();
+    }
+  });
+  confSelect.addEventListener('change', () => {
+    confSelect.blur();
+    if (!_scanLocked) {
+      // Persist conf selection for the current TF
+      _tfPrefs[tfSelect.value] = { ...(_tfPrefs[tfSelect.value] || {}), conf_id: confSelect.value };
+      _saveTfPrefs();
+      scanSelect.value = ''; scanSelect.classList.remove('active');
+      _refreshTickers();
+    }
+  });
+  scanSelect.addEventListener('change', () => { scanSelect.blur(); scanSelect.classList.toggle('active', !!scanSelect.value); _applyScanRun(); });
   minBarsInput.addEventListener('change', () => {
-    const v = parseInt(minBarsInput.value);
-    if (v > 0) { try { localStorage.setItem('min_bars', String(v)); } catch {} }
-    else { minBarsInput.value = ''; try { localStorage.removeItem('min_bars'); } catch {} }
+    const v = parseInt(minBarsInput.value) || 0;
+    if (!v) minBarsInput.value = '';
+    // Persist min_bars for the current TF
+    _tfPrefs[tfSelect.value] = { ...(_tfPrefs[tfSelect.value] || {}), min_bars: v };
+    _saveTfPrefs();
+    _updateMinBarsActive();
     _refreshTickers();
   });
+  document.getElementById('min-bars-up').addEventListener('click',   () => _stepMinBars(1));
+  document.getElementById('min-bars-down').addEventListener('click', () => _stepMinBars(-1));
 
   // Ticker search
   tickerInput.addEventListener('focus', () => { tickerInput.select(); _buildDropdown(''); });
@@ -401,6 +499,8 @@ function _wireNav() {
     if (e.key === '+' ) { e.preventDefault(); _cycleSelect(listSelect,   1); }
     if (e.key === '[' ) { e.preventDefault(); _cycleSelect(tfSelect,    -1); }
     if (e.key === ']' ) { e.preventDefault(); _cycleSelect(tfSelect,     1); }
+    if (e.key === 'ArrowUp'   && e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); _stepMinBars(1);  return; }
+    if (e.key === 'ArrowDown' && e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); _stepMinBars(-1); return; }
     if (e.key === '{' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
     if (e.key === '}' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
     if (e.key === ':' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }

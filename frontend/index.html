@@ -25,14 +25,21 @@
   <select id="list-select" title="Ticker list (_ previous / + next)"></select>
   <span class="nav-label">timeframe</span>
   <select id="tf-select" title="Timeframe ([ previous / ] next)"></select>
+  <span class="nav-label" title="Minimum bar count filter — saved per timeframe">≥ bars</span>
+  <div class="nav-num-wrap">
+    <input id="min-bars-input" type="number" class="nav-inp" min="0" step="100" placeholder="—"
+      title="Only navigate tickers with at least this many bars for the current timeframe. Saved per-timeframe. Leave blank to disable." style="width:64px">
+    <div class="param-num-spin">
+      <button id="min-bars-up" class="param-num-up" tabindex="-1">▲</button>
+      <button id="min-bars-down" class="param-num-down" tabindex="-1">▼</button>
+    </div>
+  </div>
+  <div class="nav-sep"></div>
   <span class="nav-label">indicators</span>
   <select id="conf-select" title="Indicator configuration ({ previous / } next)"></select>
+  <div class="nav-sep"></div>
   <span class="nav-label" title="Selecting a scan result sets the ticker list, timeframe, and indicators together">scan</span>
   <select id="scan-select" title="Load a saved scan result — sets ticker list, timeframe, and indicators"></select>
-  <div class="nav-sep"></div>
-  <span class="nav-label" title="Only show tickers with at least this many bars for the active timeframe">min bars</span>
-  <input id="min-bars-input" type="number" class="nav-inp" min="0" step="100" placeholder="off"
-    title="Filter ticker list to those with at least this many bars (leave blank for no filter)" style="width:52px">
   <div class="nav-right">
     <div class="page-nav">
       <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
@@ -90,8 +97,15 @@
   <button id="btn-fullscreen" title="Toggle fullscreen — hides nav &amp; controls bars (F or `)">&#x26F6;&#xFE0E;</button>
   <div class="nav-sep"></div>
   <label title="Playback speed in frames per second (↑ ↓ to adjust)">fps
-    <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"
-      title="Frames per second — 1 is slowest, 60 is fastest"></label>
+    <div class="nav-num-wrap">
+      <input id="fps-input" type="number" class="ctrl-inp" min="1" max="60" step="1"
+        title="Frames per second — 1 is slowest, 60 is fastest">
+      <div class="param-num-spin">
+        <button id="fps-spin-up" class="param-num-up" tabindex="-1">▲</button>
+        <button id="fps-spin-down" class="param-num-down" tabindex="-1">▼</button>
+      </div>
+    </div>
+  </label>
 </div>
 
 

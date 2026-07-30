@@ -196,7 +196,13 @@ button:hover { background: var(--c-hover); }
   padding: 4px 8px; border-radius: 3px; font-size: 13px; cursor: pointer;
 }
 #tf-select:focus, #conf-select:focus, #scan-select:focus { outline: none; }
-#scan-select.active { color: var(--ac); border-color: rgba(var(--teal-rgb),0.4); }
+#scan-select.active      { color: var(--ac); border-color: rgba(var(--teal-rgb),0.4); }
+#min-bars-input.active   { color: var(--ac); border-color: rgba(var(--teal-rgb),0.4); }
+#min-bars-input.active + .param-num-spin .param-num-up,
+#min-bars-input.active + .param-num-spin .param-num-down {
+  color: rgba(var(--teal-rgb), 0.6);
+  border-left-color: rgba(var(--teal-rgb), 0.3);
+}
 #tf-select   { min-width: 72px; }
 #conf-select { min-width: 140px; }
 #list-select { min-width: 100px; }
@@ -228,6 +234,14 @@ button:hover { background: var(--c-hover); }
 }
 .nav-inp:focus  { outline: none; border-color: var(--t4); color: var(--t9); }
 .nav-inp::placeholder { color: var(--t4); }
+
+@keyframes navPrefFlash {
+  0%   { border-color: rgba(var(--teal-rgb), 0.7); box-shadow: 0 0 0 2px rgba(var(--teal-rgb), 0.15); }
+  100% { border-color: var(--b4); box-shadow: none; }
+}
+.nav-pref-applied { animation: navPrefFlash 0.55s ease-out; }
+
+.nav-num-wrap { position: relative; display: inline-flex; }
 
 #btn-autofit, #btn-fullscreen {
   color: var(--t6); border-color: var(--b4); font-size: 14px;
@@ -270,6 +284,8 @@ button:hover { background: var(--c-hover); }
 }
 
 #controls button { padding: 3px 10px; font-size: 13px; }
+#controls .param-num-up,
+#controls .param-num-down { padding: 0; font-size: 5px; border: none; border-left: 1px solid var(--c-raised); }
 #controls label  { display: flex; align-items: center; gap: 5px; }
 
 #scrubber {
@@ -289,10 +305,14 @@ input[type="text"].ctrl-inp, input[type="number"].ctrl-inp {
 input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline: none; border-color: var(--t4); }
 #bar-input  { width: 70px; }
 #date-input { width: 108px; }
-#fps-input  { width: 36px; }
+#fps-input  { width: 52px; padding-right: 18px; }
 #fps-input::-webkit-outer-spin-button,
 #fps-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 #fps-input { -moz-appearance: textfield; }
+#min-bars-input { padding-right: 18px; }
+#min-bars-input::-webkit-outer-spin-button,
+#min-bars-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#min-bars-input { -moz-appearance: textfield; }
 
 /* ── Help overlay ─────────────────────────────────────────── */
 #help-overlay {

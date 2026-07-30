@@ -227,6 +227,8 @@ function _wireControls() {
     fps = Math.max(1, Math.min(60, parseInt(fpsInput.value) || 8));
     fpsInput.value = fps;
   });
+  document.getElementById('fps-spin-up').addEventListener('click',   () => { fps = Math.min(60, fps + 1); fpsInput.value = fps; });
+  document.getElementById('fps-spin-down').addEventListener('click', () => { fps = Math.max(1,  fps - 1); fpsInput.value = fps; });
 
   barInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -270,8 +272,8 @@ function _wireKeys() {
     if (e.key === 'ArrowLeft'  && e.shiftKey)  { e.preventDefault(); setPlaying(false); jump(current - 20); }
     if (e.key === 'Home') { e.preventDefault(); setPlaying(false); jump(0); }
     if (e.key === 'End')  { e.preventDefault(); setPlaying(false); jump(N - 1); }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); fps = Math.min(60, fps + 1); fpsInput.value = fps; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); fps = Math.max(1, fps - 1);  fpsInput.value = fps; }
+    if (e.key === 'ArrowUp'   && !e.shiftKey) { e.preventDefault(); fps = Math.min(60, fps + 1); fpsInput.value = fps; }
+    if (e.key === 'ArrowDown' && !e.shiftKey) { e.preventDefault(); fps = Math.max(1, fps - 1);  fpsInput.value = fps; }
     if (e.key === 'Backspace') { e.preventDefault(); _setAutoFit(!autoFit); }
     if (/^[0-9]$/.test(e.key)) { e.preventDefault(); barInput.focus(); barInput.value = e.key; }
   });
