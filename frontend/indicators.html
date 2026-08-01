@@ -146,6 +146,9 @@
 
         <!-- Summary view -->
         <div id="ind-db-summary-view" style="display:flex; flex-direction:column; flex:1; min-height:0;">
+          <div id="ind-db-job-warn" class="ind-db-job-warn" style="display:none;">
+            A compute job is running — deletions here may be re-created as it processes remaining tickers. Wait for it to finish before cleaning up.
+          </div>
           <div class="ind-db-summary-wrap">
             <table class="ind-db-summary-table">
               <thead id="ind-db-summary-thead"></thead>

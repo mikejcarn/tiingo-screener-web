@@ -223,6 +223,13 @@ function _wireControls() {
     jump(Math.round(logical));
   });
 
+  // Alt+Click a candle — place/remove a manual anchored VWAP there
+  document.getElementById('chart').addEventListener('click', (e) => {
+    if (!chart || !N || !e.altKey) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    chart.toggleManualAnchorAtX(e.clientX - rect.left);
+  });
+
   fpsInput.addEventListener('change', () => {
     fps = Math.max(1, Math.min(60, parseInt(fpsInput.value) || 8));
     fpsInput.value = fps;

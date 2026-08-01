@@ -837,7 +837,13 @@ async function _clearResults() {
   await _loadDbSummary();
 }
 
+async function _isIndJobRunning() {
+  try { return (await api.get('/api/jobs/status')).indicators.status === 'running'; }
+  catch { return false; }
+}
+
 async function _dbClearResults() {
+  if (await _isIndJobRunning()) { alert('A compute job is running — wait for it to finish before clearing.'); return; }
   if (!confirm('Clear ALL computed indicator results from the database? Configs will be kept.')) return;
   await api.del('/api/data/indicators');
   _closeDbDetail();
@@ -1049,6 +1055,10 @@ function _updateProgress(state) {
     qMeta.classList.toggle('active', active);
   };
 
+  const wasJobRunning = _indJobRunning;
+  _indJobRunning = state.status === 'running';
+  if (_indJobRunning !== wasJobRunning) _renderDbSummary();
+
   const pct = state.total > 0 ? (state.done / state.total * 100) : 0;
   bar.style.width = `${pct}%`;
 
@@ -1138,6 +1148,7 @@ function _updateProgress(state) {
 // DB card state
 let _dbSummaryData     = [];
 let _dbGroupBy         = 'config';
+let _indJobRunning     = false;
 let _dbGroupSort       = { col: 'key', dir: 'asc' };
 let _dbSectionConfigId = null;
 let _dbActiveTf        = 'daily';
@@ -1176,6 +1187,10 @@ async function _loadDbSummary() {
 function _renderDbSummary() {
   const thead = document.getElementById('ind-db-summary-thead');
   const tbody = document.getElementById('ind-db-summary-body');
+  const jobWarn = document.getElementById('ind-db-job-warn');
+  if (jobWarn) jobWarn.style.display = _indJobRunning ? '' : 'none';
+  const clearAllBtn = document.getElementById('btn-db-clear-results');
+  if (clearAllBtn) clearAllBtn.disabled = _indJobRunning;
 
   if (!_dbSummaryData.length) {
     thead.innerHTML = '';
@@ -1279,9 +1294,10 @@ function _renderDbSummary() {
     const tr = document.createElement('tr');
     tr.className = 'ind-db-summary-row';
     const keyDisplay = _dbGroupBy === 'rows' ? Number(key).toLocaleString() : _esc(key || '—');
+    const delTitle = _indJobRunning ? 'Disabled while a compute job is running' : 'Delete this group';
     tr.innerHTML = `<td class="ind-db-td-idx">${rowIdx + 1}</td>` +
       COLS.map(col => `<td>${col === _dbGroupBy ? keyDisplay : _cellVal(col, g)}</td>`).join('') +
-      `<td class="ind-db-td-del"><button class="ind-db-del-btn" title="Delete this group">×</button></td>`;
+      `<td class="ind-db-td-del"><button class="ind-db-del-btn" title="${delTitle}"${_indJobRunning ? ' disabled' : ''}>×</button></td>`;
 
     // Non-key cells: click switches groupBy
     const tds = tr.querySelectorAll('td');
@@ -1297,6 +1313,7 @@ function _renderDbSummary() {
 
     tr.querySelector('.ind-db-del-btn').addEventListener('click', async e => {
       e.stopPropagation();
+      if (await _isIndJobRunning()) { alert('A compute job is running — wait for it to finish before deleting.'); return; }
       if (!confirm(`Delete indicator data for this group?`)) return;
       try { await _deleteIndicatorGroup(key, g); } finally { await _loadDbSummary(); }
     });

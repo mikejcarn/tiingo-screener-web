@@ -425,6 +425,40 @@ body:fullscreen {
 body:fullscreen #nav,
 body:fullscreen #controls { display: none; }
 
+/* While typing a ticker search in fullscreen, float just the search box over the chart */
+body:fullscreen.fs-searching #nav {
+  display: flex;
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: auto;
+  width: auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  z-index: 50;
+}
+body:fullscreen.fs-searching #nav > *:not(#ticker-wrap) { display: none; }
+body:fullscreen.fs-searching #ticker-input { width: 180px; font-size: 18px; padding: 8px 14px; }
+
+#ticker-watermark {
+  display: none;
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  font-size: 64px;
+  font-weight: 800;
+  color: var(--t8);
+  opacity: 0.22;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  z-index: 1;
+}
+body:fullscreen #ticker-watermark { display: block; }
+
 /* ── Dashboard ────────────────────────────────────────────── */
 body.dash {
   height: auto;
@@ -2075,6 +2109,17 @@ body.scan-page {
   padding: 3px 8px; border-radius: 3px; font-size: 12px; cursor: pointer;
 }
 .scan-sel:focus { outline: none; border-color: var(--t4); }
+.ind-db-job-warn {
+  font-size: 11px;
+  color: #9a7300;
+  background: rgba(200, 168, 0, 0.12);
+  border: 1px solid rgba(200, 168, 0, 0.35);
+  border-radius: 3px;
+  padding: 5px 9px;
+  margin: 0 0 6px;
+  flex-shrink: 0;
+}
+.ind-db-del-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .scan-no-data-warn {
   font-size: 11px;
   color: #9a7300;

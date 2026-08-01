@@ -195,6 +195,7 @@ async function _loadTicker(idx) {
   tickerInput.value        = ticker;
   tickerCount.textContent  = `${tickerIdx + 1} / ${tickers.length}`;
   location.hash            = ticker;
+  document.getElementById('ticker-watermark').textContent = ticker;
   _updateNavTitles();
 
   // Re-initialise replay, restoring the current date if possible
@@ -364,8 +365,8 @@ function _wireNav() {
   document.getElementById('min-bars-down').addEventListener('click', () => _stepMinBars(-1));
 
   // Ticker search
-  tickerInput.addEventListener('focus', () => { tickerInput.select(); _buildDropdown(''); });
-  tickerInput.addEventListener('blur',  () => { setTimeout(() => { dropdown.style.display = 'none'; dropIdx = -1; tickerInput.value = tickers[tickerIdx] || ''; }, 150); });
+  tickerInput.addEventListener('focus', () => { tickerInput.select(); _buildDropdown(''); document.body.classList.add('fs-searching'); });
+  tickerInput.addEventListener('blur',  () => { setTimeout(() => { dropdown.style.display = 'none'; dropIdx = -1; tickerInput.value = tickers[tickerIdx] || ''; document.body.classList.remove('fs-searching'); }, 150); });
   tickerInput.addEventListener('input', () => {
     const clean = tickerInput.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     if (clean !== tickerInput.value) tickerInput.value = clean;
@@ -513,6 +514,7 @@ function _wireNav() {
     if (e.key === 'S' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; return; }
     if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
+      document.body.classList.add('fs-searching'); // reveal #nav (fullscreen hides it) before focusing — focus() no-ops on a display:none descendant
       tickerInput.focus();
       tickerInput.value = e.key.toUpperCase();
       _buildDropdown(e.key.toUpperCase());

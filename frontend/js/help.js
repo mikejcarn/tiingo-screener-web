@@ -80,12 +80,16 @@ const _PAGES = [
       <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles in view)</td></tr>
       <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
 
+      <tr class="help-section"><td colspan="2">Annotations</td></tr>
+      <tr><td>Alt+Click a candle</td><td>Place / remove a manually-anchored VWAP there (amber line, ephemeral)</td></tr>
+
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>
-      <tr><td><kbd>;</kbd> / <kbd>:</kbd></td><td>Next / previous indicator config</td></tr>
-      <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next indicator config (alt)</td></tr>
+      <tr><td><kbd>'</kbd> / <kbd>;</kbd></td><td>Previous / next indicator config</td></tr>
+      <tr><td><kbd>{</kbd> / <kbd>}</kbd> &nbsp;or&nbsp; <kbd>:</kbd></td><td>Previous / next indicator config (alt)</td></tr>
+      <tr><td><kbd>Shift+↑</kbd> / <kbd>Shift+↓</kbd></td><td>Increase / decrease min bars filter by 100</td></tr>
       <tr><td>Any lowercase letter</td><td>Focus ticker search input</td></tr>
 
       <tr class="help-section"><td colspan="2">Jump Inputs</td></tr>

@@ -502,6 +502,16 @@ export class ChartManager {
     return this._chart.timeScale().coordinateToLogical(x);
   }
 
+  /** Place/remove a manually-anchored VWAP at the candle under x. Returns true (added) / false (removed) / null (out of range). */
+  toggleManualAnchorAtX(x) {
+    if (!this._engine || !this._chart || this._curN < 0) return null;
+    const logical = this._chart.timeScale().coordinateToLogical(x);
+    if (logical == null) return null;
+    const barIdx = Math.round(logical);
+    if (barIdx < 0 || barIdx > this._curN) return null;
+    return this._engine.toggleManualAnchor(barIdx, this._curN);
+  }
+
   getVisibleRange() {
     if (!this._chart) return null;
     return this._chart.timeScale().getVisibleRange();

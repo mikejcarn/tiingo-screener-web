@@ -39,6 +39,9 @@ const ANCHOR_POOL_STYLE = {
   avwap_min:       ['rgba(0,255,255,0.85)',  1, 0],
 };
 
+// Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
+const C_MANUAL = 'rgba(255,193,7,0.95)';
+
 
 export class DynamicVWAPEngine {
   /**
@@ -68,6 +71,8 @@ export class DynamicVWAPEngine {
     // PMM — recomputed via greedyExtrema at every reveal(n)
     // Array of {valleys, peaks, maxAnchors, spacing, vSeries[], pSeries[]}
     this._pmmPools = [];
+    // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
+    this._manualSeries = {};
   }
 
   // ── Setup ──────────────────────────────────────────────────────────────────
@@ -104,6 +109,27 @@ export class DynamicVWAPEngine {
       for (const s of [...p.vSeries, ...p.pSeries]) { try { this._chart.removeSeries(s); } catch (_) {} }
     }
     this._pmmPools = [];
+    for (const s of Object.values(this._manualSeries)) { try { this._chart.removeSeries(s); } catch (_) {} }
+    this._manualSeries = {};
+  }
+
+  // ── Manual (click-placed) anchors ───────────────────────────────────────
+
+  /**
+   * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to toIdx.
+   * Returns true if an anchor was added, false if an existing one was removed.
+   */
+  toggleManualAnchor(anchorIdx, toIdx) {
+    if (anchorIdx == null || anchorIdx < 0 || anchorIdx >= this._bars.length) return null;
+    if (this._manualSeries[anchorIdx]) {
+      try { this._chart.removeSeries(this._manualSeries[anchorIdx]); } catch (_) {}
+      delete this._manualSeries[anchorIdx];
+      return false;
+    }
+    const s = this._series(C_MANUAL, 2, 0);
+    s.setData(this._vwapLine(anchorIdx, toIdx));
+    this._manualSeries[anchorIdx] = s;
+    return true;
   }
 
   // ── PMM greedy extrema ────────────────────────────────────────────────────
@@ -313,6 +339,11 @@ export class DynamicVWAPEngine {
           p.pSeries[i].setData(anchors[i] !== undefined ? this._vwapLine(anchors[i], n) : []);
         }
       }
+    }
+
+    // ── Manual (click-placed) anchors ─────────────────────────────────────
+    for (const [anchorIdxStr, s] of Object.entries(this._manualSeries)) {
+      s.setData(this._vwapLine(parseInt(anchorIdxStr, 10), n));
     }
   }
 
