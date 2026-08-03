@@ -82,6 +82,7 @@ const _PAGES = [
 
       <tr class="help-section"><td colspan="2">Annotations</td></tr>
       <tr><td>Alt+Click a candle</td><td>Place / remove a manually-anchored VWAP there (amber line, ephemeral)</td></tr>
+      <tr><td>Alt+Drag</td><td>Live $ / % change measurement between two price levels (shown while dragging only)</td></tr>
 
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>

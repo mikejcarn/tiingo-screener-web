@@ -68,6 +68,10 @@ export class ChartManager {
     this._bars      = [];
     this._N         = 0;
     this._curN      = -1;
+    this._measureEl      = null;  // live drag-measure overlay box
+    this._measureLabelEl = null;
+    this._measureHighEl  = null;
+    this._measureLowEl   = null;
     this._init();
   }
 
@@ -135,6 +139,7 @@ export class ChartManager {
   load(bars, styles = {}) {
     this._bars = bars;
     this._N    = bars.length;
+    this.clearMeasure();
 
     // Remove old static series
     for (const s of Object.values(this._lines)) this._chart.removeSeries(s);
@@ -512,6 +517,58 @@ export class ChartManager {
     return this._engine.toggleManualAnchor(barIdx, this._curN);
   }
 
+  /** Enable/disable chart pan & zoom — turned off while drag-measuring so gestures don't fight. */
+  setInteractive(enabled) {
+    if (!this._chart) return;
+    this._chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
+  }
+
+  /** Live price/percent-change measurement box from (x0,y0) to (x1,y1), in #chart-local pixel coords. */
+  updateMeasure(x0, y0, x1, y1) {
+    if (!this._candles) return;
+    const p0 = this._candles.coordinateToPrice(y0);
+    const p1 = this._candles.coordinateToPrice(y1);
+    if (p0 == null || p1 == null) return;
+
+    if (!this._measureEl) {
+      this._measureEl = document.createElement('div');
+      this._measureEl.className = 'chart-measure-box';
+      this._measureLabelEl = document.createElement('div');
+      this._measureLabelEl.className = 'chart-measure-label';
+      this._measureHighEl = document.createElement('div');
+      this._measureHighEl.className = 'chart-measure-price chart-measure-price-high';
+      this._measureLowEl = document.createElement('div');
+      this._measureLowEl.className = 'chart-measure-price chart-measure-price-low';
+      this._measureEl.append(this._measureLabelEl, this._measureHighEl, this._measureLowEl);
+      this._container.appendChild(this._measureEl);
+    }
+
+    const up = p1 >= p0;
+    this._measureEl.style.left   = `${Math.min(x0, x1)}px`;
+    this._measureEl.style.top    = `${Math.min(y0, y1)}px`;
+    this._measureEl.style.width  = `${Math.abs(x1 - x0)}px`;
+    this._measureEl.style.height = `${Math.abs(y1 - y0)}px`;
+    this._measureEl.classList.toggle('up',   up);
+    this._measureEl.classList.toggle('down', !up);
+
+    const dollar = p1 - p0;
+    const pct    = p0 !== 0 ? (dollar / p0) * 100 : 0;
+    this._measureLabelEl.textContent =
+      `${dollar >= 0 ? '+' : ''}${dollar.toFixed(2)}  (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+
+    // Box top edge = higher screen position = higher price; bottom edge = lower price
+    this._measureHighEl.textContent = Math.max(p0, p1).toFixed(2);
+    this._measureLowEl.textContent  = Math.min(p0, p1).toFixed(2);
+  }
+
+  clearMeasure() {
+    if (this._measureEl) {
+      this._measureEl.remove();
+      this._measureEl = null; this._measureLabelEl = null;
+      this._measureHighEl = null; this._measureLowEl = null;
+    }
+  }
+
   getVisibleRange() {
     if (!this._chart) return null;
     return this._chart.timeScale().getVisibleRange();
@@ -528,6 +585,7 @@ export class ChartManager {
     this._destroyDivLines();
     this._destroyPoc();
     this._destroySegments();
+    this.clearMeasure();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }
     if (this._stLine)  { try { this._chart.removeSeries(this._stLine); } catch (_) {} this._stLine = null; }
     if (this._chart)  { this._chart.remove(); this._chart = null; this._candles = null; }
