@@ -517,10 +517,10 @@ export class ChartManager {
     return this._engine.toggleManualAnchor(barIdx, this._curN);
   }
 
-  /** Enable/disable chart pan & zoom — turned off while drag-measuring so gestures don't fight. */
-  setInteractive(enabled) {
-    if (!this._chart) return;
-    this._chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
+  /** Undo the most recently placed manual aVWAP anchor (LIFO). Returns the removed bar index, or null if none. */
+  undoManualAnchor() {
+    if (!this._engine) return null;
+    return this._engine.undoManualAnchor();
   }
 
   /** Live price/percent-change measurement box from (x0,y0) to (x1,y1), in #chart-local pixel coords. */

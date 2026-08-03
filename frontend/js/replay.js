@@ -21,7 +21,9 @@ let playTimer = null;
 let autoFit    = localStorage.getItem('replay_autofit') === 'true';
 let lockMode   = localStorage.getItem('replay_lock_mode')  || null;
 let lockValue  = localStorage.getItem('replay_lock_value') || null;
-let _altDragStart = null; // {x, y, clientX, clientY} — set on Alt+mousedown over the chart
+let _lastChartX     = null;  // last known mouse x over the chart, in #chart-local px — for '.' hover-anchor
+let _measureActive  = false; // mid live-measurement (started by Alt+Click)
+let _measureStart   = null;  // {x, y} in #chart-local pixel coords — the locked start point
 
 // DOM refs
 const scrubber    = document.getElementById('scrubber');
@@ -50,6 +52,9 @@ export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   current = 0;
   _restoreDate = restoreDate || null;
   setPlaying(false);
+  _measureActive = false;
+  _measureStart  = null;
+  _lastChartX    = null;
 
   chart = new ChartManager(document.getElementById('chart'));
   _setStatus('connecting…');
@@ -224,40 +229,61 @@ function _wireControls() {
     jump(Math.round(logical));
   });
 
-  // Alt+Click a candle — place/remove a manual anchored VWAP there.
-  // Alt+drag — live $ / % change measurement box between two price levels.
+  // '.' — place/remove a manual anchored VWAP at whichever candle is under the cursor.
+  // Alt+Click — lock a measurement start point; move the mouse freely to explore
+  //             the $ / % change live; click again (any click) to dismiss it.
   const chartEl = document.getElementById('chart');
-  const DRAG_THRESHOLD = 4; // px — below this, treat as a click rather than a drag
 
-  chartEl.addEventListener('mousedown', (e) => {
-    if (!chart || !N || !e.altKey || e.button !== 0) return;
+  chartEl.addEventListener('mousemove', (e) => {
     const rect = chartEl.getBoundingClientRect();
-    _altDragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top, clientX: e.clientX, clientY: e.clientY };
+    _lastChartX = e.clientX - rect.left;
+  });
+  chartEl.addEventListener('mouseleave', () => { _lastChartX = null; });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (document.activeElement?.tagName === 'INPUT') return;
+    if (!chart || !N) return;
+
+    if ((e.key === '.' && e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault();
+      chart.undoManualAnchor();
+      return;
+    }
+    if (e.key === '.' && !e.altKey) {
+      if (_lastChartX == null) return;
+      chart.toggleManualAnchorAtX(_lastChartX);
+    }
+  });
+
+  chartEl.addEventListener('click', (e) => {
+    if (!chart || !N) return;
+    const rect = chartEl.getBoundingClientRect();
+
+    if (_measureActive) {
+      chart.clearMeasure();
+      _measureActive = false;
+      _measureStart  = null;
+      return;
+    }
+    if (e.altKey) {
+      _measureStart  = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      _measureActive = true;
+      chart.updateMeasure(_measureStart.x, _measureStart.y, _measureStart.x, _measureStart.y);
+    }
   });
 
   window.addEventListener('mousemove', (e) => {
-    if (!_altDragStart || !chart) return;
-    const dist = Math.hypot(e.clientX - _altDragStart.clientX, e.clientY - _altDragStart.clientY);
-    if (dist < DRAG_THRESHOLD) return;
+    if (!_measureActive || !_measureStart || !chart) return;
     const rect = chartEl.getBoundingClientRect();
-    chart.updateMeasure(_altDragStart.x, _altDragStart.y, e.clientX - rect.left, e.clientY - rect.top);
+    chart.updateMeasure(_measureStart.x, _measureStart.y, e.clientX - rect.left, e.clientY - rect.top);
   });
 
-  window.addEventListener('mouseup', (e) => {
-    if (!_altDragStart || !chart) { _altDragStart = null; return; }
-    const dist = Math.hypot(e.clientX - _altDragStart.clientX, e.clientY - _altDragStart.clientY);
-    if (dist < DRAG_THRESHOLD) chart.toggleManualAnchorAtX(_altDragStart.x);
-    else chart.clearMeasure();
-    _altDragStart = null;
-  });
-
-  // Suspend chart pan/zoom while Alt is held so it doesn't fight the measure drag
-  window.addEventListener('keydown', (e) => { if (e.key === 'Alt' && chart) chart.setInteractive(false); });
-  window.addEventListener('keyup',   (e) => { if (e.key === 'Alt' && chart) chart.setInteractive(true);  });
-  // Recover if Alt's keyup is missed (e.g. Alt+Tab stole focus mid-hold)
+  // Recover from a lost keyup/mouseup (e.g. Alt+Tab stole focus mid-gesture)
   window.addEventListener('blur', () => {
-    if (chart) { chart.setInteractive(true); chart.clearMeasure(); }
-    _altDragStart = null;
+    _measureActive = false;
+    _measureStart  = null;
+    if (chart) chart.clearMeasure();
   });
 
   fpsInput.addEventListener('change', () => {

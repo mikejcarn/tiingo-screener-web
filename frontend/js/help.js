@@ -81,8 +81,9 @@ const _PAGES = [
       <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
 
       <tr class="help-section"><td colspan="2">Annotations</td></tr>
-      <tr><td>Alt+Click a candle</td><td>Place / remove a manually-anchored VWAP there (amber line, ephemeral)</td></tr>
-      <tr><td>Alt+Drag</td><td>Live $ / % change measurement between two price levels (shown while dragging only)</td></tr>
+      <tr><td><kbd>.</kbd></td><td>Place / remove a manually-anchored VWAP at the hovered candle (amber line, ephemeral)</td></tr>
+      <tr><td>Alt+<kbd>.</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Undo the most recently placed manual aVWAP anchor (repeat to keep undoing, in order)</td></tr>
+      <tr><td>Alt+Click</td><td>Lock a measurement start point; move the cursor to explore $ / % change live; click again to dismiss</td></tr>
 
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>

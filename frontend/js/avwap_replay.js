@@ -73,6 +73,7 @@ export class DynamicVWAPEngine {
     this._pmmPools = [];
     // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
     this._manualSeries = {};
+    this._manualOrder  = []; // anchor bar indices in placement order, for undo (LIFO)
   }
 
   // ── Setup ──────────────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ export class DynamicVWAPEngine {
     this._pmmPools = [];
     for (const s of Object.values(this._manualSeries)) { try { this._chart.removeSeries(s); } catch (_) {} }
     this._manualSeries = {};
+    this._manualOrder  = [];
   }
 
   // ── Manual (click-placed) anchors ───────────────────────────────────────
@@ -124,12 +126,28 @@ export class DynamicVWAPEngine {
     if (this._manualSeries[anchorIdx]) {
       try { this._chart.removeSeries(this._manualSeries[anchorIdx]); } catch (_) {}
       delete this._manualSeries[anchorIdx];
+      const i = this._manualOrder.indexOf(anchorIdx);
+      if (i !== -1) this._manualOrder.splice(i, 1);
       return false;
     }
     const s = this._series(C_MANUAL, 2, 0);
     s.setData(this._vwapLine(anchorIdx, toIdx));
     this._manualSeries[anchorIdx] = s;
+    this._manualOrder.push(anchorIdx);
     return true;
+  }
+
+  /**
+   * Undo the most recently placed manual anchor (LIFO), one per call.
+   * Returns the removed anchor's bar index, or null if there are none left.
+   */
+  undoManualAnchor() {
+    const anchorIdx = this._manualOrder.pop();
+    if (anchorIdx === undefined) return null;
+    const s = this._manualSeries[anchorIdx];
+    if (s) { try { this._chart.removeSeries(s); } catch (_) {} }
+    delete this._manualSeries[anchorIdx];
+    return anchorIdx;
   }
 
   // ── PMM greedy extrema ────────────────────────────────────────────────────
