@@ -1501,6 +1501,30 @@ body.ind-page {
 .param-group.collapsed .param-group-body { display: none; }
 .param-group.collapsed .param-group-arrow { transform: rotate(-90deg); }
 
+.param-multi-item + .param-multi-item {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--b4);
+}
+.param-multi-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.param-multi-item-label { font-size: 11px; color: var(--t5); font-weight: 600; }
+.param-multi-item-remove {
+  background: none; border: none; color: var(--t4);
+  cursor: pointer; font-size: 13px; line-height: 1; padding: 0 4px;
+}
+.param-multi-item-remove:hover { color: rgba(var(--red-rgb), 0.9); }
+.param-multi-add {
+  display: block;
+  background: none; border: none; color: var(--t4);
+  font-size: 11px; cursor: pointer; padding: 3px 0; margin-top: 2px;
+}
+.param-multi-add:hover { color: var(--ac); }
+
 /* ── Right column (run + history) ────────────────────────── */
 .ind-right {
   flex: 1;

@@ -368,8 +368,30 @@ function _renderNullableList(key, val) {
   </div>`;
 }
 
+function _renderMultiParamsField(key, items) {
+  const blocks = items.map((item, i) => `
+    <div class="param-multi-item">
+      ${items.length > 1 ? `<div class="param-multi-item-head">
+        <span class="param-multi-item-label">Config ${i + 1}</span>
+        <button type="button" class="param-multi-item-remove" title="Remove this config">×</button>
+      </div>` : ''}
+      <div class="param-multi-item-body">${_renderParamTree(item)}</div>
+    </div>`).join('');
+  return `<div class="param-multi" data-key="${_esc(key)}" data-type="multi_params">
+    ${blocks}
+    <button type="button" class="param-multi-add">+ Add another config</button>
+  </div>`;
+}
+
 function _renderParamValue(key, val) {
   const label = _currentParamLabels[key] ?? key;
+  // *_params fields (except ones controlled by a sibling select, e.g. ZScore's
+  // centreline_params) support multiple configs — render as a repeatable list of
+  // individual-field blocks instead of a single fixed group.
+  if (key.endsWith('_params') && !Object.values(PARAM_CONTROLS).includes(key)
+      && val && typeof val === 'object') {
+    return _renderMultiParamsField(key, Array.isArray(val) ? val : [val]);
+  }
   if (val === null || val === undefined) {
     return _renderNullableNum(key, null);
   }
@@ -425,7 +447,10 @@ function _renderParamValue(key, val) {
     </div>`;
   }
   if (typeof val === 'object') {
-    const isInline = Object.values(PARAM_CONTROLS).includes(key);
+    // *_params groups (the common "detail config for a toggle" convention used across
+    // most indicators) don't need their own repeated heading — the sibling toggle already
+    // labels the section, so drop the redundant group header and show the fields flush.
+    const isInline = Object.values(PARAM_CONTROLS).includes(key) || key.endsWith('_params');
     const body = Object.keys(val).length
       ? _renderParamTree(val)
       : '<span class="param-none">no additional parameters</span>';
@@ -493,6 +518,12 @@ function _readParamTree(container) {
       const key  = child.dataset.key;
       const body = child.querySelector('.param-group-body');
       if (body) result[key] = _readParamTree(body);
+    } else if (child.classList.contains('param-multi')) {
+      const key = child.dataset.key;
+      result[key] = [...child.querySelectorAll(':scope > .param-multi-item')].map(item => {
+        const body = item.querySelector('.param-multi-item-body');
+        return body ? _readParamTree(body) : {};
+      });
     }
   }
   return result;
@@ -729,6 +760,34 @@ function _wireListEvents() {
         input.value = next;
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
+    }
+
+    // Add another config to a *_params multi-editor
+    const addBtn = e.target.closest('.param-multi-add');
+    if (addBtn) {
+      const container = addBtn.closest('.param-multi');
+      const key   = container.dataset.key;
+      const ind   = addBtn.closest('.ind-card').dataset.indicator;
+      const items = [...container.querySelectorAll(':scope > .param-multi-item')].map(item =>
+        _readParamTree(item.querySelector('.param-multi-item-body')));
+      const dflt  = _defaults?.defaults?.[ind]?.[key];
+      const blank = Array.isArray(dflt) ? (dflt[0] ?? {}) : (dflt ?? {});
+      items.push({ ...blank });
+      container.outerHTML = _renderMultiParamsField(key, items);
+      _dirty = true;
+    }
+
+    // Remove a config instance from a *_params multi-editor
+    const rmBtn = e.target.closest('.param-multi-item-remove');
+    if (rmBtn) {
+      const container = rmBtn.closest('.param-multi');
+      const key      = container.dataset.key;
+      const itemEls  = [...container.querySelectorAll(':scope > .param-multi-item')];
+      const items    = itemEls.map(item => _readParamTree(item.querySelector('.param-multi-item-body')));
+      const idx      = itemEls.indexOf(rmBtn.closest('.param-multi-item'));
+      items.splice(idx, 1);
+      container.outerHTML = _renderMultiParamsField(key, items);
+      _dirty = true;
     }
   });
 }
