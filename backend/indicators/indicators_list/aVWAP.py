@@ -304,7 +304,7 @@ def calculate_avwap_channel(
         _bc_clean = df[_bc_base].copy()
         for _sl in _bc_swings:
             if f'BoS_{_sl}' not in df.columns:
-                _tmp = get_indicators(_bc_clean.copy(), ['BoS_CHoCH'], {'BoS_CHoCH': {'swing_length': _sl}})
+                _tmp = get_indicators(_bc_clean.copy(), ['BoS_CHoCH'], {'BoS_CHoCH': {'swing_lengths': [_sl]}})
                 for _col in [f'BoS_{_sl}', f'CHoCH_{_sl}',
                              f'BoS_CHoCH_Price_{_sl}', f'BoS_CHoCH_Break_Index_{_sl}']:
                     if _col in _tmp.columns:
@@ -1030,7 +1030,8 @@ def calculate_avwap_channel(
             lookback = get_lookback(config, 'avg_lookback', avg_lookback)
 
             config_BoS = {}
-            patterns = [f'aVWAP_BoS_CHoCH_bull_c{config_idx}_', f'aVWAP_BoS_CHoCH_bear_c{config_idx}_']
+            patterns = [f'aVWAP_BoS_bull_c{config_idx}_',   f'aVWAP_BoS_bear_c{config_idx}_',
+                        f'aVWAP_CHoCH_bull_c{config_idx}_', f'aVWAP_CHoCH_bear_c{config_idx}_']
             for key, value in BoS_CHoCH_aVWAPs.items():
                 if any(key.startswith(p) for p in patterns):
                     config_BoS[key] = value

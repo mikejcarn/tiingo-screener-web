@@ -42,7 +42,7 @@ def calculate_zscore_probability(df,
         'OB_avg': {
             'indicator': 'aVWAP',
             'params': {
-                'OB_avg': True,
+                'OB': True, 'OB_avg': True,
                 'OB_params': cp,
                 'avg_lookback': avg_lookback,
             },

@@ -2,7 +2,11 @@ import pandas as pd
 from typing import Literal
 
 display_name = "aVWAP Average"
-required_columns = ['aVWAP_*']
+# Actually depends on Peaks_avg / Valleys_avg / Peaks_Valleys_avg (chosen via `mode`),
+# not raw aVWAP_* columns — the compatibility check only supports AND-of-all semantics,
+# and this is genuinely an OR across three possible columns, so it's left undeclared
+# rather than asserting something incorrect. The function itself already degrades
+# gracefully (returns no matches) when its needed column is missing.
 param_schema = {
     'mode':         {'label': 'Average type', 'type': 'select',
                      'options': ['combined', 'peaks', 'valleys'], 'default': 'combined'},

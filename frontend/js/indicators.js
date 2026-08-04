@@ -13,6 +13,7 @@ const NULLABLE_LIST_KEYS = new Set(['BoS_swing_lengths', 'CHoCH_swing_lengths', 
 const PARAM_ENUMS = {
   indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI'],
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
+  mode: ['combined', 'bullish', 'bearish'],
 };
 
 
@@ -646,7 +647,7 @@ function _wireListEvents() {
 
   list.addEventListener('change', e => {
     if (e.target.classList.contains('ind-toggle')) {
-      e.target.closest('.ind-card').classList.toggle('enabled', e.target.checked);
+      _onToggle(e.target);
       _updateTabCounts();
       _dirty = true;
       e.target.blur();
@@ -777,6 +778,8 @@ function _onToggle(checkbox) {
       ...(_configData?.indicators?.[_activeTf]?.[ind] ?? {}),
       ...(_pending[_activeTf]?.[ind] ?? {}),
     };
+    _currentParamLabels     = _paramLabels[ind]     || {};
+    _currentParamSeparators = _paramSeparators[ind] || [];
     let body = card.querySelector('.ind-card-body');
     if (!body) {
       body = document.createElement('div');
