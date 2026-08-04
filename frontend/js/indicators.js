@@ -25,6 +25,7 @@ const PARAM_CONTROLS = {
 };
 
 // ── State ──────────────────────────────────────────────────────
+let _listEventsWired = false; // guards _wireListEvents() — it's called on every re-render
 let _configList  = [];   // [{id, name, created_at}]
 let _selectedId  = null;
 let _configData  = null; // {id, name, indicators: {tf: {ind: params}}}
@@ -674,6 +675,14 @@ function _toggleFocusedCard() {
 }
 
 function _wireListEvents() {
+  // _renderIndicatorList() calls this on every re-render (config switch, tab switch,
+  // search, toggle...); without this guard, listeners pile up on the same persistent
+  // #ind-list container each time, and an even number of accumulated listeners makes
+  // every click net-cancel itself (toggle on, then immediately back off) — looks like
+  // clicking does nothing.
+  if (_listEventsWired) return;
+  _listEventsWired = true;
+
   const list = document.getElementById('ind-list');
 
   list.addEventListener('change', e => {
