@@ -366,9 +366,11 @@ def _extract_dynamic_avwap_anchors(df: pd.DataFrame, ind_params: dict) -> dict:
     ob_cfgs   = avwap_p.get('OB_params', [])
     ob_cfgs   = ob_cfgs if isinstance(ob_cfgs, list) else [ob_cfgs]
 
-    # Per-config confirmation half-windows for peaks/valleys
-    peaks_cfgs   = avwap_p.get('peaks_params',   [])
-    valleys_cfgs = avwap_p.get('valleys_params',  [])
+    # Per-config confirmation half-windows for peaks/valleys — prefer the standalone
+    # aVWAP_peaks/aVWAP_valleys indicators' own params; fall back to the legacy
+    # combined aVWAP module's peaks_params/valleys_params if that's what's configured.
+    peaks_cfgs   = ind_params.get('aVWAP_peaks',   {}).get('peaks_params',   avwap_p.get('peaks_params', []))
+    valleys_cfgs = ind_params.get('aVWAP_valleys', {}).get('valleys_params', avwap_p.get('valleys_params', []))
     peaks_cfgs   = peaks_cfgs   if isinstance(peaks_cfgs,   list) else [peaks_cfgs]
     valleys_cfgs = valleys_cfgs if isinstance(valleys_cfgs, list) else [valleys_cfgs]
     peaks_half   = {i: (c or {}).get('periods', 25) // 2 for i, c in enumerate(peaks_cfgs)}

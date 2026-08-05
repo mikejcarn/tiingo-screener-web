@@ -75,7 +75,10 @@ async function init() {
   _loadRunQueue();   // restore queued confs before first render
   _wireStaticButtons();
   if (_configList.length) {
-    await _selectConfig(_configList[0].id, { toggleQueue: false });
+    let restoreId = null;
+    try { restoreId = parseInt(localStorage.getItem('ind_selected_config_id')); } catch {}
+    const initialId = _configList.some(c => c.id === restoreId) ? restoreId : _configList[0].id;
+    await _selectConfig(initialId, { toggleQueue: false });
   } else {
     _showEmpty(true);
     _loadDbSummary();
@@ -110,6 +113,7 @@ async function _loadDefaults() {
 async function _selectConfig(id, { toggleQueue = true } = {}) {
   const prevSelected = _selectedId;
   _selectedId  = id;
+  try { localStorage.setItem('ind_selected_config_id', id); } catch {}
   _pending     = {};
   _dirty       = false;
   _activeTf    = 'daily';
