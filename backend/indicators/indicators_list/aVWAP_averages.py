@@ -82,41 +82,66 @@ def calculate_aVWAP_averages(df,
             if _AVG_COL_RE.search(c):
                 out[c] = result[c]
 
-    # Peaks / Valleys / Gaps / OB / BoS_CHoCH / QQEMOD have no cross-type interaction — bundle
-    # them into a single call. Averaging a type requires computing its underlying anchor
-    # lines too, so each *_avg flag is paired with its corresponding "show" flag internally.
-    bundle = {}
+    def _isolated(show_flag, avg_flag, params_key, avg_col, configs):
+        """
+        Run each config of this type in its OWN isolated call, instead of passing
+        the whole list to one shared call. The underlying aVWAP module dedupes
+        anchors across configs of the same type (e.g. a periods=50 peak is always
+        also a periods=25 peak, so a shared "seen indices" set silently strips
+        config 2+'s anchors) — that's correct behavior for avoiding duplicate raw
+        lines, but wrong here, where each config needs its own independent average.
+        Isolating each config gives it a fresh dedup set, so nothing gets stolen.
+        """
+        cfgs = configs if isinstance(configs, list) else [configs]
+        for i, cfg in enumerate(cfgs):
+            lookback = cfg.get('avg_lookback', avg_lookback)
+            p = {'avg_lookback': lookback, show_flag: True, avg_flag: True, params_key: [cfg]}
+            result = get_indicators(base_df, ['aVWAP'], {'aVWAP': p})
+            if avg_col in result.columns:
+                out[avg_col if i == 0 else f'{avg_col}_{i}'] = result[avg_col]
+
     if Peaks_avg:
-        bundle.update(peaks=True, peaks_avg=True, peaks_params=peaks_params)
+        _isolated('peaks', 'peaks_avg', 'peaks_params', 'Peaks_avg', peaks_params)
     if Valleys_avg:
-        bundle.update(valleys=True, valleys_avg=True, valleys_params=valleys_params)
+        _isolated('valleys', 'valleys_avg', 'valleys_params', 'Valleys_avg', valleys_params)
     if Gaps_avg:
-        bundle.update(gaps=True, gaps_avg=True, gaps_params=gaps_params)
+        _isolated('gaps', 'gaps_avg', 'gaps_params', 'Gaps_avg', gaps_params)
     if OB_avg:
-        bundle.update(OB=True, OB_avg=True, OB_params=OB_params)
+        _isolated('OB', 'OB_avg', 'OB_params', 'OB_avg', OB_params)
     if BoS_CHoCH_avg:
-        bundle.update(BoS_CHoCH=True, BoS_CHoCH_avg=True, BoS_CHoCH_params=BoS_CHoCH_params)
+        _isolated('BoS_CHoCH', 'BoS_CHoCH_avg', 'BoS_CHoCH_params', 'BoS_CHoCH_avg', BoS_CHoCH_params)
     if QQEMOD_avg:
-        bundle.update(QQEMOD=True, QQEMOD_avg=True, QQEMOD_params=QQEMOD_params)
-    if bundle:
-        _run_and_collect(**bundle)
+        _isolated('QQEMOD', 'QQEMOD_avg', 'QQEMOD_params', 'QQEMOD_avg', QQEMOD_params)
 
-    # Isolated on its own call: the combined peaks+valleys average dedupes its anchors against
-    # any individual peaks/valleys anchors detected with the same periods (by design, to avoid
-    # double-plotting the same point) — bundling it with Peaks_avg/Valleys_avg above can wipe
-    # it out entirely when periods match, so it always runs separately.
+    # Peaks_Valleys_avg also dedupes against individual Peaks_avg/Valleys_avg anchors
+    # sharing the same periods (separate quirk, same underlying cause) — isolate it too.
     if Peaks_Valleys_avg:
-        _run_and_collect(peaks_valleys=True, peaks_valleys_avg=True,
-                          peaks_valleys_params=peaks_valleys_params)
+        _isolated('peaks_valleys', 'peaks_valleys_avg', 'peaks_valleys_params',
+                   'Peaks_Valleys_avg', peaks_valleys_params)
 
-    # All_avg combines whichever of the above types are also enabled — mirror the same
-    # selections (plus peaks_valleys, if requested) in its own call.
+    # All_avg combines whichever of the above types are also enabled, using each type's
+    # FULL config list in one shared bundled call — so it inherits the same cross-config
+    # dedup as a known characteristic (folding multiple configs of one type into "All"
+    # under-counts vs. treating them independently). Only the first config of each type
+    # contributes distinctly in that case; that's an acceptable limitation for a
+    # "combine everything into one pool" average, not a bug worth the added complexity here.
     if All_avg:
-        all_bundle = dict(bundle)
-        all_bundle['All_avg'] = True
+        bundle = {'All_avg': True}
+        if Peaks_avg:
+            bundle.update(peaks=True, peaks_avg=True, peaks_params=peaks_params)
+        if Valleys_avg:
+            bundle.update(valleys=True, valleys_avg=True, valleys_params=valleys_params)
         if Peaks_Valleys_avg:
-            all_bundle.update(peaks_valleys=True, peaks_valleys_params=peaks_valleys_params)
-        _run_and_collect(**all_bundle)
+            bundle.update(peaks_valleys=True, peaks_valleys_avg=True, peaks_valleys_params=peaks_valleys_params)
+        if Gaps_avg:
+            bundle.update(gaps=True, gaps_avg=True, gaps_params=gaps_params)
+        if OB_avg:
+            bundle.update(OB=True, OB_avg=True, OB_params=OB_params)
+        if BoS_CHoCH_avg:
+            bundle.update(BoS_CHoCH=True, BoS_CHoCH_avg=True, BoS_CHoCH_params=BoS_CHoCH_params)
+        if QQEMOD_avg:
+            bundle.update(QQEMOD=True, QQEMOD_avg=True, QQEMOD_params=QQEMOD_params)
+        _run_and_collect(**bundle)
 
     return out
 
