@@ -1678,7 +1678,7 @@ document.addEventListener('keydown', e => {
       const cur  = _configList.findIndex(c => c.id === _selectedId);
       const dir  = e.key === '_' ? 1 : -1;
       const next = (cur + dir + _configList.length) % _configList.length;
-      _selectConfig(_configList[next].id);
+      _selectConfig(_configList[next].id, { toggleQueue: false });
       return;
     }
     if (e.key === 'C') { e.preventDefault(); window.location.href = '/'; return; }
