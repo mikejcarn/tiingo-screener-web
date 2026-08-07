@@ -30,6 +30,11 @@ param_labels = {
     'swing_length':         'Swing Length',
     'max_aVWAPs':           'Max Anchors (blank = unlimited)',
     'mode':                 'Mode',
+    # QQEMOD doesn't use 'mode' — it has its own four direction toggles instead
+    'peak_to_valley':       'Peak → Valley (solid, bullish)',
+    'valley_to_peak':       'Valley → Peak (solid, bearish)',
+    'peak_to_peak':         'Peak → Peak (dotted, bullish)',
+    'valley_to_valley':     'Valley → Valley (dotted, bearish)',
 }
 
 param_descriptions = {
@@ -39,6 +44,10 @@ param_descriptions = {
                      "type's own params dict.",
     'All_avg':      "Averages together every aVWAP line from every OTHER type enabled below — enable this "
                      "alongside whichever individual types you want combined, not on its own.",
+    'peak_to_valley':   "Include solid red lines anchored at bull-zone peaks, running until the next bear zone.",
+    'valley_to_peak':   "Include solid teal lines anchored at bear-zone lows, running until the next bull zone.",
+    'peak_to_peak':     "Include dotted red lines anchored peak-to-peak across consecutive bull zones.",
+    'valley_to_valley': "Include dotted teal lines anchored valley-to-valley across consecutive bear zones.",
 }
 
 def calculate_aVWAP_averages(df,
@@ -52,7 +61,9 @@ def calculate_aVWAP_averages(df,
     Gaps_avg=False,          gaps_params={'max_aVWAPs': None},
     OB_avg=False,            OB_params={'periods': 25, 'max_aVWAPs': None, 'mode': 'combined'},
     BoS_CHoCH_avg=False,     BoS_CHoCH_params={'swing_length': 25, 'max_aVWAPs': None, 'mode': 'combined'},
-    QQEMOD_avg=False,        QQEMOD_params={'mode': 'combined', 'max_aVWAPs': None},
+    QQEMOD_avg=False,        QQEMOD_params={'peak_to_valley': True, 'valley_to_peak': True,
+                                             'peak_to_peak': True, 'valley_to_valley': True,
+                                             'max_aVWAPs': None},
     All_avg=False,
     avg_lookback=25,
     **_

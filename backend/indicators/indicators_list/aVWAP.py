@@ -795,9 +795,12 @@ def calculate_avwap_channel(
                         j += 1
                     anchor_end = min(j - 1, _last_valid)
                     display_end = min(j, _last_valid)
-                    anchor = int(np.argmax(df['High'].values[start:anchor_end + 1])) + start
-                    segments.append({'type': 'bull', 'start': start, 'end': display_end,
-                                     'anchor': anchor})
+                    # Zone starts after the last bar with real volume (e.g. a thinly-traded
+                    # ticker gone quiet) — nothing valid to anchor within, skip this zone.
+                    if anchor_end >= start:
+                        anchor = int(np.argmax(df['High'].values[start:anchor_end + 1])) + start
+                        segments.append({'type': 'bull', 'start': start, 'end': display_end,
+                                         'anchor': anchor})
                     i = j if j < n else n
                 elif bear[i]:
                     start = i
@@ -806,9 +809,10 @@ def calculate_avwap_channel(
                         j += 1
                     anchor_end = min(j - 1, _last_valid)
                     display_end = min(j, _last_valid)
-                    anchor = int(np.argmin(df['Low'].values[start:anchor_end + 1])) + start
-                    segments.append({'type': 'bear', 'start': start, 'end': display_end,
-                                     'anchor': anchor})
+                    if anchor_end >= start:
+                        anchor = int(np.argmin(df['Low'].values[start:anchor_end + 1])) + start
+                        segments.append({'type': 'bear', 'start': start, 'end': display_end,
+                                         'anchor': anchor})
                     i = j if j < n else n
                 else:
                     i += 1
@@ -835,7 +839,11 @@ def calculate_avwap_channel(
 
             config_QQEMOD = {}
 
-            # Solid lines: peak→valley and valley→peak
+            # Solid lines: peak→valley and valley→peak.
+            # Feed into the average (QQEMOD_aVWAPs) whenever QQEMOD_avg is on and this
+            # segment's own direction flag is set — same rule as the dotted lines below,
+            # so a config built purely from peak_to_valley/valley_to_peak actually
+            # produces averaged output instead of silently contributing nothing.
             for seg in segments:
                 if seg['type'] == 'bull' and not peak_to_valley:
                     continue
@@ -847,10 +855,15 @@ def calculate_avwap_channel(
                 avwap = calculate_avwap(df, anchor).copy()
                 end_idx = _last_valid if extend_to_end else seg['end']
                 avwap.iloc[end_idx - anchor + 1:] = np.nan
+                if QQEMOD_avg:
+                    QQEMOD_aVWAPs[col] = avwap
                 config_QQEMOD[col] = avwap
 
             # Dotted lines: peak→peak and valley→valley
-            # Always computed when QQEMOD_avg is True; only displayed when the flag is True
+            # Computed whenever either QQEMOD_avg or the direction's own display flag
+            # wants them; each only feeds averaging/display when ITS OWN flag is set,
+            # so e.g. peak_to_peak=False genuinely excludes bull-dotted lines from the
+            # average, not just from the raw-line display.
             for seg_type, direction, display_flag in (
                 ('bull', 'bull', peak_to_peak),
                 ('bear', 'bear', valley_to_valley),
@@ -866,7 +879,7 @@ def calculate_avwap_channel(
                     avwap = calculate_avwap(df, anchor).copy()
                     end_idx = _last_valid if extend_to_end else next_anchor
                     avwap.iloc[end_idx - anchor + 1:] = np.nan
-                    if QQEMOD_avg:
+                    if QQEMOD_avg and display_flag:
                         QQEMOD_aVWAPs[col] = avwap
                     if display_flag:
                         config_QQEMOD[col] = avwap
@@ -876,7 +889,7 @@ def calculate_avwap_channel(
                     col = f'aVWAP_QQEMOD_{direction}_dot_c{config_idx}_{anchor}'
                     avwap = calculate_avwap(df, anchor).copy()
                     avwap.iloc[_last_valid - anchor + 1:] = np.nan
-                    if QQEMOD_avg:
+                    if QQEMOD_avg and display_flag:
                         QQEMOD_aVWAPs[col] = avwap
                     if display_flag:
                         config_QQEMOD[col] = avwap
@@ -1040,11 +1053,17 @@ def calculate_avwap_channel(
                 avg_name = 'BoS_CHoCH_avg' if config_idx == 0 else f'BoS_CHoCH_avg_{config_idx}'
                 df[avg_name] = calculate_rolling_aVWAP_avg(df, config_BoS, lookback)
 
-    # QQEMOD_avg — average of the active peak-to-peak and valley-to-valley dotted lines
+    # QQEMOD_avg — average of whichever lines this config's own flags selected: solid
+    # (bull_c / bear_c — peak_to_valley / valley_to_peak) and/or dotted (bull_dot_c /
+    # bear_dot_c — peak_to_peak / valley_to_valley). Matching only the _dot_ prefix here
+    # would silently drop solid-line contributions even though they're fed into
+    # QQEMOD_aVWAPs above, so both naming patterns are matched.
     if QQEMOD_avg:
         for config_idx in range(len(QQEMOD_configs)):
             config_q = {k: v for k, v in QQEMOD_aVWAPs.items()
-                        if k.startswith(f'aVWAP_QQEMOD_bull_dot_c{config_idx}_')
+                        if k.startswith(f'aVWAP_QQEMOD_bull_c{config_idx}_')
+                        or k.startswith(f'aVWAP_QQEMOD_bear_c{config_idx}_')
+                        or k.startswith(f'aVWAP_QQEMOD_bull_dot_c{config_idx}_')
                         or k.startswith(f'aVWAP_QQEMOD_bear_dot_c{config_idx}_')}
 
             if config_q:
