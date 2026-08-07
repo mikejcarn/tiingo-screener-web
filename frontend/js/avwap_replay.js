@@ -42,6 +42,24 @@ const ANCHOR_POOL_STYLE = {
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
 
+// Opacity range for multi-config anchor types (currently peaks/valleys). All configs
+// stay solid at the same width — line STYLE is reserved for signifying different data
+// types elsewhere in the app (dashed = gaps, dotted = QQEMOD, etc.) — so within one
+// type (all peaks, or all valleys) only opacity varies. The full range is spread
+// evenly across however many configs of that type are actually present (computed per
+// reveal in _buildAnchorPools), so contrast stays proportional to config count: with
+// only 2 configs the gap is large and obvious; with more, steps shrink but stay evenly
+// spaced across the same full range rather than bunching up or running out.
+const CFG_OPACITY_MAX = 0.95;
+const CFG_OPACITY_MIN = 0.22;
+
+function _cfgTierColor(r, g, b, rank, total) {
+  const alpha = total > 1
+    ? CFG_OPACITY_MAX - (rank / (total - 1)) * (CFG_OPACITY_MAX - CFG_OPACITY_MIN)
+    : CFG_OPACITY_MAX;
+  return [`rgba(${r},${g},${b},${alpha.toFixed(2)})`, 2, 0];
+}
+
 
 export class DynamicVWAPEngine {
   /**
@@ -178,37 +196,67 @@ export class DynamicVWAPEngine {
   }
 
   _buildPmmPools(configs) {
-    for (const cfg of (configs || [])) {
+    // Same proportional-contrast opacity ramp as peaks/valleys (see _cfgTierColor):
+    // each PMM config's rank among however many configs are actually enabled for that
+    // side (valleys / peaks) determines its opacity, instead of every config sharing
+    // one fixed 0.75 regardless of count.
+    const cfgList = configs || [];
+    const valleyCfgs = cfgList.filter(c => c.valleys);
+    const peakCfgs   = cfgList.filter(c => c.peaks);
+    let vRank = 0, pRank = 0;
+    for (const cfg of cfgList) {
       const vSeries = cfg.valleys
-        ? Array.from({ length: cfg.max_anchors }, () => this._series('rgba(38,166,154,0.75)', 2))
+        ? Array.from({ length: cfg.max_anchors },
+            () => this._series(_cfgTierColor(38, 166, 154, vRank, valleyCfgs.length)[0], 2))
         : [];
+      if (cfg.valleys) vRank++;
       const pSeries = cfg.peaks
-        ? Array.from({ length: cfg.max_anchors }, () => this._series('rgba(239,83,80,0.75)',  2))
+        ? Array.from({ length: cfg.max_anchors },
+            () => this._series(_cfgTierColor(239, 83, 80, pRank, peakCfgs.length)[0], 2))
         : [];
+      if (cfg.peaks) pRank++;
       this._pmmPools.push({ ...cfg, vSeries, pSeries });
     }
   }
 
-  _anchorPoolStyle(key) {
+  // rankMaps: { peak: Map<cfgIdx, {rank, total}>, valley: Map<...> } — built per
+  // reveal by _buildAnchorPools from whichever configs actually produced anchors,
+  // so opacity spacing reflects how many configs of that type are really present.
+  _anchorPoolStyle(key, rankMaps = {}) {
     if (ANCHOR_POOL_STYLE[key]) return ANCHOR_POOL_STYLE[key];
     // Dynamic per-config peaks/valleys: peak_c0, peak_c1, valley_c0, valley_c1, ...
     let m = key.match(/^peak_c(\d+)$/);
     if (m) {
-      const ci = parseInt(m[1]);
-      return [`rgba(239,83,80,${ci === 0 ? '0.75' : '0.5'})`, ci === 0 ? 2 : 1, ci === 0 ? 0 : 1];
+      const info = rankMaps.peak?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
+      return _cfgTierColor(239, 83, 80, info.rank, info.total);
     }
     m = key.match(/^valley_c(\d+)$/);
     if (m) {
-      const ci = parseInt(m[1]);
-      return [`rgba(38,166,154,${ci === 0 ? '0.75' : '0.5'})`, ci === 0 ? 2 : 1, ci === 0 ? 0 : 1];
+      const info = rankMaps.valley?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
+      return _cfgTierColor(38, 166, 154, info.rank, info.total);
     }
     return null;
   }
 
   _buildAnchorPools(anchors) {
+    // Collect, per type (peak / valley), the set of config indices that actually
+    // produced anchors — ranked so opacity spacing reflects the real count, not gaps
+    // left by a config that produced zero anchors (e.g. too little history).
+    const idxByType = {};
     for (const [key, events] of Object.entries(anchors || {})) {
       if (!events.length) continue;
-      const style = this._anchorPoolStyle(key);
+      const m = key.match(/^(peak|valley)_c(\d+)$/);
+      if (m) (idxByType[m[1]] ??= new Set()).add(parseInt(m[2]));
+    }
+    const rankMaps = {};
+    for (const [type, idxSet] of Object.entries(idxByType)) {
+      const sorted = [...idxSet].sort((a, b) => a - b);
+      rankMaps[type] = new Map(sorted.map((idx, rank) => [idx, { rank, total: sorted.length }]));
+    }
+
+    for (const [key, events] of Object.entries(anchors || {})) {
+      if (!events.length) continue;
+      const style = this._anchorPoolStyle(key, rankMaps);
       if (!style) continue;
       const [color, lineWidth, lineStyle] = style;
       const series = events.map(() => this._series(color, lineWidth, lineStyle));

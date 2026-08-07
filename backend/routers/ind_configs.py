@@ -308,6 +308,7 @@ _DESCRIPTIONS = {
 # Utility modules that exist as indicators but should not appear in the UI
 _HIDDEN_INDICATORS = {
     'aVWAP',
+    'aVWAP_anchor_score',
     # Individual divergence types — consolidated into the single 'divergence' indicator
     'divergence_ATR', 'divergence_Fisher', 'divergence_Fractal', 'divergence_MACD',
     'divergence_MFI', 'divergence_Momentum', 'divergence_OBV', 'divergence_RSI',
