@@ -8,16 +8,32 @@ display_name = "aVWAP — Peaks"
 param_labels = {
     'periods':     'Pivot Window (periods)',
     'max_aVWAPs':  'Max Anchors (blank = unlimited)',
+    'styling':     'Line Styling',
+}
+
+param_descriptions = {
+    # Shared verbatim with aVWAP_valleys' own 'styling' entry — the two modules feed
+    # the same global param_descriptions namespace (keyed by param name only), so this
+    # text is written to apply equally to peaks (red) and valleys (teal).
+    'styling': "How to color multiple configs of this type on the chart. 'shades' (default) "
+               "gives every config a shade of this indicator's color, tiered by opacity from "
+               "most- to least-recently-added config. 'highlight_first' keeps the first "
+               "config at full color and renders every other config as a shade of grey "
+               "instead, so the primary config stands out from the rest.",
 }
 
 
-def calculate_aVWAP_peaks(df, peaks_params={'periods': 25, 'max_aVWAPs': None}):
+def calculate_aVWAP_peaks(df, peaks_params={'periods': 25, 'max_aVWAPs': None}, styling='shades'):
     """
     Anchor aVWAPs at detected swing peaks.
 
     peaks_params — a config dict (or list of config dicts), each with:
         'periods'    — pivot-detection window (default 25)
         'max_aVWAPs' — cap on how many peak anchors to keep for this config (None = unlimited)
+
+    styling — how the (possibly multiple) configs are colored on the chart:
+        'shades'          — every config a shade of red, tiered by opacity (default)
+        'highlight_first' — first config full red, every other config a shade of grey
 
     Multiple configs (pass a list) each get their own independent periods/max_aVWAPs
     and are kept in separately-labelled anchor groups:

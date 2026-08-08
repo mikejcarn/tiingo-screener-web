@@ -14,6 +14,7 @@ const PARAM_ENUMS = {
   indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI'],
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
   mode: ['combined', 'bullish', 'bearish'],
+  styling: ['shades', 'highlight_first'],
 };
 
 
@@ -559,9 +560,15 @@ function _wireStaticButtons() {
   });
   document.getElementById('btn-compute').addEventListener('click', _startCompute);
   document.getElementById('btn-compute-cancel').addEventListener('click', () => {
+    // Wipe run results too, not just the queue pointers — otherwise the run-queue-list
+    // rows for the in-flight/pending configs never hear about the cancel and stay
+    // frozen on stale 'running'/'waiting' status forever (even across a ↻ Refresh,
+    // since that just re-renders from this same _runResults).
     _runQueue    = [];
     _runQueueIdx = -1;
+    _runResults  = {};
     _updateQueueStatus();
+    _renderRunConfigs();
     api.post('/api/jobs/indicators/cancel');
   });
 

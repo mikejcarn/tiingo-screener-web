@@ -35,8 +35,8 @@ const ANCHOR_POOL_STYLE = {
   qqemod_bear:     ['rgba(38,166,154,0.9)', 3, 0],
   qqemod_bull_dot: ['rgba(239,83,80,0.7)',  2, 1],
   qqemod_bear_dot: ['rgba(38,166,154,0.7)', 2, 1],
-  avwap_max:       ['rgba(255,0,0,1.0)',      1, 0],
-  avwap_min:       ['rgba(0,255,255,0.85)',  1, 0],
+  avwap_max:       ['rgba(255,0,0,1.0)',      3, 0],
+  avwap_min:       ['rgba(0,255,255,0.85)',  3, 0],
 };
 
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
@@ -58,6 +58,33 @@ function _cfgTierColor(r, g, b, rank, total) {
     ? CFG_OPACITY_MAX - (rank / (total - 1)) * (CFG_OPACITY_MAX - CFG_OPACITY_MIN)
     : CFG_OPACITY_MAX;
   return [`rgba(${r},${g},${b},${alpha.toFixed(2)})`, 2, 0];
+}
+
+// 'highlight_first' peaks/valleys styling: config 0 stays at full peak/valley hue
+// and full line width; every other config is a thinner shade of grey instead of a
+// shade of that hue, so the primary config reads clearly against a muted backdrop
+// of the rest, instead of every config competing in the same color and weight.
+//
+// Opacity alone wasn't enough separation at solid width 2 — grey and the highlight
+// color read as equally "bold" lines just in different hues. Contrast now comes from
+// three stacked cues: grey uses the app's existing muted-gray rgb (same as gray_trans,
+// used for All_avg) rather than a lighter ad-hoc one, its own opacity ceiling well
+// below the highlight's (capped independently of CFG_OPACITY_MAX so a lone "other"
+// config can't hit full opacity via _cfgTierColor's single-item branch), AND a
+// narrower line width — so even a single other config is unambiguously secondary.
+const GREY_TIER_RGB     = [100, 100, 100];
+const GREY_OPACITY_MAX  = 0.4;
+const GREY_OPACITY_MIN  = 0.15;
+
+function _highlightFirstColor(r, g, b, rank, total) {
+  if (rank === 0) return [`rgba(${r},${g},${b},${CFG_OPACITY_MAX})`, 2, 0];
+  const greyRank  = rank - 1;
+  const greyTotal = Math.max(total - 1, 1);
+  const alpha = greyTotal > 1
+    ? GREY_OPACITY_MAX - (greyRank / (greyTotal - 1)) * (GREY_OPACITY_MAX - GREY_OPACITY_MIN)
+    : GREY_OPACITY_MAX;
+  const [gr, gg, gb] = GREY_TIER_RGB;
+  return [`rgba(${gr},${gg},${gb},${alpha.toFixed(2)})`, 1, 0];
 }
 
 
@@ -228,12 +255,14 @@ export class DynamicVWAPEngine {
     let m = key.match(/^peak_c(\d+)$/);
     if (m) {
       const info = rankMaps.peak?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
-      return _cfgTierColor(239, 83, 80, info.rank, info.total);
+      const colorFn = this._peaksStyle === 'highlight_first' ? _highlightFirstColor : _cfgTierColor;
+      return colorFn(239, 83, 80, info.rank, info.total);
     }
     m = key.match(/^valley_c(\d+)$/);
     if (m) {
       const info = rankMaps.valley?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
-      return _cfgTierColor(38, 166, 154, info.rank, info.total);
+      const colorFn = this._valleysStyle === 'highlight_first' ? _highlightFirstColor : _cfgTierColor;
+      return colorFn(38, 166, 154, info.rank, info.total);
     }
     return null;
   }
@@ -281,6 +310,8 @@ export class DynamicVWAPEngine {
     this._maxQQ       = events.max_qqemod   || 0;
     this._peaksHalf   = 0;
     this._valleysHalf = 0;
+    this._peaksStyle   = events.peaks_style   || 'shades';
+    this._valleysStyle = events.valleys_style || 'shades';
 
     // Build O(1) VWAP lookup tables + price arrays for PMM
     const N = bars.length;

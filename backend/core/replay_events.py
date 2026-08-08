@@ -650,6 +650,13 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     peaks_cfgs   = avwap_p.get('peaks_params',   [])
     valleys_cfgs = avwap_p.get('valleys_params',  [])
 
+    # Multi-config color scheme for the peaks/valleys anchor pools — prefer the
+    # standalone aVWAP_peaks/aVWAP_valleys indicators' own 'styling' param, same
+    # fallback pattern as their periods/max_aVWAPs configs in
+    # _extract_dynamic_avwap_anchors above.
+    peaks_style   = ind_params.get('aVWAP_peaks',   {}).get('styling', 'shades')
+    valleys_style = ind_params.get('aVWAP_valleys', {}).get('styling', 'shades')
+
     # Legacy QQEMOD rendering via qqemod_events/_qbPool/_qlPool is disabled —
     # the column-based aVWAP_QQEMOD_* system handles all rendering now.
     max_qqemod = 0
@@ -682,6 +689,8 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'qqemod_events': qqemod_events,
         'max_qqemod':    max_qqemod,
         'pmm_configs':   pmm_configs,
+        'peaks_style':   peaks_style,
+        'valleys_style': valleys_style,
         # Segment indicators — horizontal line events with start/end bar + price
         'fvg': _extract_fvg_segments(df, ind_params.get('FVG',        {})),
         'ob':  _extract_ob_segments(df,  ind_params.get('OB',         {})),
