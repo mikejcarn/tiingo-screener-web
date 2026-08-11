@@ -976,7 +976,7 @@ function _wireGlobal() {
     const inInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
 
     if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
-    if (e.key === '`') { e.preventDefault(); window.location.href = '/'; return; }
+    if (e.key === '`') { e.preventDefault(); window.location.href = '/pipeline'; return; }
     if (e.key === '~') { e.preventDefault(); window.location.href = '/indicators'; return; }
 
     if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveScan(); return; }
@@ -990,6 +990,7 @@ function _wireGlobal() {
     if (e.key === 'I' && !ctrl) { e.preventDefault(); window.location.href = '/indicators'; }
     if (e.key === 'C' && !ctrl) { e.preventDefault(); window.location.href = '/'; }
     if (e.key === 'S' && !ctrl) { e.preventDefault(); window.location.href = '/scanner'; }
+    if (e.key === 'P' && !ctrl) { e.preventDefault(); window.location.href = '/pipeline'; }
 
     if (e.key === '=') {
       const i = _configs.findIndex(c => c.id === _activeId);

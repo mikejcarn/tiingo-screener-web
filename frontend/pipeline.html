@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline — Tiingo Screener</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<script>try{if(localStorage.getItem('theme')==='light')document.documentElement.classList.add('light')}catch{}</script>
+</head>
+<body class="pipeline-page">
+
+<div id="pipeline-header">
+  <span id="pipeline-title">Tiingo Screener</span>
+  <div class="nav-right">
+    <div class="page-nav">
+      <a class="page-nav-item" href="/fetch" title="Go to tickers page (T)">tickers</a>
+      <a class="page-nav-item" href="/indicators" title="Go to indicators page (I)">indicators</a>
+      <a class="page-nav-item" href="/scanner" title="Go to scanner page (S)">scanner</a>
+      <span class="page-nav-item active" title="Pipeline page (P)">pipeline</span>
+      <a class="page-nav-item" href="/" title="Go to chart page (C)">chart</a>
+    </div>
+    <button class="btn-theme-toggle" title="Switch to light mode">☀</button>
+    <button class="btn-help-nav" title="Keyboard shortcuts (?)">?</button>
+  </div>
+</div>
+
+<div class="pipeline-layout">
+
+  <!-- ── Left: pipeline config list ────────────────────────── -->
+  <div class="pipeline-sidebar">
+    <div class="ind-run-head">
+      <span>Pipelines</span>
+      <div class="ind-db-head-actions">
+        <label class="pipeline-select-all" title="Select all pipelines for a queue run">
+          <input type="checkbox" id="pipeline-select-all"> all
+        </label>
+        <button id="btn-new-pipeline" class="dash-btn-sm dash-btn-sm-launch" title="Create new pipeline (N)">+ New</button>
+      </div>
+    </div>
+    <div id="pipeline-list">
+      <div class="ind-loading">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Centre: editor ─────────────────────────────────────── -->
+  <div class="pipeline-main">
+
+    <div id="pipeline-empty" class="ind-empty">
+      <div>
+        <p>No pipelines yet.</p>
+        <p>Click <strong>+ New</strong> to create one.</p>
+      </div>
+    </div>
+
+    <div id="pipeline-editor" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
+
+      <div class="ind-run-head">
+        <span>Pipeline Configuration</span>
+        <div class="ind-db-head-actions">
+          <button id="btn-save-pipeline" class="dash-btn-sm ind-btn-save" title="Save (Ctrl+S)">Save</button>
+          <button id="btn-delete-pipeline" class="dash-btn-sm dash-btn-sm-del" title="Delete (D)">Delete</button>
+        </div>
+      </div>
+      <div class="ind-name-row">
+        <span class="ind-name-label">Config Name</span>
+        <input type="text" id="pipeline-name" class="config-name-input" placeholder="Pipeline name">
+      </div>
+
+      <div id="pipeline-conf-dates" class="conf-dates"></div>
+
+      <div class="pipeline-stages">
+
+        <!-- Stage 1: Fetch -->
+        <div class="pipeline-stage-card">
+          <div class="pipeline-stage-head"><span class="pipeline-stage-num">1</span> Fetch</div>
+          <div class="pipeline-stage-body">
+            <div class="dash-field">
+              <label>Ticker List</label>
+              <div class="dash-field-right">
+                <select id="pipeline-ticker-list" title="Choose a ticker list to fetch"></select>
+                <span id="pipeline-ticker-list-count" class="dash-count" title="Number of tickers in this list"></span>
+              </div>
+            </div>
+            <div class="dash-field">
+              <label>Timeframes</label>
+              <div id="pipeline-tfs" class="dash-checks"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pipeline-stage-arrow">↓</div>
+
+        <!-- Stage 2: Indicators -->
+        <div class="pipeline-stage-card">
+          <div class="pipeline-stage-head"><span class="pipeline-stage-num">2</span> Indicators</div>
+          <div class="pipeline-stage-body">
+            <div class="dash-field">
+              <label>Indicator Config</label>
+              <div class="dash-field-right">
+                <select id="pipeline-ind-config" title="Choose an indicator config to compute"></select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pipeline-stage-arrow">↓</div>
+
+        <!-- Stage 3: Scan (optional — leave unset to just fetch + compute for viewing/testing) -->
+        <div class="pipeline-stage-card">
+          <div class="pipeline-stage-head"><span class="pipeline-stage-num">3</span> Scan <span class="pipeline-stage-optional">(optional)</span></div>
+          <div class="pipeline-stage-body">
+            <div class="dash-field">
+              <label>Scan Config</label>
+              <div class="dash-field-right">
+                <select id="pipeline-scan-config" title="Choose a scan config to run, or leave unset to stop after Indicators"></select>
+              </div>
+            </div>
+            <div id="pipeline-scan-hint" class="pipeline-derived"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: run + results + history ────────────────────── -->
+  <div class="pipeline-right">
+
+    <div class="pipeline-run-card">
+      <div class="ind-run-head">
+        <span>Run Pipeline</span>
+        <div class="ind-db-head-actions">
+          <button id="btn-run-refresh" class="dash-btn-sm" title="Refresh configs">↻</button>
+          <button id="btn-run-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear run status">Clear</button>
+          <button id="btn-run-pipeline" class="dash-btn-sm dash-btn-sm-launch" title="Run pipeline (R)">&#9654; Run</button>
+        </div>
+      </div>
+      <div class="pipeline-run-body">
+        <div id="pipeline-queue-bar" class="pipeline-queue-bar" style="display:none;">
+          <div class="pipeline-queue-head">
+            <span id="pipeline-queue-label">0 selected</span>
+            <button id="btn-run-queue" class="dash-btn-sm dash-btn-sm-launch" title="Run all checked pipelines in order">&#9654; Run Queue</button>
+          </div>
+          <div id="pipeline-queue-list" class="pipeline-queue-list"></div>
+        </div>
+
+        <div class="pipeline-stage-strip" id="pipeline-stage-strip">
+          <span class="pipeline-stage-chip" data-stage="fetch">Fetch</span>
+          <span class="pipeline-stage-chip-arrow">→</span>
+          <span class="pipeline-stage-chip" data-stage="indicators">Indicators</span>
+          <span class="pipeline-stage-chip-arrow">→</span>
+          <span class="pipeline-stage-chip" data-stage="scan">Scan</span>
+        </div>
+
+        <div class="ind-run-output-sep">
+          <div id="pipeline-output-idle" class="run-output-idle">Select a pipeline and hit &#9654; Run.</div>
+          <div class="ind-overall-section" id="pipeline-overall" style="display:none;">
+            <div class="ind-overall-header">
+              <span class="ind-overall-label" id="pipeline-stage-label">stage progress</span>
+              <span id="pipeline-run-total" class="run-queue-status"></span>
+            </div>
+            <div class="dash-progress">
+              <div id="pipeline-track" class="progress-track"><div id="pipeline-bar" class="progress-fill"></div></div>
+              <div id="pipeline-meta" class="progress-meta">
+                <span id="pipeline-count"   class="dash-count-text"></span>
+                <span id="pipeline-pct"     class="dash-pct"></span>
+                <span id="pipeline-current" class="dash-current"></span>
+                <span id="pipeline-errors"  class="dash-errors"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipeline-results-card">
+      <div class="ind-run-head">
+        <span>Scan Results <span id="pipeline-results-label" class="scan-results-count"></span></span>
+        <div class="ind-db-head-actions">
+          <button id="btn-open-chart" class="dash-btn-sm" title="Load results into chart page" style="display:none">Open in chart ↗</button>
+        </div>
+      </div>
+      <div class="pipeline-results-body">
+        <div id="pipeline-results-empty" class="scan-results-empty">Run the pipeline to see results.</div>
+        <div class="scan-table-wrap" id="pipeline-table-wrap" style="display:none;">
+          <table id="pipeline-table" class="scan-table"></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="pipeline-history">
+      <div class="ind-run-head">Pipeline History <div class="ind-db-head-actions"><button id="btn-history-refresh" class="dash-btn-sm" title="Refresh pipeline history">↻</button><button id="btn-history-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all pipeline history">Clear All</button></div></div>
+      <div class="scan-history-wrap">
+        <table class="scan-history-table">
+          <thead>
+            <tr>
+              <th>Pipeline</th>
+              <th>Fetched</th>
+              <th>Indicators</th>
+              <th>Matched</th>
+              <th>Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="pipeline-history-body">
+            <tr><td colspan="6" class="stats-empty">No history yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- .pipeline-right -->
+
+</div>
+
+<div id="pipeline-tooltip" class="ind-tooltip" style="display:none"></div>
+<script type="module" src="/static/js/pipeline.js"></script>
+</body>
+</html>

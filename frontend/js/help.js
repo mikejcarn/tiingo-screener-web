@@ -1,11 +1,11 @@
 // Shared keyboard-shortcuts help overlay — used by all pages.
-// Call initHelp('chart' | 'tickers' | 'indicators' | 'scanner') once per page.
+// Call initHelp('chart' | 'tickers' | 'indicators' | 'scanner' | 'pipeline') once per page.
 
 const _GLOBAL_ROWS = `
   <tr class="help-section help-section-global"><td colspan="2">Global — all pages</td></tr>
   <tr><td><kbd>/</kbd></td><td>Toggle light / dark theme</td></tr>
-  <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages forward / backward (tickers → indicators → scanner → chart)</td></tr>
-  <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>S</kbd> / <kbd>C</kbd></td><td>Jump to tickers / indicators / scanner / chart</td></tr>
+  <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages forward / backward (tickers → indicators → scanner → pipeline → chart)</td></tr>
+  <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>S</kbd> / <kbd>P</kbd> / <kbd>C</kbd></td><td>Jump to tickers / indicators / scanner / pipeline / chart</td></tr>
   <tr><td><kbd>?</kbd></td><td>Toggle this help panel</td></tr>
   <tr><td><kbd>-</kbd> / <kbd>=</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
   <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>`;
@@ -66,6 +66,20 @@ const _PAGES = [
       ${_GLOBAL_ROWS}
     </tbody></table>
     <div class="help-summary">The scanner page tests your ticker database against configurable criteria. Each scan config is linked to an indicator config, so criteria can reference both OHLCV data and computed indicators. Results can be opened directly in the chart page for bar-by-bar review.</div>`,
+  },
+  {
+    id: 'pipeline',
+    label: 'pipeline',
+    html: `<table class="help-table"><tbody>
+      <tr class="help-section"><td colspan="2">Pipeline Configs</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate pipelines</td></tr>
+      <tr><td><kbd>N</kbd></td><td>New pipeline</td></tr>
+      <tr><td><kbd>Ctrl+S</kbd></td><td>Save pipeline</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Delete pipeline</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run pipeline</td></tr>
+      ${_GLOBAL_ROWS}
+    </tbody></table>
+    <div class="help-summary">The pipeline page chains the other three pages into one run: fetch a ticker list, compute the indicator config linked to a chosen scan config, then run that scan — borrowing each stage's config rather than redefining it. Results and history are shared with the scanner page's own run plumbing.</div>`,
   },
   {
     id: 'chart',

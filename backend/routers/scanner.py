@@ -255,6 +255,7 @@ def delete_scan_config(config_id: int):
 
 class RunScanRequest(BaseModel):
     config_id: int
+    scope_ticker_list: Optional[str] = None  # restrict to tickers last fetched under this list name (e.g. from Pipeline)
 
 
 def _apply_criteria(df: pd.DataFrame, criteria_name: str, params: dict) -> pd.DataFrame:
@@ -310,15 +311,14 @@ def run_scan(req: RunScanRequest):
     criteria_list = [{"name": r[0], "timeframe": r[1], "params": json.loads(r[2]), "logic": r[3] or "AND"} for r in crit_rows]
     needed_tfs    = list({c["timeframe"] for c in criteria_list})
 
-    # Tickers: from indicator data (ind_conf mode) or OHLCV (tickers-only mode)
-    with db._conn() as con:
-        if ind_conf_id:
-            tickers = [r[0] for r in con.execute(
-                "SELECT DISTINCT ticker FROM indicators WHERE ind_conf=? ORDER BY ticker",
-                (ind_conf_id,)
-            ).fetchall()]
-        else:
-            tickers = db.list_tickers(ticker_list=ticker_list)
+    # Tickers: from indicator data (ind_conf mode) or OHLCV (tickers-only mode).
+    # scope_ticker_list further restricts ind_conf mode to tickers last fetched under
+    # that list name (e.g. a Pipeline run scoping the scan to just what it fetched) —
+    # only applied in ind_conf mode; tickers-only mode already has its own ticker_list.
+    if ind_conf_id:
+        tickers = db.list_tickers(ind_conf=ind_conf_id, ticker_list=req.scope_ticker_list)
+    else:
+        tickers = db.list_tickers(ticker_list=ticker_list)
 
     results = []
     for ticker in tickers:

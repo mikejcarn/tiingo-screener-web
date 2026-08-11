@@ -192,6 +192,7 @@ def indicator_columns(config_id: int):
 
 class BatchIndicatorsRequest(BaseModel):
     config_id: int
+    ticker_list: Optional[str] = None  # restrict to tickers last fetched under this list name (e.g. from Pipeline)
 
 
 @router.post("/indicators/batch")
@@ -213,7 +214,7 @@ def compute_indicators_batch(req: BatchIndicatorsRequest, background_tasks: Back
         config_name = r[0] if r else f'Config {req.config_id}'
 
         tfs = [TIMEFRAME_ALIASES.get(tf.lower(), tf.lower()) for tf in config_tfs]
-        pairs = [(ticker, tf) for tf in tfs for ticker in db.list_tickers(tf)]
+        pairs = [(ticker, tf) for tf in tfs for ticker in db.list_tickers(tf, ticker_list=req.ticker_list)]
         unique_tickers = len(set(t for t, _ in pairs))
         job_state.update('indicators', total=len(pairs))
 

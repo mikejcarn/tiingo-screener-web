@@ -108,6 +108,30 @@ CREATE TABLE IF NOT EXISTS scan_results (
     signals TEXT NOT NULL DEFAULT '{}',
     FOREIGN KEY (run_id) REFERENCES scan_log(id)
 );
+
+CREATE TABLE IF NOT EXISTS pipeline_configs (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    name           TEXT NOT NULL,
+    ticker_list    TEXT,
+    timeframes     TEXT NOT NULL DEFAULT '[]',
+    ind_conf_id    INTEGER,
+    scan_config_id INTEGER,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    config_id     INTEGER NOT NULL,
+    config_name   TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'done',
+    fetch_tickers INTEGER NOT NULL DEFAULT 0,
+    fetch_errors  INTEGER NOT NULL DEFAULT 0,
+    ind_tickers   INTEGER NOT NULL DEFAULT 0,
+    ind_errors    INTEGER NOT NULL DEFAULT 0,
+    scan_run_id   INTEGER,
+    ran_at        TEXT NOT NULL
+);
 """
 
 
@@ -122,6 +146,10 @@ def init_db() -> None:
         # Migrations
         try:
             con.execute("ALTER TABLE fetch_log ADD COLUMN ticker_list TEXT")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE pipeline_configs ADD COLUMN ind_conf_id INTEGER")
         except Exception:
             pass
         # Migrate old scan schema (scan_conditions) to new (scan_criteria)
@@ -512,6 +540,50 @@ def get_scan_history(limit: int = 30) -> list:
          'total': r[4], 'ran_at': r[5][:10]}
         for r in rows
     ]
+
+
+def log_pipeline_run(config_id: int, config_name: str, status: str,
+                     fetch_tickers: int = 0, fetch_errors: int = 0,
+                     ind_tickers: int = 0, ind_errors: int = 0,
+                     scan_run_id: Optional[int] = None) -> int:
+    from datetime import datetime
+    with _conn() as con:
+        cur = con.execute(
+            "INSERT INTO pipeline_log (config_id, config_name, status, fetch_tickers, fetch_errors, "
+            "ind_tickers, ind_errors, scan_run_id, ran_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (config_id, config_name, status, fetch_tickers, fetch_errors,
+             ind_tickers, ind_errors, scan_run_id, datetime.utcnow().isoformat())
+        )
+        return cur.lastrowid
+
+
+def get_pipeline_history(limit: int = 30) -> list:
+    # LEFT JOIN scan_log so matched/total are read live from the existing scan run
+    # rather than duplicated into pipeline_log.
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT p.id, p.config_id, p.config_name, p.status, p.fetch_tickers, p.fetch_errors, "
+            "p.ind_tickers, p.ind_errors, p.scan_run_id, p.ran_at, s.matched, s.total "
+            "FROM pipeline_log p LEFT JOIN scan_log s ON s.id = p.scan_run_id "
+            "ORDER BY p.ran_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [
+        {'id': r[0], 'config_id': r[1], 'config_name': r[2], 'status': r[3],
+         'fetch_tickers': r[4], 'fetch_errors': r[5], 'ind_tickers': r[6], 'ind_errors': r[7],
+         'scan_run_id': r[8], 'ran_at': r[9][:16].replace('T', ' '),
+         'scan_matched': r[10], 'scan_total': r[11]}
+        for r in rows
+    ]
+
+
+def delete_pipeline_run(run_id: int) -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM pipeline_log WHERE id=?", (run_id,))
+
+
+def clear_pipeline_history() -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM pipeline_log")
 
 
 def get_fetch_log(ticker: str, timeframe: str) -> Optional[dict]:

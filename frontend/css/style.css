@@ -1009,7 +1009,7 @@ body.dash {
 #chart-empty a:hover { color: rgba(var(--teal-rgb),1); text-decoration: underline; }
 
 /* ── Page header shared styles ────────────────────────────── */
-#dash-title, #ind-title, #scan-title {
+#dash-title, #ind-title, #scan-title, #pipeline-title {
   font-size: 13px;
   color: var(--t4);
 }
@@ -2375,3 +2375,288 @@ body.scan-page {
 /* Results */
 .scan-signal-cell { font-size: 11px; color: var(--t5); }
 .scan-result-row  { cursor: pointer; }
+
+/* ── Pipeline page ────────────────────────────────────────── */
+body.pipeline-page {
+  background: var(--c-bg);
+  color: var(--t8);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#pipeline-header {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-raised);
+  flex-shrink: 0;
+}
+
+.pipeline-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px;
+  gap: 12px;
+}
+
+/* ── Left sidebar ─────────────────────────────────────────── */
+#pipeline-list { flex: 1; overflow-y: auto; }
+
+.pipeline-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Centre main ──────────────────────────────────────────── */
+.pipeline-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+}
+
+#pipeline-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Stage picker cards, stacked vertically in the editor */
+.pipeline-stages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+}
+.pipeline-stage-card {
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-surface);
+  overflow: hidden;
+}
+.pipeline-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t7);
+  border-bottom: 1px solid var(--b1);
+}
+.pipeline-stage-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(var(--teal-rgb),0.15);
+  color: rgba(var(--teal-rgb),0.95);
+  flex-shrink: 0;
+}
+.pipeline-stage-body { padding: 10px 12px 12px; }
+.pipeline-stage-arrow {
+  text-align: center;
+  color: var(--t2);
+  font-size: 12px;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+.pipeline-derived {
+  font-size: 12px;
+  color: var(--t5);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.pipeline-select-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--t4);
+  cursor: pointer;
+}
+.pipeline-item-check {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.pipeline-stage-optional {
+  text-transform: none;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--t3);
+}
+
+/* ── Right column ─────────────────────────────────────────── */
+.pipeline-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Run card */
+.pipeline-run-card {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+}
+.pipeline-run-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 14px 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Batch queue — run several pipeline configs in a row */
+.pipeline-queue-bar {
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-surface);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+.pipeline-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+#pipeline-queue-label { font-size: 11px; color: var(--t5); }
+.pipeline-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.pipeline-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--t4);
+}
+.pipeline-queue-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--b4);
+}
+.pipeline-queue-row.running { color: var(--t7); }
+.pipeline-queue-row.running .pipeline-queue-dot { background: rgba(var(--teal-rgb),0.9); }
+.pipeline-queue-row.done { color: var(--t5); }
+.pipeline-queue-row.done .pipeline-queue-dot { background: var(--b4); }
+.pipeline-queue-row.error { color: rgba(var(--red-rgb),0.9); }
+.pipeline-queue-row.error .pipeline-queue-dot { background: rgba(var(--red-rgb),0.8); }
+
+/* Fetch → Indicators → Scan stage strip */
+.pipeline-stage-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 10px;
+  flex-shrink: 0;
+}
+.pipeline-stage-chip {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--b3);
+  color: var(--t3);
+  background: var(--c-ctrl);
+}
+.pipeline-stage-chip.active {
+  color: rgba(var(--teal-rgb),1);
+  border-color: rgba(var(--teal-rgb),0.6);
+  background: rgba(var(--teal-rgb),0.12);
+}
+.pipeline-stage-chip.done {
+  color: var(--t6);
+  border-color: var(--b4);
+  background: var(--c-surface);
+}
+.pipeline-stage-chip.errored {
+  color: rgba(var(--red-rgb),0.9);
+  border-color: rgba(var(--red-rgb),0.5);
+  background: rgba(var(--red-rgb),0.1);
+}
+.pipeline-stage-chip.skipped {
+  color: var(--t3);
+  border-color: var(--b2);
+  background: transparent;
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.pipeline-stage-chip-arrow { color: var(--t2); font-size: 11px; flex-shrink: 0; }
+
+/* Results card */
+.pipeline-results-card {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pipeline-results-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* History card */
+.pipeline-history {
+  height: 200px;
+  flex-shrink: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

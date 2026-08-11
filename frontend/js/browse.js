@@ -477,7 +477,7 @@ function _wireNav() {
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
     if (e.key === 'f' || e.key === 'F') { e.preventDefault(); _toggleFullscreen(); return; }
     if (e.key === '`') { e.preventDefault(); window.location.href = '/fetch'; return; }
-    if (e.key === '~') { e.preventDefault(); window.location.href = '/scanner'; return; }
+    if (e.key === '~') { e.preventDefault(); window.location.href = '/pipeline'; return; }
     if (isHelpVisible()) return;
     if (e.key === '\\') {
       e.preventDefault();
@@ -512,6 +512,7 @@ function _wireNav() {
     if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; return; }
     if (e.key === 'S' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; return; }
+    if (e.key === 'P' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/pipeline'; return; }
     if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       document.body.classList.add('fs-searching'); // reveal #nav (fullscreen hides it) before focusing — focus() no-ops on a display:none descendant
