@@ -57,12 +57,20 @@ const _PAGES = [
     id: 'scanner',
     label: 'scanner',
     html: `<table class="help-table"><tbody>
-      <tr class="help-section"><td colspan="2">Scan Configs</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate scan configs</td></tr>
+      <tr class="help-section"><td colspan="2">Scan Config List</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next scan config (wraps around)</td></tr>
       <tr><td><kbd>N</kbd></td><td>New scan config</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save scan config</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete scan config</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Run scan</td></tr>
+      <tr><td>▶ button &nbsp;or&nbsp; <kbd>Space</kbd> (no card focused)</td><td>Add / remove open config from the run queue</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run queued scan configs</td></tr>
+
+      <tr class="help-section"><td colspan="2">Timeframes</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
+
+      <tr class="help-section"><td colspan="2">Criteria Cards</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>-</kbd> / <kbd>=</kbd></td><td>Focus next / previous criteria card (wraps around)</td></tr>
+      <tr><td><kbd>Enter</kbd> &nbsp;or&nbsp; <kbd>Space</kbd> (card focused)</td><td>Select / deselect the focused criteria card (also opens / closes it)</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
     <div class="help-summary">The scanner page tests your ticker database against configurable criteria. Each scan config is linked to an indicator config, so criteria can reference both OHLCV data and computed indicators. Results can be opened directly in the chart page for bar-by-bar review.</div>`,
@@ -71,15 +79,20 @@ const _PAGES = [
     id: 'pipeline',
     label: 'pipeline',
     html: `<table class="help-table"><tbody>
-      <tr class="help-section"><td colspan="2">Pipeline Configs</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate pipelines</td></tr>
+      <tr class="help-section"><td colspan="2">Pipeline List</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next pipeline (wraps around)</td></tr>
       <tr><td><kbd>N</kbd></td><td>New pipeline</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save pipeline</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete pipeline</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Run pipeline</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Add / remove open pipeline from the run queue</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run queued pipelines</td></tr>
+
+      <tr class="help-section"><td colspan="2">Stage Cards (Fetch / Indicators / Scan)</td></tr>
+      <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Focus next / previous stage card (wraps around)</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Open the focused stage's config selector — arrow keys / typing change it directly</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
-    <div class="help-summary">The pipeline page chains the other three pages into one run: fetch a ticker list, compute the indicator config linked to a chosen scan config, then run that scan — borrowing each stage's config rather than redefining it. Results and history are shared with the scanner page's own run plumbing.</div>`,
+    <div class="help-summary">The pipeline page chains Fetch, Indicators, and Scan into one run: fetch a ticker list, compute an indicator config, then optionally run a scan filtered to that indicator config — reusing each stage's config from the other pages rather than redefining it. Several pipelines can be queued (▶ button or Space) and run in order; queued pipelines that share the same ticker list and timeframes only fetch once.</div>`,
   },
   {
     id: 'chart',
@@ -89,7 +102,7 @@ const _PAGES = [
       <tr><td><kbd>Space</kbd></td><td>Play / pause (rewinds to start if at last bar)</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step one bar backward / forward</td></tr>
       <tr><td><kbd>Shift+←</kbd> <kbd>Shift+→</kbd></td><td>Jump 20 bars</td></tr>
-      <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>First bar / last bar</td></tr>
+      <tr><td><kbd>Home</kbd> <kbd>End</kbd> &nbsp;or&nbsp; <kbd>Ctrl+←</kbd> <kbd>Ctrl+→</kbd></td><td>First bar / last bar</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Increase / decrease playback FPS</td></tr>
       <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles in view)</td></tr>
       <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
@@ -103,8 +116,8 @@ const _PAGES = [
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>
-      <tr><td><kbd>'</kbd> / <kbd>;</kbd></td><td>Previous / next indicator config</td></tr>
-      <tr><td><kbd>{</kbd> / <kbd>}</kbd> &nbsp;or&nbsp; <kbd>:</kbd></td><td>Previous / next indicator config (alt)</td></tr>
+      <tr><td><kbd>'</kbd> / <kbd>;</kbd> &nbsp;or&nbsp; <kbd>:</kbd> (prev only)</td><td>Previous / next indicator config</td></tr>
+      <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next scan result</td></tr>
       <tr><td><kbd>Shift+↑</kbd> / <kbd>Shift+↓</kbd></td><td>Increase / decrease min bars filter by 100</td></tr>
       <tr><td>Any lowercase letter</td><td>Focus ticker search input</td></tr>
 

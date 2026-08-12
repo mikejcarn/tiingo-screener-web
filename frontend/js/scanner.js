@@ -251,6 +251,7 @@ function _renderList() {
     const item = document.createElement('div');
     item.className = 'ind-config-item' + (cfg.id === _activeId ? ' active' : '') + (queued ? ' queued' : '');
     item.dataset.id = cfg.id;
+    item.title = 'Open config — _ next · + prev (wraps around)';
     const info = document.createElement('div');
     info.className = 'ind-config-info';
     const name = document.createElement('div');
@@ -261,21 +262,28 @@ function _renderList() {
     const qBtn = document.createElement('button');
     qBtn.className = 'ind-queue-btn' + (queued ? ' queued' : '');
     qBtn.dataset.id = cfg.id;
-    qBtn.title = queued ? 'Remove from run queue' : 'Add to run queue';
+    qBtn.title = queued ? 'Remove from run queue (Space)' : 'Add to run queue (Space)';
     qBtn.textContent = '▶';
     item.append(info, qBtn);
     item.addEventListener('click', e => { if (!e.target.closest('.ind-queue-btn')) _selectConfig(cfg.id); });
-    qBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      const id = +qBtn.dataset.id;
-      if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
-      else _runCheckedIds.add(id);
-      _saveRunQueue();
-      _renderList();
-      _renderRunConfigs();
-    });
+    qBtn.addEventListener('click', e => { e.stopPropagation(); _toggleQueued(+qBtn.dataset.id); });
     el.appendChild(item);
   }
+}
+
+function _toggleQueued(id) {
+  if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
+  else _runCheckedIds.add(id);
+  _saveRunQueue();
+  _renderList();
+  _renderRunConfigs();
+}
+
+function _cycleConfig(dir) {
+  if (!_configs.length) return;
+  const cur  = _configs.findIndex(c => c.id === _activeId);
+  const next = (cur + dir + _configs.length) % _configs.length;
+  _selectConfig(_configs[next].id);
 }
 
 async function _selectConfig(id) {
@@ -606,13 +614,11 @@ function _moveCritFocus(dir) {
   _syncFocus();
 }
 
+// Enter selects/deselects the focused card AND opens/closes it in one action —
+// mirrors clicking the card head (outside the checkbox/logic-switch): toggling
+// the checkbox already drives collapse/expand + the arrow via its 'change' handler.
 function _toggleFocusedCard() {
-  const card = document.querySelector('.scan-crit-card.kb-focused');
-  if (!card) return;
-  const body  = card.querySelector('.ind-card-body');
-  const arrow = card.querySelector('.ind-expand-arrow');
-  body.classList.toggle('collapsed');
-  arrow.textContent = body.classList.contains('collapsed') ? '▸' : '▾';
+  _toggleFocusedCheck();
 }
 
 function _toggleFocusedCheck() {
@@ -981,6 +987,15 @@ function _wireGlobal() {
 
     if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveScan(); return; }
 
+    // Universal Esc reset — leave whatever input/select is focused so page-level
+    // shortcuts (nav, N/D/R, etc.) work again without needing a stray click first.
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      _setCritFocus(-1);
+      document.activeElement?.blur();
+      return;
+    }
+
     if (inInput) return;
 
     if (e.key === 'N' && !ctrl) { e.preventDefault(); document.getElementById('btn-new-scan').click(); }
@@ -992,14 +1007,9 @@ function _wireGlobal() {
     if (e.key === 'S' && !ctrl) { e.preventDefault(); window.location.href = '/scanner'; }
     if (e.key === 'P' && !ctrl) { e.preventDefault(); window.location.href = '/pipeline'; }
 
-    if (e.key === '=') {
-      const i = _configs.findIndex(c => c.id === _activeId);
-      if (i > 0) _selectConfig(_configs[i - 1].id);
-    }
-    if (e.key === '-') {
-      const i = _configs.findIndex(c => c.id === _activeId);
-      if (i >= 0 && i < _configs.length - 1) _selectConfig(_configs[i + 1].id);
-    }
+    // _/+ cycle saved scan configs (matches Indicators/Pipeline, wraps around).
+    if (e.key === '_') { e.preventDefault(); _cycleConfig(1); }
+    if (e.key === '+') { e.preventDefault(); _cycleConfig(-1); }
 
     // [ / ] cycle timeframe tabs
     if (e.key === '[') {
@@ -1011,9 +1021,18 @@ function _wireGlobal() {
       if (i < _FIXED_TFS.length - 1) _setActiveTf(_FIXED_TFS[i + 1]);
     }
 
-    if (e.key === 'ArrowUp')   { e.preventDefault(); _moveCritFocus(-1); }
-    if (e.key === 'ArrowDown') { e.preventDefault(); _moveCritFocus(1); }
+    // -/= (redundant with ArrowUp/ArrowDown) cycle keyboard focus between the
+    // criteria cards of the open config — matches Pipeline's stage-card keys.
+    if (e.key === 'ArrowUp'   || e.key === '=') { e.preventDefault(); _moveCritFocus(-1); }
+    if (e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); _moveCritFocus(1); }
     if (e.key === 'Enter')     { e.preventDefault(); _toggleFocusedCard(); }
-    if (e.key === ' ')         { e.preventDefault(); _toggleFocusedCheck(); }
+    // Space toggles the focused criteria card's checkbox when one is kb-focused
+    // (-/=/arrows); otherwise it queues/dequeues the open scan config for a run
+    // (matches Indicators/Pipeline's Space-to-queue convention).
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (_focusedIdx >= 0) _toggleFocusedCheck();
+      else if (_activeId) _toggleQueued(_activeId);
+    }
   });
 }

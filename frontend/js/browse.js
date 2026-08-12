@@ -502,8 +502,8 @@ function _wireNav() {
     if (e.key === ']' ) { e.preventDefault(); _cycleSelect(tfSelect,     1); }
     if (e.key === 'ArrowUp'   && e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); _stepMinBars(1);  return; }
     if (e.key === 'ArrowDown' && e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); _stepMinBars(-1); return; }
-    if (e.key === '{' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
-    if (e.key === '}' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
+    if (e.key === '{' ) { e.preventDefault(); _cycleSelect(scanSelect,  -1); }
+    if (e.key === '}' ) { e.preventDefault(); _cycleSelect(scanSelect,   1); }
     if (e.key === ':' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
     if (e.key === ';' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
     if (e.key === "'")  { e.preventDefault(); _cycleSelect(confSelect,  -1); }

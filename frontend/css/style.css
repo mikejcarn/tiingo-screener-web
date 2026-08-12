@@ -1402,7 +1402,10 @@ body.ind-page {
   background: var(--c-ctrl);
   box-shadow: inset 2px 0 0 var(--b6);
 }
-.scan-crit-card.kb-focused > .ind-card-head { box-shadow: none; background: unset; }
+.pipeline-stage-card.kb-focused > .pipeline-stage-head {
+  background: var(--c-ctrl);
+  box-shadow: inset 2px 0 0 var(--b6);
+}
 
 .param-field {
   display: flex;
@@ -1632,6 +1635,17 @@ body.ind-page {
 .run-queue-td-del  { padding: 4px 6px 4px 0; white-space: nowrap; width: 1%; }
 .run-queue-name-row { display: flex; align-items: center; gap: 6px; }
 .run-queue-name    { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t7); font-size: 12px; }
+/* Div-based queue item variant (Scanner / Pipeline) — table variant above is Indicators' */
+div.run-queue-item {
+  background: rgba(var(--teal-rgb), 0.11);
+  border-radius: 3px;
+  padding: 5px 6px 4px;
+  margin-bottom: 3px;
+}
+div.run-queue-item:last-child { margin-bottom: 0; }
+.run-queue-header { display: flex; align-items: center; gap: 6px; }
+.run-queue-header .run-queue-name { flex: 1; min-width: 0; }
+.run-queue-pos { font-size: 11px; color: var(--t2); flex-shrink: 0; min-width: 14px; text-align: right; }
 .run-queue-remove  { background: none; border: none; color: var(--t3); cursor: pointer; font-size: 14px; padding: 1px 4px; line-height: 1; }
 .run-queue-remove:hover { color: #e05; background: none; }
 .run-queue-detail  { padding-left: 2px; display: flex; flex-direction: column; gap: 2px; }
@@ -2492,18 +2506,6 @@ body.pipeline-page {
   line-height: 1.5;
   margin-top: 6px;
 }
-.pipeline-select-all {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--t4);
-  cursor: pointer;
-}
-.pipeline-item-check {
-  flex-shrink: 0;
-  cursor: pointer;
-}
 .pipeline-stage-optional {
   text-transform: none;
   font-weight: 400;
@@ -2540,50 +2542,6 @@ body.pipeline-page {
   display: flex;
   flex-direction: column;
 }
-
-/* Batch queue — run several pipeline configs in a row */
-.pipeline-queue-bar {
-  border: 1px solid var(--b2);
-  border-radius: 4px;
-  background: var(--c-surface);
-  padding: 8px 10px;
-  margin-bottom: 10px;
-  flex-shrink: 0;
-}
-.pipeline-queue-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-#pipeline-queue-label { font-size: 11px; color: var(--t5); }
-.pipeline-queue-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 8px;
-  max-height: 120px;
-  overflow-y: auto;
-}
-.pipeline-queue-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--t4);
-}
-.pipeline-queue-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--b4);
-}
-.pipeline-queue-row.running { color: var(--t7); }
-.pipeline-queue-row.running .pipeline-queue-dot { background: rgba(var(--teal-rgb),0.9); }
-.pipeline-queue-row.done { color: var(--t5); }
-.pipeline-queue-row.done .pipeline-queue-dot { background: var(--b4); }
-.pipeline-queue-row.error { color: rgba(var(--red-rgb),0.9); }
-.pipeline-queue-row.error .pipeline-queue-dot { background: rgba(var(--red-rgb),0.8); }
 
 /* Fetch → Indicators → Scan stage strip */
 .pipeline-stage-strip {

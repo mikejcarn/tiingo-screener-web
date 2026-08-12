@@ -10,12 +10,17 @@
  * if no scan config is selected. The Scan dropdown is filtered to configs
  * compatible with the chosen indicator config (linked to it, or ticker-only).
  *
- * Multiple pipelines can be checked in the sidebar and run as a queue
- * (_startQueueRun/_runQueueItem/_afterPipelineFinished): they run one at a
- * time in the same tab session. Queued pipelines that share an identical
- * (ticker_list, timeframes) fetch signature only fetch once — later ones
- * reuse the first fetch's result (_queueFetchSummaries) instead of re-hitting
+ * The sidebar/run-queue UI follows the Indicators and Scanner pages'
+ * convention: each config row has a ▶ button (Space to toggle) that adds it
+ * to a run queue shown in the Run card; the single ▶ Run button always runs
+ * whatever's queued (_startRun/_kickQueueItem/_afterPipelineFinished), one
+ * pipeline at a time. Queued pipelines that share an identical
+ * (ticker_list, timeframes) fetch signature only fetch once per run — later
+ * ones reuse the first fetch's result (_fetchSigCache) instead of re-hitting
  * the Tiingo API for tickers a prior pipeline in the same run already pulled.
+ * A stage failure aborts the rest of the queue (matching indicators.js/
+ * scanner.js) but never alert()s — a blocking dialog would freeze the tab
+ * mid-poll — the failure just shows inline in that pipeline's queue row.
  */
 import { api }       from './api.js';
 import { initHelp }  from './help.js';
@@ -39,14 +44,12 @@ let _lastResults  = null; // last scan results array, for "open in chart"
 let _fetchSummary = { tickers: 0, errors: 0 };
 let _indSummary   = { tickers: 0, errors: 0 };
 
-// ── Queue (run several pipeline configs in a row) ───────────────
-let _queueSelected = new Set();   // config ids checked in the sidebar
-let _queueIds      = [];          // ordered ids for the run currently in progress (or last run)
-let _queuePos       = -1;         // -1 idle, else index into _queueIds
-let _queueStatus    = new Map();  // id -> 'pending' | 'running' | 'done' | 'error'
-let _queueFetchSummaries = new Map(); // fetch signature -> {tickers, errors}, so a shared fetch is only run once
-let _running = false; // true from the moment any run/queue kicks off until it fully finishes — covers the
-                       // synchronous scan/run await too, where _pollTimer is briefly null but a run is still live
+// ── Run queue (queue several pipeline configs, run them one after another) ──
+let _runCheckedIds = new Set();   // config ids queued via the ▶ button — persisted like the other pages
+let _runQueue       = [];         // ordered ids for the run currently in progress
+let _runQueueIdx    = -1;         // -1 idle, else index into _runQueue
+let _runResults     = {};         // id -> {status:'pending'|'running'|'done'|'error', stage?, error?, scanMatched?, scanTotal?}
+let _fetchSigCache  = new Map();  // fetch signature -> {tickers, errors}, shared within one run
 
 // ── Init ──────────────────────────────────────────────────────
 (async function init() {
@@ -153,15 +156,25 @@ function _updateScanHint(compatibleCount) {
   }
 }
 
+// ── Run queue persistence ────────────────────────────────────
+function _saveRunQueue() {
+  try { localStorage.setItem('pipeline_run_queue', JSON.stringify([..._runCheckedIds])); } catch {}
+}
+function _loadRunQueue() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('pipeline_run_queue') || '[]');
+    const valid = new Set(_configs.map(c => c.id));
+    _runCheckedIds = new Set(saved.filter(id => valid.has(id)));
+  } catch { _runCheckedIds = new Set(); }
+}
+
 // ── Pipeline config list ─────────────────────────────────────
 async function _loadConfigs() {
   const data = await api.get('/api/pipeline-configs');
   _configs = data.configs || [];
-  for (const id of [..._queueSelected]) {
-    if (!_configs.some(c => c.id === id)) _queueSelected.delete(id);
-  }
+  _loadRunQueue();   // restore queued pipelines before first render
   _renderList();
-  _updateQueueBar();
+  _renderRunConfigs();
   let restoreId = null;
   try { restoreId = parseInt(localStorage.getItem('pipeline_selected_config_id')); } catch {}
   const target = (_configs.some(c => c.id === restoreId) ? restoreId : _configs[0]?.id) || null;
@@ -177,21 +190,11 @@ function _renderList() {
   if (!_configs.length) { el.innerHTML = '<div class="ind-loading">No pipelines yet.</div>'; return; }
   el.innerHTML = '';
   for (const cfg of _configs) {
+    const queued = _runCheckedIds.has(cfg.id);
     const item = document.createElement('div');
-    item.className = 'ind-config-item' + (cfg.id === _activeId ? ' active' : '');
+    item.className = 'ind-config-item' + (cfg.id === _activeId ? ' active' : '') + (queued ? ' queued' : '');
     item.dataset.id = cfg.id;
-    const check = document.createElement('input');
-    check.type = 'checkbox';
-    check.className = 'pipeline-item-check';
-    check.title = 'Queue this pipeline for a batch run';
-    check.checked = _queueSelected.has(cfg.id);
-    check.addEventListener('click', e => e.stopPropagation());
-    check.addEventListener('change', () => {
-      if (check.checked) _queueSelected.add(cfg.id); else _queueSelected.delete(cfg.id);
-      _syncSelectAllCheck();
-      _updateQueueBar();
-    });
-    item.appendChild(check);
+    item.title = 'Open config — _ next · + prev (wraps around)';
     const info = document.createElement('div');
     info.className = 'ind-config-info';
     const name = document.createElement('div');
@@ -199,17 +202,100 @@ function _renderList() {
     const sub = document.createElement('div');
     sub.className = 'ind-config-date'; sub.textContent = cfg.updated_at ? cfg.updated_at.slice(0, 10) : '';
     info.append(name, sub);
-    item.appendChild(info);
-    item.addEventListener('click', () => _selectConfig(cfg.id));
+    const qBtn = document.createElement('button');
+    qBtn.className = 'ind-queue-btn' + (queued ? ' queued' : '');
+    qBtn.dataset.id = cfg.id;
+    qBtn.title = queued ? 'Remove from run queue (Space)' : 'Add to run queue (Space)';
+    qBtn.textContent = '▶';
+    item.append(info, qBtn);
+    item.addEventListener('click', e => { if (!e.target.closest('.ind-queue-btn')) _selectConfig(cfg.id); });
+    qBtn.addEventListener('click', e => { e.stopPropagation(); _toggleQueued(cfg.id); });
     el.appendChild(item);
   }
-  _syncSelectAllCheck();
 }
 
-function _syncSelectAllCheck() {
-  const allCb = document.getElementById('pipeline-select-all');
-  if (!allCb) return;
-  allCb.checked = _configs.length > 0 && _configs.every(c => _queueSelected.has(c.id));
+function _toggleQueued(id) {
+  if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
+  else _runCheckedIds.add(id);
+  _saveRunQueue();
+  _renderList();
+  _renderRunConfigs();
+}
+
+function _renderRunConfigs() {
+  const el = document.getElementById('pipeline-run-conf-list');
+  if (!el) return;
+  const queued = _configs.filter(c => _runCheckedIds.has(c.id));
+  const inRun  = _runQueueIdx >= 0;
+  if (!queued.length) {
+    el.innerHTML = '<div class="run-queue-empty">No pipelines queued — click ▶ to add</div>';
+    return;
+  }
+  el.innerHTML = queued.map((c, i) => {
+    const result = _runResults[c.id];
+    let statusHtml = '';
+    if (result) {
+      if (result.status === 'pending') {
+        statusHtml = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
+      } else if (result.status === 'running') {
+        const label = { fetch: 'fetching…', indicators: 'computing…', scan: 'scanning…' }[result.stage] || 'running…';
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:100%"></div></div>
+                      <div class="rq-info"><span class="rq-state rq-running">${label}</span></div>`;
+      } else if (result.status === 'done') {
+        const countText = result.scanTotal != null ? `${result.scanMatched} / ${result.scanTotal} matched` : 'indicators computed';
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-done" style="width:100%"></div></div>
+                      <div class="rq-info"><span class="rq-state rq-done">✓ done</span><span class="rq-count">${_esc(countText)}</span></div>`;
+      } else if (result.status === 'error') {
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-errors" style="width:100%"></div></div>
+                      <div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(result.error || 'error')}</span></div>`;
+      }
+    }
+    return `<div class="run-queue-item">
+      <div class="run-queue-header">
+        <span class="run-queue-pos">${i + 1}</span>
+        <span class="run-queue-name">${_esc(c.name)}</span>
+        <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''} title="Remove from queue">×</button>
+      </div>
+      <div class="rq-status">${statusHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function _cycleConfig(dir) {
+  if (!_configs.length) return;
+  const cur  = _configs.findIndex(c => c.id === _activeId);
+  const next = (cur + dir + _configs.length) % _configs.length;
+  _selectConfig(_configs[next].id);
+}
+
+// ── Stage-card keyboard focus (-/= cycle Fetch/Indicators/Scan, Enter opens) ──
+const _STAGE_ORDER = ['fetch', 'indicators', 'scan'];
+const _STAGE_FIELD  = { fetch: 'pipeline-ticker-list', indicators: 'pipeline-ind-config', scan: 'pipeline-scan-config' };
+let _focusedStage = null; // 'fetch' | 'indicators' | 'scan' | null
+
+function _setStageFocus(stage) {
+  document.querySelector('.pipeline-stage-card.kb-focused')?.classList.remove('kb-focused');
+  _focusedStage = stage || null;
+  if (!_focusedStage) return;
+  const card = document.querySelector(`.pipeline-stage-card[data-stage="${_focusedStage}"]`);
+  if (card) { card.classList.add('kb-focused'); card.scrollIntoView({ block: 'nearest' }); }
+}
+
+function _moveStageFocus(dir) {
+  const cur  = _focusedStage ? _STAGE_ORDER.indexOf(_focusedStage) : -1;
+  const next = (cur + dir + _STAGE_ORDER.length) % _STAGE_ORDER.length;
+  _setStageFocus(_STAGE_ORDER[next]);
+}
+
+// Focuses the kb-focused stage's primary control and opens it — plain .focus()
+// moves keyboard focus but doesn't visually pop a <select>'s option list open,
+// so it looks like nothing happened; showPicker() actually opens it.
+function _activateFocusedStage() {
+  if (!_focusedStage) return;
+  const el = document.getElementById(_STAGE_FIELD[_focusedStage]);
+  if (!el) return;
+  el.focus();
+  try { el.showPicker?.(); } catch {}
 }
 
 async function _selectConfig(id) {
@@ -217,6 +303,7 @@ async function _selectConfig(id) {
   _activeId = id; _dirty = false;
   try { localStorage.setItem('pipeline_selected_config_id', id); } catch {}
   _renderList();
+  _setStageFocus(null);
   const cfg = await api.get(`/api/pipeline-configs/${id}`);
   _showEmpty(false);
   _populateEditorFields(cfg);
@@ -241,6 +328,7 @@ async function _queueDisplayConfig(id) {
   _activeId = id; _dirty = false;
   try { localStorage.setItem('pipeline_selected_config_id', id); } catch {}
   _renderList();
+  _setStageFocus(null);
   const cfg = await api.get(`/api/pipeline-configs/${id}`);
   _showEmpty(false);
   _populateEditorFields(cfg);
@@ -276,10 +364,12 @@ async function _deleteConfig() {
   if (!confirm(`Delete "${cfg?.name || 'this pipeline'}"? This cannot be undone.`)) return;
   await api.del(`/api/pipeline-configs/${_activeId}`);
   _configs = _configs.filter(c => c.id !== _activeId);
-  _queueSelected.delete(_activeId);
+  _runCheckedIds.delete(_activeId);
+  delete _runResults[_activeId];
+  _saveRunQueue();
   _activeId = null;
   _renderList();
-  _updateQueueBar();
+  _renderRunConfigs();
   if (_configs.length) {
     await _selectConfig(_configs[0].id);
   } else {
@@ -323,131 +413,89 @@ function _resetRun() {
   document.querySelectorAll('.pipeline-stage-chip').forEach(c => c.classList.remove('active', 'done', 'errored', 'skipped'));
   document.getElementById('pipeline-overall').style.display = 'none';
   document.getElementById('pipeline-output-idle').style.display = '';
-  const btn = document.getElementById('btn-run-pipeline');
-  btn.disabled = false; btn.textContent = '▶ Run';
 }
 
 function _isRunning() {
-  return _running;
+  return _runQueueIdx >= 0;
 }
 
+// The single ▶ Run button always runs whatever's queued (matching Indicators/
+// Scanner) — queue at least one pipeline with its ▶ button or Space first.
 async function _startRun() {
-  if (!_activeId) return;
-  if (_isRunning()) { alert('A run is already in progress.'); return; }
-  const cfg = _configs.find(c => c.id === _activeId);
-  if (!cfg?.ticker_list) { alert('Select a ticker list before running.'); return; }
-  if (!_getCheckedTfs().length) { alert('Select at least one timeframe before running.'); return; }
-  if (!cfg?.ind_conf_id) { alert('Select an indicator config before running.'); return; }
-
-  _running = true;
-  _resetRun();
-  _clearResults();
+  if (_isRunning()) return;
+  const ids = _configs.filter(c => _runCheckedIds.has(c.id)).map(c => c.id);
+  if (!ids.length) return;
+  for (const id of ids) {
+    const cfg = _configs.find(c => c.id === id);
+    if (!cfg.ticker_list || !(cfg.timeframes || []).length || !cfg.ind_conf_id) {
+      alert(`Pipeline "${cfg.name}" is missing a ticker list, timeframe, or indicator config — fix it before running.`);
+      return;
+    }
+  }
+  _runQueue    = ids;
+  _runQueueIdx = 0;
+  _runResults  = {};
+  for (const id of _runQueue) _runResults[id] = { status: 'pending' };
+  _fetchSigCache = new Map();
   document.getElementById('btn-run-pipeline').disabled = true;
-  document.getElementById('btn-run-queue').disabled = true;
-  await _kickFetchStage();
+  _renderRunConfigs();
+  await _kickQueueItem();
 }
 
 // A fetch signature identifies "what fetch/batch would do" for a pipeline —
-// pipelines that share one only need that fetch run once per queue run.
+// pipelines that share one only need that fetch run once per run.
 function _fetchSignature(cfg) {
   return `${cfg.ticker_list}|${[...(cfg.timeframes || [])].sort().join(',')}`;
 }
 
-function _updateQueueBar() {
-  const bar   = document.getElementById('pipeline-queue-bar');
-  const label = document.getElementById('pipeline-queue-label');
-  const btn   = document.getElementById('btn-run-queue');
-  const n = _queueSelected.size;
-  bar.style.display = n > 0 ? '' : 'none';
-  if (_queuePos < 0) {
-    label.textContent = `${n} pipeline${n === 1 ? '' : 's'} selected`;
-    btn.disabled = n === 0 || _isRunning();
-  }
-}
-
-function _renderQueueList() {
-  const el = document.getElementById('pipeline-queue-list');
-  el.innerHTML = _queueIds.map(id => {
-    const cfg = _configs.find(c => c.id === id);
-    const status = _queueStatus.get(id) || 'pending';
-    return `<div class="pipeline-queue-row ${status}"><span class="pipeline-queue-dot"></span>${_esc(cfg?.name || `#${id}`)}</div>`;
-  }).join('');
-}
-
-function _markQueueItem(status) {
-  if (_queuePos < 0) return;
-  _queueStatus.set(_queueIds[_queuePos], status);
-  _renderQueueList();
-}
-
-async function _startQueueRun() {
-  if (_queueSelected.size === 0) return;
-  if (_isRunning()) { alert('A run is already in progress.'); return; }
-  const ids = _configs.filter(c => _queueSelected.has(c.id)).map(c => c.id);
-  for (const id of ids) {
-    const cfg = _configs.find(c => c.id === id);
-    if (!cfg.ticker_list || !(cfg.timeframes || []).length || !cfg.ind_conf_id) {
-      alert(`Pipeline "${cfg.name}" is missing a ticker list, timeframe, or indicator config — fix it before running the queue.`);
-      return;
-    }
-  }
-  _queueIds = ids;
-  _queueStatus = new Map(ids.map(id => [id, 'pending']));
-  _queueFetchSummaries = new Map();
-  _queuePos = 0;
-  _running = true;
-  document.getElementById('btn-run-pipeline').disabled = true;
-  document.getElementById('btn-run-queue').disabled = true;
-  _renderQueueList();
-  await _runQueueItem();
-}
-
-async function _runQueueItem() {
-  const id = _queueIds[_queuePos];
-  _markQueueItem('running');
-  document.getElementById('pipeline-queue-label').textContent = `Running ${_queuePos + 1} / ${_queueIds.length}`;
+async function _kickQueueItem() {
+  const id = _runQueue[_runQueueIdx];
+  _runResults[id] = { status: 'running', stage: 'fetch' };
+  _renderRunConfigs();
   await _queueDisplayConfig(id);
   _clearResults();
   _resetRun();
   document.getElementById('btn-run-pipeline').disabled = true;
-  document.getElementById('btn-run-queue').disabled = true;
   await _kickFetchStage();
 }
 
-// Called after a pipeline's run reaches a terminal state (done or errored).
-// Advances the queue if one is active, otherwise just re-enables the controls.
+// Called after a pipeline's run reaches a terminal state (done). Advances to
+// the next queued pipeline, or finishes the run if that was the last one.
 async function _afterPipelineFinished() {
-  if (_queuePos < 0) {
-    _running = false;
-    document.getElementById('btn-run-pipeline').disabled = false;
-    document.getElementById('btn-run-queue').disabled = _queueSelected.size === 0;
-    return;
-  }
-  _queuePos++;
-  if (_queuePos < _queueIds.length) {
-    await _runQueueItem();
+  _runQueueIdx++;
+  if (_runQueueIdx < _runQueue.length) {
+    await _kickQueueItem();
   } else {
-    _finishQueue();
+    _finishQueueRun();
   }
 }
 
-function _finishQueue() {
-  const n = _queueIds.length;
-  _queuePos = -1;
-  _running = false;
+function _finishQueueRun() {
+  _runQueue    = [];
+  _runQueueIdx = -1;
   document.getElementById('btn-run-pipeline').disabled = false;
-  document.getElementById('btn-run-queue').disabled = _queueSelected.size === 0;
-  document.getElementById('pipeline-queue-label').textContent = `Queue finished — ${n} pipeline${n === 1 ? '' : 's'} run`;
+  _renderRunConfigs();
   _loadHistory();
 }
 
+// A stage failure aborts the rest of the run (matching Indicators/Scanner) —
+// remaining queued pipelines stay queued (_runCheckedIds is untouched) so the
+// user can inspect the error and hit Run again once it's fixed.
+function _abortQueue(id, msg) {
+  if (_runResults[id]) _runResults[id] = { status: 'error', error: msg };
+  _runQueue    = [];
+  _runQueueIdx = -1;
+  document.getElementById('btn-run-pipeline').disabled = false;
+  _renderRunConfigs();
+}
+
 function _clearRun() {
-  _queuePos = -1;
-  _running = false;
-  _queueStatus = new Map(_queueIds.map(id => [id, 'pending']));
-  _resetRun();
-  _updateQueueBar();
-  _renderQueueList();
+  if (_isRunning()) return;
+  _runCheckedIds.clear();
+  _runResults = {};
+  _saveRunQueue();
+  _renderList();
+  _renderRunConfigs();
 }
 
 function _setStage(idx, extraClass) {
@@ -465,11 +513,11 @@ async function _kickFetchStage() {
   const cfg = _configs.find(c => c.id === _activeId);
   const sig = _fetchSignature(cfg);
 
-  // In a queue run, skip re-fetching a ticker_list/timeframes combo another
-  // queued pipeline already fetched this run — go straight to Indicators.
-  if (_queuePos >= 0 && _queueFetchSummaries.has(sig)) {
+  // Skip re-fetching a ticker_list/timeframes combo another queued pipeline
+  // already fetched this run — go straight to Indicators.
+  if (_fetchSigCache.has(sig)) {
     _setStage(0, 'done');
-    _fetchSummary = _queueFetchSummaries.get(sig);
+    _fetchSummary = _fetchSigCache.get(sig);
     document.getElementById('pipeline-stage-label').textContent = 'fetch skipped — shared with an earlier pipeline this run';
     await _kickIndStage(cfg.ind_conf_id);
     return;
@@ -487,6 +535,8 @@ async function _kickFetchStage() {
 
 async function _kickIndStage(indConfId) {
   _setStage(1);
+  _runResults[_activeId] = { ..._runResults[_activeId], status: 'running', stage: 'indicators' };
+  _renderRunConfigs();
   const cfg = _configs.find(c => c.id === _activeId);
   try {
     await api.post('/api/indicators/batch', { config_id: indConfId, ticker_list: cfg.ticker_list });
@@ -499,6 +549,8 @@ async function _kickIndStage(indConfId) {
 
 async function _kickScanStage() {
   _setStage(2);
+  _runResults[_activeId] = { ..._runResults[_activeId], status: 'running', stage: 'scan' };
+  _renderRunConfigs();
   const cfg = _configs.find(c => c.id === _activeId);
   document.getElementById('pipeline-overall').style.display = 'none';
   document.getElementById('pipeline-output-idle').style.display = '';
@@ -515,8 +567,9 @@ async function _kickScanStage() {
       ind_tickers: _indSummary.tickers, ind_errors: _indSummary.errors,
       scan_run_id: data.run_id,
     });
+    _runResults[_activeId] = { status: 'done', scanMatched: data.count, scanTotal: data.total };
+    _renderRunConfigs();
     await _loadHistory();
-    _markQueueItem('done');
     await _afterPipelineFinished();
   } catch (err) {
     _failRun(err.message || 'Scan failed');
@@ -540,35 +593,31 @@ async function _finishWithoutScan() {
     ind_tickers: _indSummary.tickers, ind_errors: _indSummary.errors,
     scan_run_id: null,
   });
+  _runResults[_activeId] = { status: 'done', scanMatched: null, scanTotal: null };
+  _renderRunConfigs();
   await _loadHistory();
-  _markQueueItem('done');
   await _afterPipelineFinished();
 }
 
+// Never alert() here — this can be reached from a poll callback, and a
+// blocking dialog would freeze the tab. The failure shows inline in the
+// pipeline's run-queue row instead; the rest of the run queue is aborted.
 async function _failRun(msg) {
   _stopPolling();
   const chip = document.querySelectorAll('.pipeline-stage-chip')[Math.max(_stageIdx, 0)];
   chip?.classList.remove('active'); chip?.classList.add('errored');
 
-  if (_queuePos >= 0) {
-    // Never alert() mid-queue — a blocking dialog would freeze the tab and
-    // stall the whole batch. Log the failure and move on to the next pipeline.
-    _markQueueItem('error');
-    try {
-      await api.post('/api/pipeline/log', {
-        config_id: _activeId, status: 'error',
-        fetch_tickers: _fetchSummary.tickers, fetch_errors: _fetchSummary.errors,
-        ind_tickers: _indSummary.tickers, ind_errors: _indSummary.errors,
-        scan_run_id: null,
-      });
-      await _loadHistory();
-    } catch {}
-    await _afterPipelineFinished();
-    return;
-  }
-
-  document.getElementById('btn-run-pipeline').disabled = false;
-  alert(msg);
+  const id = _activeId;
+  try {
+    await api.post('/api/pipeline/log', {
+      config_id: id, status: 'error',
+      fetch_tickers: _fetchSummary.tickers, fetch_errors: _fetchSummary.errors,
+      ind_tickers: _indSummary.tickers, ind_errors: _indSummary.errors,
+      scan_run_id: null,
+    });
+  } catch {}
+  _abortQueue(id, msg);
+  await _loadHistory();
 }
 
 function _startPolling(job) {
@@ -591,7 +640,7 @@ async function _poll(job) {
       if (job === 'fetch') {
         _fetchSummary = { tickers: state.done, errors: state.errors };
         const cfg = _configs.find(c => c.id === _activeId);
-        if (_queuePos >= 0) _queueFetchSummaries.set(_fetchSignature(cfg), _fetchSummary);
+        _fetchSigCache.set(_fetchSignature(cfg), _fetchSummary);
         await _kickIndStage(cfg.ind_conf_id);
       } else if (job === 'indicators') {
         _indSummary = { tickers: state.done, errors: state.errors };
@@ -737,14 +786,18 @@ function _wireStatic() {
     _indConfigs  = indData.configs  || [];
     _populateIndConfigSelect();
     _refreshScanConfigOptions();
+    _renderRunConfigs();
   });
   document.getElementById('btn-run-clear').addEventListener('click', _clearRun);
-  document.getElementById('btn-run-queue').addEventListener('click', _startQueueRun);
-  document.getElementById('pipeline-select-all').addEventListener('change', e => {
-    if (e.target.checked) _configs.forEach(c => _queueSelected.add(c.id));
-    else _queueSelected.clear();
+  document.getElementById('pipeline-run-conf-list').addEventListener('click', e => {
+    const btn = e.target.closest('.run-queue-remove');
+    if (!btn || btn.disabled) return;
+    const id = +btn.dataset.id;
+    _runCheckedIds.delete(id);
+    delete _runResults[id];
+    _saveRunQueue();
     _renderList();
-    _updateQueueBar();
+    _renderRunConfigs();
   });
   document.getElementById('btn-open-chart').addEventListener('click', () => {
     if (_lastResults?.length) _openTicker(_lastResults[0].ticker);
@@ -770,24 +823,36 @@ function _wireStatic() {
 
     if (e.key === 's' && ctrl) { e.preventDefault(); _saveConfig(); return; }
 
+    // Universal Esc reset — leave whatever input/select is focused so page-level
+    // shortcuts (nav, N/D/R, etc.) work again without needing a stray click first.
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      _setStageFocus(null);
+      document.activeElement?.blur();
+      return;
+    }
+
     if (inInput) return;
 
     if (e.key === 'N' && !ctrl) { e.preventDefault(); _createConfig(); }
     if (e.key === 'D' && !ctrl) { e.preventDefault(); _deleteConfig(); }
     if (e.key === 'R' && !ctrl) { e.preventDefault(); _startRun(); }
+    if (e.key === ' ') { e.preventDefault(); if (_activeId) _toggleQueued(_activeId); }
     if (e.key === 'T' && !ctrl) { e.preventDefault(); window.location.href = '/fetch'; }
     if (e.key === 'I' && !ctrl) { e.preventDefault(); window.location.href = '/indicators'; }
     if (e.key === 'S' && !ctrl) { e.preventDefault(); window.location.href = '/scanner'; }
     if (e.key === 'C' && !ctrl) { e.preventDefault(); window.location.href = '/'; }
     if (e.key === 'P' && !ctrl) { e.preventDefault(); window.location.href = '/pipeline'; }
 
-    if (e.key === '=') {
-      const i = _configs.findIndex(c => c.id === _activeId);
-      if (i > 0) _selectConfig(_configs[i - 1].id);
-    }
-    if (e.key === '-') {
-      const i = _configs.findIndex(c => c.id === _activeId);
-      if (i >= 0 && i < _configs.length - 1) _selectConfig(_configs[i + 1].id);
-    }
+    // _/+ cycle saved pipeline configs (matches Indicators' keys for that, wraps around).
+    if (e.key === '_') { e.preventDefault(); _cycleConfig(1); }
+    if (e.key === '+') { e.preventDefault(); _cycleConfig(-1); }
+
+    // -/= cycle keyboard focus between the Fetch/Indicators/Scan sub-cards of the
+    // open config (matches Indicators' -/= card-focus keys); Enter opens the
+    // focused card's primary control so its value can be changed from the keyboard.
+    if (e.key === '-') { e.preventDefault(); _moveStageFocus(1); }
+    if (e.key === '=') { e.preventDefault(); _moveStageFocus(-1); }
+    if (e.key === 'Enter') { e.preventDefault(); _activateFocusedStage(); }
   });
 }
