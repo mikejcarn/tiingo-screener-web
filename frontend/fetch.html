@@ -24,107 +24,123 @@
   </div>
 </div>
 
-<div class="fetch-layout">
+<!-- ── Two macro columns: left (API key/Single Ticker/Configs) + right (Run/DB/History, full height) ── -->
+<div class="fetch-page-grid">
 
-  <!-- ── Left column ───────────────────────────────────────── -->
-  <div class="fetch-left">
+<div class="fetch-page-left">
 
-    <!-- API Key -->
-    <div class="dash-section">
-      <div class="dash-section-head">
-        <span>API Key</span>
-        <div class="dash-section-actions">
-          <button id="btn-apikey-add" class="dash-btn-sm" title="Add your Tiingo API key">+ Add Key</button>
+  <div class="apikey-card">
+    <div class="ind-run-head"><span>API Key</span></div>
+    <div class="apikey-card-body-wide">
+      <a href="https://www.tiingo.com" target="_blank" class="label-link" title="Open Tiingo website — sign up or log in to get your API key">Tiingo</a>
+      <span id="apikey-masked" class="apikey-masked"></span>
+      <input id="apikey-input" class="apikey-input" type="password"
+             placeholder="Paste key…" style="display:none;" title="Paste your Tiingo API key, then press Enter or Save">
+      <button id="btn-apikey-add"    class="dash-btn-sm" title="Add your Tiingo API key">+ Add Key</button>
+      <button id="btn-apikey-edit"   class="dash-btn-sm" title="Edit the saved API key">Edit</button>
+      <button id="btn-apikey-save"   class="dash-btn-sm" style="display:none;" title="Save this key">Save</button>
+      <button id="btn-apikey-cancel" class="dash-btn-sm" style="display:none;" title="Discard changes (Esc)">Cancel</button>
+      <button id="btn-apikey-verify" class="dash-btn-sm" title="Check that this key works with Tiingo">Verify</button>
+      <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del" title="Remove the saved API key">Delete</button>
+      <span id="apikey-status"></span>
+      <div class="apikey-card-sep"></div>
+      <span class="tiingo-ref-label">Supported tickers</span>
+      <button id="btn-update-tickers" class="dash-btn-sm" title="Re-download the full Tiingo supported-tickers list used for search">Update</button>
+      <a href="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
+         target="_blank" class="tiingo-ref-link" title="Download supported_tickers.zip from Tiingo">&#x2197; download</a>
+      <span id="tiingo-list-meta" class="tiingo-ref-meta"></span>
+    </div>
+  </div>
+
+  <div class="dash-section">
+    <div class="dash-section-head">
+      <span>Single Ticker(s)</span>
+      <div class="dash-section-actions">
+        <button id="btn-single-queue-refresh" class="dash-btn-sm" title="Refresh queue">↻</button>
+        <button id="btn-single-queue-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all tickers from the queue">Clear All</button>
+        <button id="btn-single-fetch" class="dash-btn-sm dash-btn-sm-launch" title="Fetch all queued tickers below">&#9654; Fetch</button>
+      </div>
+    </div>
+    <div class="fetch-single-body">
+      <div class="fetch-add-row">
+        <div id="single-ticker-wrap">
+          <input id="single-ticker" class="dash-ticker-input" type="text"
+                 placeholder="Type to search for tickers, eg. AAPL or AAPL,MSFT,TSLA" autocomplete="off" spellcheck="false"
+                 title="Type any lowercase letter to search tickers, ↑↓ to navigate suggestions, Enter to add">
+          <div id="single-ticker-dd"></div>
+        </div>
+        <button id="btn-single-add" class="dash-btn-sm" title="Add this ticker to the queue below (or press Enter in the box)">+ Add to Queue</button>
+      </div>
+      <div class="dash-field">
+        <label>Timeframes</label>
+        <div id="single-tfs" class="dash-checks"></div>
+      </div>
+      <div id="single-queue" class="run-queue-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Row: Ticker Configs sidebar + editor/Ticker Lists column ── -->
+  <div class="fetch-configs-row">
+
+  <!-- ── Left: Ticker Configs list (side-panel card) ─────────── -->
+  <div class="fetch-configs-sidebar">
+    <div class="ind-run-head">
+      <span>Ticker Configs</span>
+      <div class="ind-db-head-actions">
+        <button id="btn-new-tconf" class="dash-btn-sm dash-btn-sm-launch" title="Create new ticker config (N)">+ New</button>
+      </div>
+    </div>
+    <div id="tconf-list">
+      <div class="ind-loading">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Right: config editor + Ticker Lists ──────────────────── -->
+  <div class="fetch-configs-main">
+
+    <div class="tconf-editor-card">
+      <div id="tconf-empty" class="ind-empty">
+        <div>
+          <p>No ticker configs yet.</p>
+          <p>Click <strong>+ New</strong> to create one.</p>
         </div>
       </div>
-      <div style="padding:14px 16px;">
-        <div class="dash-field">
-          <label><a href="https://www.tiingo.com" target="_blank" class="label-link" title="Open Tiingo website — sign up or log in to get your API key">Tiingo</a> key</label>
-          <div class="dash-field-right" style="flex:1; gap:8px;">
-            <span id="apikey-masked" class="apikey-masked"></span>
-            <input id="apikey-input" class="apikey-input" type="password"
-                   placeholder="Paste key…" style="display:none; flex:1;" title="Paste your Tiingo API key, then press Enter or Save">
-            <button id="btn-apikey-edit"   class="dash-btn-sm" title="Edit the saved API key">Edit</button>
-            <button id="btn-apikey-save"   class="dash-btn-sm" style="display:none;" title="Save this key">Save</button>
-            <button id="btn-apikey-cancel" class="dash-btn-sm" style="display:none;" title="Discard changes (Esc)">Cancel</button>
-            <button id="btn-apikey-verify" class="dash-btn-sm" title="Check that this key works with Tiingo">Verify</button>
-            <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del" title="Remove the saved API key">Delete</button>
-            <span   id="apikey-status"></span>
+
+      <div id="tconf-editor" style="display:none; flex-direction:column; overflow:hidden;">
+        <div class="ind-run-head">
+          <span>Ticker Configuration</span>
+          <div class="ind-db-head-actions">
+            <button id="btn-save-tconf" class="dash-btn-sm ind-btn-save" title="Save (Ctrl+S)">Save</button>
+            <button id="btn-delete-tconf" class="dash-btn-sm dash-btn-sm-del" title="Delete (D)">Delete</button>
           </div>
         </div>
-
-        <div class="dash-divider"></div>
-
-        <div class="tiingo-ref-row">
-          <span class="tiingo-ref-label">Tiingo supported tickers</span>
-          <button id="btn-update-tickers" class="dash-btn-sm" title="Re-download the full Tiingo supported-tickers list used for search">Update</button>
-          <a href="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
-             target="_blank" class="tiingo-ref-link" title="Download supported_tickers.zip from Tiingo">&#x2197; download list</a>
+        <div class="ind-name-row">
+          <span class="ind-name-label">Config Name</span>
+          <input type="text" id="tconf-name" class="config-name-input" placeholder="Config name">
         </div>
-        <div id="tiingo-list-meta" class="tiingo-ref-meta"></div>
+
+        <div id="tconf-dates" class="conf-dates"></div>
+
+        <div style="padding:10px 14px;">
+          <div class="dash-field">
+            <label>Ticker List</label>
+            <div class="dash-field-right">
+              <select id="tconf-ticker-list" title="Choose a ticker list to fetch"></select>
+              <span id="tconf-ticker-list-count" class="dash-count" title="Number of tickers in this list"></span>
+            </div>
+          </div>
+          <div class="dash-field">
+            <label>Timeframes</label>
+            <div id="tconf-tfs" class="dash-checks"></div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Single Ticker -->
-    <div class="dash-section">
+    <!-- Ticker Lists (stretches to bottom of column) -->
+    <div class="dash-section fetch-lists-card">
       <div class="dash-section-head">
-        <span>Fetch Single Ticker(s)</span>
-        <div class="dash-section-actions">
-          <button id="btn-single-queue-refresh" class="dash-btn-sm" title="Refresh queue">↻</button>
-          <button id="btn-single-queue-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all tickers from the queue">Clear All</button>
-          <button id="btn-single-fetch" class="dash-btn-sm dash-btn-sm-launch" title="Fetch all queued tickers below">&#9654; Fetch</button>
-        </div>
-      </div>
-      <div style="padding:16px;">
-        <div class="fetch-add-row">
-          <div id="single-ticker-wrap">
-            <input id="single-ticker" class="dash-ticker-input" type="text"
-                   placeholder="Type to search for tickers, eg. AAPL or AAPL,MSFT,TSLA" autocomplete="off" spellcheck="false"
-                   title="Type any lowercase letter to search tickers, ↑↓ to navigate suggestions, Enter to add">
-            <div id="single-ticker-dd"></div>
-          </div>
-          <button id="btn-single-add" class="dash-btn-sm" title="Add this ticker to the queue below (or press Enter in the box)">+ Add to Queue</button>
-        </div>
-        <div class="dash-field">
-          <label>Timeframes</label>
-          <div id="single-tfs" class="dash-checks"></div>
-        </div>
-        <div id="single-queue" class="run-queue-list"></div>
-      </div>
-    </div>
-
-    <!-- Batch Fetch -->
-    <div class="dash-section">
-      <div class="dash-section-head">
-        <span>Fetch Tickers List(s)</span>
-        <div class="dash-section-actions">
-          <button id="btn-batch-queue-refresh" class="dash-btn-sm" title="Refresh queue">↻</button>
-          <button id="btn-batch-queue-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear all lists from the queue">Clear All</button>
-          <button id="btn-fetch" class="dash-btn-sm dash-btn-sm-launch" title="Fetch all queued lists below">&#9654; Fetch</button>
-          <button id="btn-fetch-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running fetch">Cancel</button>
-        </div>
-      </div>
-      <div style="padding:16px;">
-        <div class="dash-field">
-          <label>List</label>
-          <div class="dash-field-right">
-            <select id="fetch-list" title="Choose a ticker list to fetch"></select>
-            <span id="fetch-list-count" class="dash-count" title="Number of tickers in this list"></span>
-            <button id="btn-batch-add" class="dash-btn-sm" title="Add this list to the queue below">+ Add to Queue</button>
-          </div>
-        </div>
-        <div class="dash-field">
-          <label>Timeframes</label>
-          <div id="fetch-tfs" class="dash-checks"></div>
-        </div>
-        <div id="batch-queue" class="run-queue-list"></div>
-      </div>
-    </div>
-
-    <!-- Ticker Lists -->
-    <div class="dash-section">
-      <div class="dash-section-head">
-        <span>Tickers List(s)</span>
+        <span>Ticker Lists</span>
         <div class="dash-section-actions">
           <button id="btn-refresh-lists" class="dash-btn-sm" title="Refresh ticker lists">↻</button>
           <button id="btn-add-list" class="dash-btn-sm" title="Upload a CSV to create a new ticker list">+ Add List</button>
@@ -144,8 +160,45 @@
 
   </div>
 
-  <!-- ── Right column ──────────────────────────────────────── -->
-  <div class="fetch-right">
+  </div>
+
+</div>
+
+  <!-- ── Right: Run queue + DB Stats + History, full page height ── -->
+  <div class="fetch-configs-right">
+
+    <div class="tconf-run-card">
+      <div class="ind-run-head">
+        <span>Run Ticker Configs</span>
+        <div class="ind-db-head-actions">
+          <button id="btn-tconf-run-refresh" class="dash-btn-sm" title="Refresh configs">↻</button>
+          <button id="btn-tconf-run-clear" class="dash-btn-sm dash-btn-sm-del" title="Remove all ticker configs from the run queue">Clear All</button>
+          <button id="btn-run-tconf" class="dash-btn-sm dash-btn-sm-launch" title="Run queued ticker configs (R)">&#9654; Run</button>
+        </div>
+      </div>
+      <div class="fetch-configs-run-body">
+        <div id="tconf-run-conf-list" class="run-queue-list"></div>
+
+        <div class="ind-run-output-sep">
+          <div id="tconf-output-idle" class="run-output-idle">Queue ticker configs and hit &#9654; Run.</div>
+          <div class="ind-overall-section" id="tconf-overall" style="display:none;">
+            <div class="ind-overall-header">
+              <span class="ind-overall-label">fetch progress</span>
+              <span id="tconf-run-total" class="run-queue-status"></span>
+            </div>
+            <div class="dash-progress">
+              <div id="tconf-track" class="progress-track"><div id="tconf-bar" class="progress-fill"></div></div>
+              <div id="tconf-meta" class="progress-meta">
+                <span id="tconf-count"   class="dash-count-text"></span>
+                <span id="tconf-pct"     class="dash-pct"></span>
+                <span id="tconf-current" class="dash-current"></span>
+                <span id="tconf-errors"  class="dash-errors"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Database (expands to fill) -->
     <div class="dash-section fetch-db">

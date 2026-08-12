@@ -15,18 +15,23 @@ const _PAGES = [
     id: 'tickers',
     label: 'tickers',
     html: `<table class="help-table"><tbody>
-      <tr class="help-section"><td colspan="2">Ticker Search</td></tr>
+      <tr class="help-section"><td colspan="2">Ticker Configs</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker config (wraps around)</td></tr>
+      <tr><td><kbd>N</kbd></td><td>New ticker config</td></tr>
+      <tr><td><kbd>Ctrl+S</kbd></td><td>Save ticker config</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Delete ticker config</td></tr>
+      <tr><td>▶ button &nbsp;or&nbsp; <kbd>Space</kbd></td><td>Add / remove open config from the run queue</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run queued ticker configs</td></tr>
+      <tr><td colspan="2" style="color:var(--t3);font-size:11px;">A ticker config pairs a ticker list with timeframes to fetch — save it once, reuse it here or from the Pipeline page.</td></tr>
+
+      <tr class="help-section"><td colspan="2">Single Ticker Search</td></tr>
       <tr><td>Type any letter</td><td>Search tickers in the Single Ticker box</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd></td><td>Navigate suggestions</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Add selected ticker to queue</td></tr>
       <tr><td><kbd>Escape</kbd></td><td>Clear search / close dropdown / cancel API key edit</td></tr>
-
-      <tr class="help-section"><td colspan="2">Batch Fetch</td></tr>
-      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next list in the batch fetch selector</td></tr>
-      <tr><td><kbd>F</kbd></td><td>Trigger batch fetch for the selected list</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
-    <div class="help-summary">The tickers page manages your local price database. Add individual tickers via search or batch-fetch entire lists from Tiingo. OHLCV data is stored per timeframe and feeds everything else — the chart and indicator pages both draw from here.</div>`,
+    <div class="help-summary">The tickers page manages your local price database. Ticker configs (list + timeframes) are saved and reusable — queue several and run them in sequence, or reference one directly from the Pipeline page's Fetch stage. Individual tickers can still be added ad hoc via search. OHLCV data is stored per timeframe and feeds everything else — the chart and indicator pages both draw from here.</div>`,
   },
   {
     id: 'indicators',
@@ -92,7 +97,7 @@ const _PAGES = [
       <tr><td><kbd>Enter</kbd></td><td>Open the focused stage's config selector — arrow keys / typing change it directly</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
-    <div class="help-summary">The pipeline page chains Fetch, Indicators, and Scan into one run: fetch a ticker list, compute an indicator config, then optionally run a scan filtered to that indicator config — reusing each stage's config from the other pages rather than redefining it. Several pipelines can be queued (▶ button or Space) and run in order; queued pipelines that share the same ticker list and timeframes only fetch once.</div>`,
+    <div class="help-summary">The pipeline page chains Fetch, Indicators, and Scan into one run: fetch a ticker config (list + timeframes, from the Tickers page), compute an indicator config, then optionally run a scan filtered to that indicator config — reusing each stage's config from the other pages rather than redefining it. Several pipelines can be queued (▶ button or Space) and run in order; queued pipelines that reference the same ticker config only fetch once.</div>`,
   },
   {
     id: 'chart',

@@ -14,29 +14,32 @@
  * convention: each config row has a ▶ button (Space to toggle) that adds it
  * to a run queue shown in the Run card; the single ▶ Run button always runs
  * whatever's queued (_startRun/_kickQueueItem/_afterPipelineFinished), one
- * pipeline at a time. Queued pipelines that share an identical
- * (ticker_list, timeframes) fetch signature only fetch once per run — later
- * ones reuse the first fetch's result (_fetchSigCache) instead of re-hitting
+ * pipeline at a time. Queued pipelines that reference the same ticker config
+ * only fetch once per run — later ones reuse the first fetch's result
+ * (_fetchSigCache) instead of re-hitting
  * the Tiingo API for tickers a prior pipeline in the same run already pulled.
  * A stage failure aborts the rest of the queue (matching indicators.js/
  * scanner.js) but never alert()s — a blocking dialog would freeze the tab
  * mid-poll — the failure just shows inline in that pipeline's queue row.
+ *
+ * Stage 1 (Fetch) references a saved Ticker Config (list + timeframes,
+ * managed on the Tickers page) by id, the same way Stage 2/3 reference an
+ * Indicator/Scan config — the pipeline itself no longer stores a raw ticker
+ * list + timeframe set directly.
  */
 import { api }       from './api.js';
 import { initHelp }  from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
 
-const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
-
 const _esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 // ── State ─────────────────────────────────────────────────────
-let _configs      = [];   // [{id, name, ticker_list, timeframes, ind_conf_id, scan_config_id, updated_at}]
-let _activeId     = null;
-let _dirty        = false;
-let _tickerLists  = [];   // [{name, count}]
-let _scanConfigs  = [];   // [{id, name, logic, ind_conf_id, updated_at}]
-let _indConfigs   = [];   // [{id, name, ...}]
+let _configs       = [];   // [{id, name, ticker_conf_id, ind_conf_id, scan_config_id, updated_at}]
+let _activeId      = null;
+let _dirty         = false;
+let _tickerConfigs = [];   // [{id, name, ticker_list, timeframes, updated_at}]
+let _scanConfigs   = [];   // [{id, name, logic, ind_conf_id, updated_at}]
+let _indConfigs    = [];   // [{id, name, ...}]
 
 let _stageIdx     = -1;   // -1 idle, 0 fetch, 1 indicators, 2 scan
 let _pollTimer    = null;
@@ -55,16 +58,15 @@ let _fetchSigCache  = new Map();  // fetch signature -> {tickers, errors}, share
 (async function init() {
   initTheme();
   initHelp('pipeline');
-  _buildTimeframeChecks();
-  const [tickerData, scanData, indData] = await Promise.all([
-    api.get('/api/ticker-lists'),
+  const [tickerConfData, scanData, indData] = await Promise.all([
+    api.get('/api/ticker-configs'),
     api.get('/api/scan-configs'),
     api.get('/api/ind-configs'),
   ]);
-  _tickerLists = tickerData.lists || [];
-  _scanConfigs = scanData.configs || [];
-  _indConfigs  = indData.configs  || [];
-  _populateTickerListSelect();
+  _tickerConfigs = tickerConfData.configs || [];
+  _scanConfigs   = scanData.configs || [];
+  _indConfigs    = indData.configs  || [];
+  _populateTickerConfigSelect();
   _populateIndConfigSelect();
   _refreshScanConfigOptions();
   _wireStatic();
@@ -72,45 +74,17 @@ let _fetchSigCache  = new Map();  // fetch signature -> {tickers, errors}, share
   await _loadHistory();
 })();
 
-// ── Timeframe checkboxes ─────────────────────────────────────
-function _buildTimeframeChecks() {
-  const wrap = document.getElementById('pipeline-tfs');
-  wrap.innerHTML = '';
-  for (const tf of ALL_TIMEFRAMES) {
-    const lbl = document.createElement('label');
-    lbl.innerHTML = `<input type="checkbox" value="${tf}"> ${tf}`;
-    wrap.appendChild(lbl);
-  }
-  wrap.addEventListener('change', () => { _dirty = true; });
-}
-function _syncTfChecks(timeframes) {
-  for (const cb of document.querySelectorAll('#pipeline-tfs input[type="checkbox"]')) {
-    cb.checked = (timeframes || []).includes(cb.value);
-  }
-}
-function _getCheckedTfs() {
-  return [...document.querySelectorAll('#pipeline-tfs input[type="checkbox"]:checked')].map(el => el.value);
-}
-
 // ── Selects ───────────────────────────────────────────────────
-function _populateTickerListSelect() {
-  const sel = document.getElementById('pipeline-ticker-list');
+function _populateTickerConfigSelect() {
+  const sel = document.getElementById('pipeline-ticker-conf');
   const prev = sel.value;
   sel.innerHTML = '<option value="">— select —</option>';
-  for (const l of _tickerLists) {
+  for (const c of _tickerConfigs) {
     const opt = document.createElement('option');
-    opt.value = l.name; opt.textContent = l.name;
+    opt.value = c.id; opt.textContent = c.name;
     sel.appendChild(opt);
   }
   if (prev) sel.value = prev;
-  sel.addEventListener('change', () => { _updateTickerListCount(); _dirty = true; });
-  _updateTickerListCount();
-}
-function _updateTickerListCount() {
-  const sel = document.getElementById('pipeline-ticker-list');
-  const el  = document.getElementById('pipeline-ticker-list-count');
-  const match = _tickerLists.find(l => l.name === sel.value);
-  el.textContent = match ? `${match.count.toLocaleString()} tickers` : '';
 }
 
 function _populateIndConfigSelect() {
@@ -270,7 +244,7 @@ function _cycleConfig(dir) {
 
 // ── Stage-card keyboard focus (-/= cycle Fetch/Indicators/Scan, Enter opens) ──
 const _STAGE_ORDER = ['fetch', 'indicators', 'scan'];
-const _STAGE_FIELD  = { fetch: 'pipeline-ticker-list', indicators: 'pipeline-ind-config', scan: 'pipeline-scan-config' };
+const _STAGE_FIELD  = { fetch: 'pipeline-ticker-conf', indicators: 'pipeline-ind-config', scan: 'pipeline-scan-config' };
 let _focusedStage = null; // 'fetch' | 'indicators' | 'scan' | null
 
 function _setStageFocus(stage) {
@@ -314,9 +288,7 @@ async function _selectConfig(id) {
 
 function _populateEditorFields(cfg) {
   document.getElementById('pipeline-name').value = cfg.name;
-  document.getElementById('pipeline-ticker-list').value = cfg.ticker_list || '';
-  _updateTickerListCount();
-  _syncTfChecks(cfg.timeframes);
+  document.getElementById('pipeline-ticker-conf').value = cfg.ticker_conf_id || '';
   document.getElementById('pipeline-ind-config').value = cfg.ind_conf_id || '';
   _refreshScanConfigOptions();
   document.getElementById('pipeline-scan-config').value = cfg.scan_config_id || '';
@@ -381,8 +353,7 @@ async function _saveConfig() {
   if (!_activeId) return;
   const body = {
     name: document.getElementById('pipeline-name').value.trim() || 'Unnamed',
-    ticker_list: document.getElementById('pipeline-ticker-list').value || null,
-    timeframes: _getCheckedTfs(),
+    ticker_conf_id: parseInt(document.getElementById('pipeline-ticker-conf').value) || null,
     ind_conf_id: parseInt(document.getElementById('pipeline-ind-config').value) || null,
     scan_config_id: parseInt(document.getElementById('pipeline-scan-config').value) || null,
   };
@@ -427,8 +398,8 @@ async function _startRun() {
   if (!ids.length) return;
   for (const id of ids) {
     const cfg = _configs.find(c => c.id === id);
-    if (!cfg.ticker_list || !(cfg.timeframes || []).length || !cfg.ind_conf_id) {
-      alert(`Pipeline "${cfg.name}" is missing a ticker list, timeframe, or indicator config — fix it before running.`);
+    if (!cfg.ticker_conf_id || !cfg.ind_conf_id) {
+      alert(`Pipeline "${cfg.name}" is missing a ticker config or indicator config — fix it before running.`);
       return;
     }
   }
@@ -443,9 +414,10 @@ async function _startRun() {
 }
 
 // A fetch signature identifies "what fetch/batch would do" for a pipeline —
-// pipelines that share one only need that fetch run once per run.
+// pipelines that share one only need that fetch run once per run. Since it's
+// now a saved ticker config, the id alone is definitionally the same fetch work.
 function _fetchSignature(cfg) {
-  return `${cfg.ticker_list}|${[...(cfg.timeframes || [])].sort().join(',')}`;
+  return String(cfg.ticker_conf_id);
 }
 
 async function _kickQueueItem() {
@@ -509,12 +481,18 @@ function _setStage(idx, extraClass) {
   document.getElementById('pipeline-stage-label').textContent = `${stages[idx] || ''} progress`;
 }
 
+// Pipeline configs only store a ticker_conf_id now — resolve the actual
+// ticker_list/timeframes from the cached ticker configs list.
+function _resolveTickerConfig(cfg) {
+  return _tickerConfigs.find(tc => tc.id === cfg.ticker_conf_id) || null;
+}
+
 async function _kickFetchStage() {
   const cfg = _configs.find(c => c.id === _activeId);
   const sig = _fetchSignature(cfg);
 
-  // Skip re-fetching a ticker_list/timeframes combo another queued pipeline
-  // already fetched this run — go straight to Indicators.
+  // Skip re-fetching a ticker config another queued pipeline already fetched
+  // this run — go straight to Indicators.
   if (_fetchSigCache.has(sig)) {
     _setStage(0, 'done');
     _fetchSummary = _fetchSigCache.get(sig);
@@ -524,8 +502,13 @@ async function _kickFetchStage() {
   }
 
   _setStage(0);
+  const tickerConf = _resolveTickerConfig(cfg);
+  if (!tickerConf) {
+    _failRun('Linked ticker config no longer exists');
+    return;
+  }
   try {
-    await api.post('/api/fetch/batch', { ticker_list: cfg.ticker_list, timeframes: _getCheckedTfs() });
+    await api.post('/api/fetch/batch', { ticker_list: tickerConf.ticker_list, timeframes: tickerConf.timeframes });
   } catch (err) {
     _failRun(err.message || 'Failed to start fetch job');
     return;
@@ -538,8 +521,9 @@ async function _kickIndStage(indConfId) {
   _runResults[_activeId] = { ..._runResults[_activeId], status: 'running', stage: 'indicators' };
   _renderRunConfigs();
   const cfg = _configs.find(c => c.id === _activeId);
+  const tickerConf = _resolveTickerConfig(cfg);
   try {
-    await api.post('/api/indicators/batch', { config_id: indConfId, ticker_list: cfg.ticker_list });
+    await api.post('/api/indicators/batch', { config_id: indConfId, ticker_list: tickerConf?.ticker_list });
   } catch (err) {
     _failRun(err.message || 'Failed to start indicators job');
     return;
@@ -552,11 +536,12 @@ async function _kickScanStage() {
   _runResults[_activeId] = { ..._runResults[_activeId], status: 'running', stage: 'scan' };
   _renderRunConfigs();
   const cfg = _configs.find(c => c.id === _activeId);
+  const tickerConf = _resolveTickerConfig(cfg);
   document.getElementById('pipeline-overall').style.display = 'none';
   document.getElementById('pipeline-output-idle').style.display = '';
   document.getElementById('pipeline-output-idle').textContent = 'Running scan…';
   try {
-    const data = await api.post('/api/scan/run', { config_id: cfg.scan_config_id, scope_ticker_list: cfg.ticker_list });
+    const data = await api.post('/api/scan/run', { config_id: cfg.scan_config_id, scope_ticker_list: tickerConf?.ticker_list });
     _lastResults = data.results || [];
     _renderResults(data);
     document.querySelectorAll('.pipeline-stage-chip').forEach(c => { c.classList.remove('active', 'errored'); c.classList.add('done'); });
@@ -781,9 +766,13 @@ function _wireStatic() {
   document.getElementById('btn-delete-pipeline').addEventListener('click', _deleteConfig);
   document.getElementById('btn-run-pipeline').addEventListener('click', _startRun);
   document.getElementById('btn-run-refresh').addEventListener('click', async () => {
-    const [scanData, indData] = await Promise.all([api.get('/api/scan-configs'), api.get('/api/ind-configs')]);
-    _scanConfigs = scanData.configs || [];
-    _indConfigs  = indData.configs  || [];
+    const [tickerConfData, scanData, indData] = await Promise.all([
+      api.get('/api/ticker-configs'), api.get('/api/scan-configs'), api.get('/api/ind-configs'),
+    ]);
+    _tickerConfigs = tickerConfData.configs || [];
+    _scanConfigs   = scanData.configs || [];
+    _indConfigs    = indData.configs  || [];
+    _populateTickerConfigSelect();
     _populateIndConfigSelect();
     _refreshScanConfigOptions();
     _renderRunConfigs();
@@ -809,6 +798,7 @@ function _wireStatic() {
     _loadHistory();
   });
   document.getElementById('pipeline-name').addEventListener('input', () => { _dirty = true; });
+  document.getElementById('pipeline-ticker-conf').addEventListener('change', () => { _dirty = true; });
   document.getElementById('pipeline-ind-config').addEventListener('change', () => { _refreshScanConfigOptions(); _dirty = true; });
   document.getElementById('pipeline-scan-config').addEventListener('change', () => { _dirty = true; });
 

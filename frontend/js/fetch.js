@@ -12,29 +12,29 @@ let _moveTickerSuggestion = null; // set by _initTickerSearch
 let _singleQueue   = [];
 let _singleResults = {};
 let _singleRunning = false;
-
-// Batch list queue state
-let _batchQueue     = [];
-let _batchResults   = {};
-let _batchRunning   = false;
-let _batchCancelled = false;
-
-// Queue selection state (which item's timeframes the global checkboxes control)
 let _selectedSingleIdx = null;
-let _selectedBatchIdx  = null;
+
+// ── Ticker Configs (list + timeframes, reusable — also referenced from Pipeline) ──
+let _configs       = [];        // [{id, name, ticker_list, timeframes, updated_at}]
+let _activeId      = null;
+let _dirty         = false;
+let _runCheckedIds = new Set(); // config ids queued via the ▶ button — persisted like the other pages
+let _runQueue      = [];        // ordered ids for the run currently in progress
+let _runQueueIdx   = -1;        // -1 idle, else index into _runQueue
+let _runResults    = {};        // id -> {status:'pending'|'running'|'done'|'error', done, total, errors, error?}
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
 async function init() {
   await _loadTickerLists();
-  _buildTimeframeChecks('fetch-tfs',  ['daily']);
   _buildTimeframeChecks('single-tfs', ['daily']);
+  _buildTconfTfChecks();
   _loadSingleQueue();
-  _loadBatchQueue();
   _renderSingleQueue();
-  _renderBatchQueue();
   _wireButtons();
+  _wireTconfButtons();
   _initDropZone();
+  await _loadConfigs();
 
   const [status] = await Promise.all([
     api.get('/api/jobs/status'),
@@ -44,8 +44,6 @@ async function init() {
     _loadTiingoListInfo(),
   ]);
   if (status.fetch.status === 'running') {
-    _batchRunning = true;
-    _renderBatchQueue();
     _startPolling();
   }
 }
@@ -56,7 +54,7 @@ function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Queue persistence ─────────────────────────────────────────
+// ── Single-ticker queue persistence ────────────────────────────
 
 function _saveSingleQueue() {
   try { localStorage.setItem('fetch_single_queue', JSON.stringify(_singleQueue)); } catch {}
@@ -69,21 +67,7 @@ function _loadSingleQueue() {
   } catch { _singleQueue = []; }
 }
 
-function _saveBatchQueue() {
-  try { localStorage.setItem('fetch_batch_queue', JSON.stringify(_batchQueue)); } catch {}
-}
-
-function _loadBatchQueue() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('fetch_batch_queue') || '[]');
-    const valid = new Set(_tickerLists.map(l => l.name));
-    _batchQueue = saved
-      .map(item => typeof item === 'string' ? { name: item, timeframes: ['daily'] } : item)
-      .filter(item => valid.has(item.name));
-  } catch { _batchQueue = []; }
-}
-
-// ── Queue rendering ───────────────────────────────────────────
+// ── Single-ticker queue rendering ──────────────────────────────
 
 function _syncTfChecks(containerId, timeframes) {
   for (const cb of document.querySelectorAll(`#${containerId} input[type="checkbox"]`)) {
@@ -146,87 +130,7 @@ function _renderSingleQueue() {
   el.appendChild(table);
 }
 
-function _renderBatchQueue() {
-  const el = document.getElementById('batch-queue');
-  if (!el) return;
-  if (!_batchQueue.length) {
-    el.innerHTML = '<div class="run-queue-empty">No lists queued — select one above to add</div>';
-    _selectedBatchIdx = null;
-    return;
-  }
-  const table = document.createElement('table');
-  table.className = 'run-queue-table';
-  const tbody = document.createElement('tbody');
-  _batchQueue.forEach((item, i) => {
-    const info = _tickerLists.find(l => l.name === item.name);
-    const countStr = info ? `${info.count.toLocaleString()} tickers` : '';
-    const tr = document.createElement('tr');
-    tr.className = 'run-queue-item' + (i === _selectedBatchIdx ? ' rq-selected' : '');
-    tr.innerHTML = `
-      <td class="run-queue-td-pos">${i + 1}</td>
-      <td class="run-queue-td-name">
-        <div class="run-queue-name-row">
-          <span class="run-queue-name">${_esc(item.name)}</span>
-          ${countStr ? `<span class="fetch-list-count-tag">${countStr}</span>` : ''}
-        </div>
-        <div class="rq-status" data-list="${_esc(item.name)}"></div>
-      </td>
-      <td class="run-queue-td-tfs">${item.timeframes.join(' · ')}</td>
-      <td class="run-queue-td-del"><button class="run-queue-remove" data-list="${_esc(item.name)}"${_batchRunning ? ' disabled' : ''} title="Remove ${_esc(item.name)} from the queue">×</button></td>
-    `;
-    if (!_batchRunning) {
-      tr.addEventListener('click', e => {
-        if (e.target.closest('.run-queue-remove')) return;
-        if (i === _selectedBatchIdx) {
-          _selectedBatchIdx = null;
-        } else {
-          _selectedBatchIdx = i;
-          _syncTfChecks('fetch-tfs', item.timeframes);
-        }
-        _renderBatchQueue();
-      });
-    }
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  el.innerHTML = '';
-  el.appendChild(table);
-  _renderBatchQueueStatus();
-}
-
-function _renderBatchQueueStatus() {
-  for (const [listName, result] of Object.entries(_batchResults)) {
-    const el = document.querySelector(`.rq-status[data-list="${listName}"]`);
-    if (!el) continue;
-    const { status, done = 0, total = 0, errors = 0, current = '' } = result;
-    if (status === 'pending') {
-      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
-    } else if (status === 'running') {
-      const pct = total > 0 ? (done / total * 100) : 0;
-      el.innerHTML =
-        `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:${pct}%"></div></div>
-         <div class="rq-info">
-           <span class="rq-state rq-running">running</span>
-           ${current ? `<span class="rq-current">→ ${_esc(current)}</span>` : ''}
-           <span class="rq-count">${done} / ${total || '?'}</span>
-         </div>`;
-    } else if (status === 'done') {
-      const hasErr = errors > 0;
-      el.innerHTML =
-        `<div class="rq-bar-track"><div class="rq-bar-fill ${hasErr ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
-         <div class="rq-info">
-           <span class="rq-state ${hasErr ? 'rq-errors' : 'rq-done'}">${hasErr ? `✗ ${errors} error${errors !== 1 ? 's' : ''}` : '✓ done'}</span>
-           <span class="rq-count">${done} / ${total}</span>
-         </div>`;
-    } else if (status === 'cancelled') {
-      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-cancelled">cancelled</span></div>`;
-    } else if (status === 'error') {
-      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(result.message || 'failed to start')}</span></div>`;
-    }
-  }
-}
-
-// ── Run sequences ─────────────────────────────────────────────
+// ── Single-ticker run ───────────────────────────────────────────
 
 async function _runSingleQueue() {
   if (!_singleQueue.length || _singleRunning) return;
@@ -272,93 +176,6 @@ async function _runSingleQueue() {
   _loadHistory();
 }
 
-async function _runBatchQueue() {
-  if (_batchRunning) return;
-
-  // Auto-add selected list if queue is empty
-  if (!_batchQueue.length) {
-    const listName = document.getElementById('fetch-list').value;
-    if (!listName) {
-      alert('Select a ticker list first.');
-      return;
-    }
-    _addBatchList();
-  }
-
-  _batchRunning   = true;
-  _batchCancelled = false;
-  _batchResults   = {};
-  const btn       = document.getElementById('btn-fetch');
-  const btnCancel = document.getElementById('btn-fetch-cancel');
-  btn.disabled = true;
-  btn.textContent = 'Fetching…';
-  btnCancel.style.display = '';
-
-  for (const item of _batchQueue) _batchResults[item.name] = { status: 'pending' };
-  _renderBatchQueue();
-
-  for (const item of _batchQueue) {
-    if (_batchCancelled) {
-      _batchResults[item.name] = { status: 'cancelled' };
-      _renderBatchQueueStatus();
-      continue;
-    }
-    const timeframes = item.timeframes;
-    if (!timeframes.length) {
-      _batchResults[item.name] = { status: 'error', message: 'No timeframes selected' };
-      _renderBatchQueueStatus();
-      continue;
-    }
-    _batchResults[item.name] = { status: 'running', done: 0, total: 0, errors: 0, current: '' };
-    _renderBatchQueueStatus();
-
-    try {
-      await api.post('/api/fetch/batch', { ticker_list: item.name, timeframes });
-    } catch (err) {
-      _batchResults[item.name] = { status: 'error', message: err.message || 'Failed to start' };
-      _renderBatchQueueStatus();
-      continue;
-    }
-
-    await new Promise(resolve => {
-      const timer = setInterval(async () => {
-        const data  = await api.get('/api/jobs/status');
-        const state = data.fetch;
-        if (state.status === 'running') {
-          _batchResults[item.name] = { status: 'running', done: state.done, total: state.total, errors: state.errors, current: state.current };
-          _renderBatchQueueStatus();
-        } else {
-          if (state.status === 'done') {
-            _batchResults[item.name] = { status: 'done', done: state.done, total: state.total, errors: state.errors };
-          } else {
-            _batchResults[item.name] = {
-              status: state.status === 'cancelled' ? 'cancelled' : 'error',
-              done: state.done, total: state.total,
-            };
-            if (state.status === 'cancelled') _batchCancelled = true;
-          }
-          _renderBatchQueueStatus();
-          clearInterval(timer);
-          resolve();
-        }
-      }, 2000);
-    });
-
-    _loadStats();
-    _loadHistory();
-  }
-
-  _batchRunning = false;
-  btn.disabled = false;
-  btn.textContent = '▶ Fetch';
-  btnCancel.style.display = 'none';
-  _renderBatchQueue();
-  _loadStats();
-  _loadHistory();
-}
-
-// ── Add to queues ─────────────────────────────────────────────
-
 function _addSingleTicker(ticker) {
   const tickers = ticker.toUpperCase().split(',').map(t => t.trim()).filter(Boolean);
   if (!tickers.length) return;
@@ -375,40 +192,14 @@ function _addSingleTicker(ticker) {
   _ddHide(document.getElementById('single-ticker-dd'));
 }
 
-function _addBatchList() {
-  const listName = document.getElementById('fetch-list').value;
-  if (!listName) return;
-  if (!_batchQueue.find(item => item.name === listName)) {
-    const timeframes = _getChecked('fetch-tfs');
-    _batchQueue.push({ name: listName, timeframes: timeframes.length ? [...timeframes] : ['daily'] });
-    _saveBatchQueue();
-    _renderBatchQueue();
-  }
-}
-
-// ── Ticker lists ──────────────────────────────────────────────
+// ── Ticker lists (raw CSVs — referenced by ticker configs) ─────
 
 async function _loadTickerLists() {
   const data = await api.get('/api/ticker-lists');
   _tickerLists = data.lists || [];
-  const sel = document.getElementById('fetch-list');
-  const prev = sel.value;
-  sel.innerHTML = '';
-  for (const l of _tickerLists) {
-    const opt = document.createElement('option');
-    opt.value = l.name;
-    opt.textContent = l.name;
-    sel.appendChild(opt);
-  }
-  const saved = localStorage.getItem('defaultTickerList');
-  const target = prev || saved;
-  if (target && _tickerLists.find(l => l.name === target)) sel.value = target;
-  _updateListCount();
-  sel.addEventListener('change', () => {
-    localStorage.setItem('defaultTickerList', sel.value);
-    _updateListCount();
-  });
   _renderTickerListItems();
+  _populateTconfTickerListSelect();
+  _updateTconfListCount();
 }
 
 function _renderTickerListItems() {
@@ -421,13 +212,6 @@ function _renderTickerListItems() {
       <button class="ticker-list-del scan-history-del" data-list="${_esc(l.name)}" title="Delete list ${_esc(l.name)}">✕</button>
     </div>
   `).join('');
-}
-
-function _updateListCount() {
-  const sel   = document.getElementById('fetch-list');
-  const el    = document.getElementById('fetch-list-count');
-  const match = _tickerLists.find(l => l.name === sel.value);
-  el.textContent = match ? `${match.count} tickers` : '';
 }
 
 function _buildTimeframeChecks(containerId, defaultChecked) {
@@ -443,6 +227,379 @@ function _buildTimeframeChecks(containerId, defaultChecked) {
 function _getChecked(containerId) {
   return [...document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`)]
     .map(el => el.value);
+}
+
+// ── Ticker Configs — sidebar list ───────────────────────────────
+
+function _populateTconfTickerListSelect() {
+  const sel = document.getElementById('tconf-ticker-list');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— select —</option>';
+  for (const l of _tickerLists) {
+    const opt = document.createElement('option');
+    opt.value = l.name; opt.textContent = l.name;
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+function _updateTconfListCount() {
+  const sel = document.getElementById('tconf-ticker-list');
+  const el  = document.getElementById('tconf-ticker-list-count');
+  if (!sel || !el) return;
+  const match = _tickerLists.find(l => l.name === sel.value);
+  el.textContent = match ? `${match.count.toLocaleString()} tickers` : '';
+}
+
+function _buildTconfTfChecks() {
+  const wrap = document.getElementById('tconf-tfs');
+  wrap.innerHTML = '';
+  for (const tf of ALL_TIMEFRAMES) {
+    const lbl = document.createElement('label');
+    lbl.innerHTML = `<input type="checkbox" value="${tf}"> ${tf}`;
+    wrap.appendChild(lbl);
+  }
+  wrap.addEventListener('change', () => { _dirty = true; });
+}
+
+function _syncTconfTfChecks(timeframes) {
+  for (const cb of document.querySelectorAll('#tconf-tfs input[type="checkbox"]')) {
+    cb.checked = (timeframes || []).includes(cb.value);
+  }
+}
+
+function _getTconfCheckedTfs() {
+  return [...document.querySelectorAll('#tconf-tfs input[type="checkbox"]:checked')].map(el => el.value);
+}
+
+// ── Run queue persistence ────────────────────────────────────
+
+function _saveRunQueue() {
+  try { localStorage.setItem('tconf_run_queue', JSON.stringify([..._runCheckedIds])); } catch {}
+}
+function _loadRunQueue() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('tconf_run_queue') || '[]');
+    const valid = new Set(_configs.map(c => c.id));
+    _runCheckedIds = new Set(saved.filter(id => valid.has(id)));
+  } catch { _runCheckedIds = new Set(); }
+}
+
+async function _loadConfigs() {
+  const data = await api.get('/api/ticker-configs');
+  _configs = data.configs || [];
+  _loadRunQueue();
+  _renderList();
+  _renderRunConfigs();
+  let restoreId = null;
+  try { restoreId = parseInt(localStorage.getItem('tconf_selected_config_id')); } catch {}
+  const target = (_configs.some(c => c.id === restoreId) ? restoreId : _configs[0]?.id) || null;
+  if (target) {
+    await _selectConfig(target);
+  } else {
+    _showTconfEmpty(true);
+  }
+}
+
+function _renderList() {
+  const el = document.getElementById('tconf-list');
+  if (!el) return;
+  if (!_configs.length) { el.innerHTML = '<div class="ind-loading">No ticker configs yet.</div>'; return; }
+  el.innerHTML = '';
+  for (const cfg of _configs) {
+    const queued = _runCheckedIds.has(cfg.id);
+    const item = document.createElement('div');
+    item.className = 'ind-config-item' + (cfg.id === _activeId ? ' active' : '') + (queued ? ' queued' : '');
+    item.dataset.id = cfg.id;
+    item.title = 'Open config — _ next · + prev (wraps around)';
+    const info = document.createElement('div');
+    info.className = 'ind-config-info';
+    const name = document.createElement('div');
+    name.className = 'ind-config-name'; name.textContent = cfg.name;
+    const sub = document.createElement('div');
+    sub.className = 'ind-config-date'; sub.textContent = cfg.updated_at ? cfg.updated_at.slice(0, 10) : '';
+    info.append(name, sub);
+    const qBtn = document.createElement('button');
+    qBtn.className = 'ind-queue-btn' + (queued ? ' queued' : '');
+    qBtn.dataset.id = cfg.id;
+    qBtn.title = queued ? 'Remove from run queue (Space)' : 'Add to run queue (Space)';
+    qBtn.textContent = '▶';
+    item.append(info, qBtn);
+    item.addEventListener('click', e => { if (!e.target.closest('.ind-queue-btn')) _selectConfig(cfg.id); });
+    qBtn.addEventListener('click', e => { e.stopPropagation(); _toggleQueued(cfg.id); });
+    el.appendChild(item);
+  }
+}
+
+function _toggleQueued(id) {
+  if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
+  else _runCheckedIds.add(id);
+  _saveRunQueue();
+  _renderList();
+  _renderRunConfigs();
+}
+
+function _cycleConfig(dir) {
+  if (!_configs.length) return;
+  const cur  = _configs.findIndex(c => c.id === _activeId);
+  const next = (cur + dir + _configs.length) % _configs.length;
+  _selectConfig(_configs[next].id);
+}
+
+async function _selectConfig(id) {
+  if (_dirty && _activeId && !confirm('Discard unsaved changes?')) return;
+  _activeId = id; _dirty = false;
+  try { localStorage.setItem('tconf_selected_config_id', id); } catch {}
+  _renderList();
+  const cfg = await api.get(`/api/ticker-configs/${id}`);
+  _showTconfEmpty(false);
+  _populateTconfEditorFields(cfg);
+  _renderTconfDates(cfg);
+}
+
+// Switches the editor to display a queued config without the dirty-confirm
+// that _selectConfig does (the queue driver owns that decision).
+async function _queueDisplayConfig(id) {
+  _activeId = id; _dirty = false;
+  try { localStorage.setItem('tconf_selected_config_id', id); } catch {}
+  _renderList();
+  const cfg = await api.get(`/api/ticker-configs/${id}`);
+  _showTconfEmpty(false);
+  _populateTconfEditorFields(cfg);
+  _renderTconfDates(cfg);
+}
+
+function _populateTconfEditorFields(cfg) {
+  document.getElementById('tconf-name').value = cfg.name;
+  document.getElementById('tconf-ticker-list').value = cfg.ticker_list || '';
+  _updateTconfListCount();
+  _syncTconfTfChecks(cfg.timeframes);
+}
+
+function _renderTconfDates(cfg) {
+  const el = document.getElementById('tconf-dates');
+  const parts = [];
+  if (cfg.created_at) parts.push(`created ${cfg.created_at.slice(0, 10)}`);
+  if (cfg.updated_at) parts.push(`updated ${cfg.updated_at.slice(0, 10)}`);
+  el.textContent = parts.join(' · ');
+}
+
+function _showTconfEmpty(yes) {
+  document.getElementById('tconf-empty').style.display  = yes ? 'flex' : 'none';
+  document.getElementById('tconf-editor').style.display = yes ? 'none' : 'flex';
+}
+
+async function _createTconf() {
+  const created = await api.post('/api/ticker-configs');
+  _configs.push(created);
+  _renderList();
+  await _selectConfig(created.id);
+  const nameEl = document.getElementById('tconf-name');
+  nameEl.focus(); nameEl.select();
+}
+
+async function _deleteTconf() {
+  if (!_activeId) return;
+  const cfg = _configs.find(c => c.id === _activeId);
+  if (!confirm(`Delete "${cfg?.name || 'this ticker config'}"? This cannot be undone.`)) return;
+  await api.del(`/api/ticker-configs/${_activeId}`);
+  _configs = _configs.filter(c => c.id !== _activeId);
+  _runCheckedIds.delete(_activeId);
+  delete _runResults[_activeId];
+  _saveRunQueue();
+  _activeId = null;
+  _renderList();
+  _renderRunConfigs();
+  if (_configs.length) {
+    await _selectConfig(_configs[0].id);
+  } else {
+    _showTconfEmpty(true);
+  }
+}
+
+async function _saveTconf() {
+  if (!_activeId) return;
+  const body = {
+    name: document.getElementById('tconf-name').value.trim() || 'Unnamed',
+    ticker_list: document.getElementById('tconf-ticker-list').value || null,
+    timeframes: _getTconfCheckedTfs(),
+  };
+  const btn = document.getElementById('btn-save-tconf');
+  try {
+    const saved = await api.put(`/api/ticker-configs/${_activeId}`, body);
+    _dirty = false;
+    const item = _configs.find(c => c.id === _activeId);
+    if (item) Object.assign(item, body, { updated_at: saved.updated_at });
+    _renderList();
+    btn.textContent = 'Saved ✓';
+    btn.classList.add('ind-btn-save-ok');
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
+  } catch {
+    btn.textContent = 'Failed ✗';
+    btn.classList.add('ind-btn-save-err');
+    setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('ind-btn-save-err'); }, 2000);
+  }
+}
+
+// ── Run queue — right column ────────────────────────────────────
+
+function _renderRunConfigs() {
+  const el = document.getElementById('tconf-run-conf-list');
+  if (!el) return;
+  const queued = _configs.filter(c => _runCheckedIds.has(c.id));
+  const inRun  = _runQueueIdx >= 0;
+  if (!queued.length) {
+    el.innerHTML = '<div class="run-queue-empty">No ticker configs queued — click ▶ to add</div>';
+    return;
+  }
+  el.innerHTML = queued.map((c, i) => {
+    const r = _runResults[c.id];
+    let statusHtml = '';
+    if (r) {
+      if (r.status === 'pending') {
+        statusHtml = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
+      } else if (r.status === 'running') {
+        const pct = r.total > 0 ? (r.done / r.total * 100) : 0;
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:${pct}%"></div></div>
+                      <div class="rq-info"><span class="rq-state rq-running">fetching…</span><span class="rq-count">${r.done} / ${r.total || '?'}</span></div>`;
+      } else if (r.status === 'done') {
+        const hasErr = r.errors > 0;
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill ${hasErr ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
+                      <div class="rq-info"><span class="rq-state ${hasErr ? 'rq-errors' : 'rq-done'}">${hasErr ? `✗ ${r.errors} error${r.errors !== 1 ? 's' : ''}` : '✓ done'}</span><span class="rq-count">${r.done} / ${r.total}</span></div>`;
+      } else if (r.status === 'error') {
+        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-errors" style="width:100%"></div></div>
+                      <div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(r.error || 'error')}</span></div>`;
+      }
+    }
+    return `<div class="run-queue-item">
+      <div class="run-queue-header">
+        <span class="run-queue-pos">${i + 1}</span>
+        <span class="run-queue-name">${_esc(c.name)}</span>
+        <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''} title="Remove from queue">×</button>
+      </div>
+      <div class="rq-status">${statusHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function _isRunning() {
+  return _runQueueIdx >= 0;
+}
+
+// The single ▶ Run button always runs whatever's queued (matching Indicators/
+// Scanner/Pipeline) — queue at least one ticker config with its ▶ button or Space first.
+async function _startRun() {
+  if (_isRunning()) return;
+  const ids = _configs.filter(c => _runCheckedIds.has(c.id)).map(c => c.id);
+  if (!ids.length) return;
+  for (const id of ids) {
+    const cfg = _configs.find(c => c.id === id);
+    if (!cfg.ticker_list || !(cfg.timeframes || []).length) {
+      alert(`Ticker config "${cfg.name}" is missing a ticker list or timeframe — fix it before running.`);
+      return;
+    }
+  }
+  _runQueue    = ids;
+  _runQueueIdx = 0;
+  _runResults  = {};
+  for (const id of _runQueue) _runResults[id] = { status: 'pending' };
+  document.getElementById('btn-run-tconf').disabled = true;
+  _renderRunConfigs();
+  await _kickQueueItem();
+}
+
+async function _kickQueueItem() {
+  const id = _runQueue[_runQueueIdx];
+  _runResults[id] = { status: 'running', done: 0, total: 0, errors: 0 };
+  _renderRunConfigs();
+  await _queueDisplayConfig(id);
+  _resetProgressUI();
+  document.getElementById('tconf-run-total').textContent = `Config ${_runQueueIdx + 1} / ${_runQueue.length}`;
+  document.getElementById('btn-run-tconf').disabled = true;
+  const cfg = _configs.find(c => c.id === id);
+  try {
+    await api.post('/api/fetch/batch', { ticker_list: cfg.ticker_list, timeframes: cfg.timeframes });
+  } catch (err) {
+    _failRun(err.message || 'Failed to start fetch job');
+    return;
+  }
+  _startPolling();
+}
+
+// Called after a ticker config's fetch reaches a terminal state (done). Advances
+// to the next queued config, or finishes the run if that was the last one.
+async function _afterConfigFinished() {
+  _runQueueIdx++;
+  if (_runQueueIdx < _runQueue.length) {
+    await _kickQueueItem();
+  } else {
+    _finishQueueRun();
+  }
+}
+
+function _finishQueueRun() {
+  _runQueue    = [];
+  _runQueueIdx = -1;
+  document.getElementById('btn-run-tconf').disabled = false;
+  _renderRunConfigs();
+}
+
+// A fetch failure aborts the rest of the run (matching Indicators/Scanner/
+// Pipeline) — remaining queued configs stay queued so the user can retry.
+function _abortQueue(id, msg) {
+  if (_runResults[id]) _runResults[id] = { status: 'error', error: msg };
+  _runQueue    = [];
+  _runQueueIdx = -1;
+  document.getElementById('btn-run-tconf').disabled = false;
+  _renderRunConfigs();
+}
+
+// Never alert() here — this can be reached from a poll callback, and a
+// blocking dialog would freeze the tab. The failure shows inline in the
+// ticker config's run-queue row instead; the rest of the run queue is aborted.
+function _failRun(msg) {
+  _stopPolling();
+  _abortQueue(_activeId, msg);
+}
+
+function _clearRun() {
+  if (_isRunning()) return;
+  _runCheckedIds.clear();
+  _runResults = {};
+  _saveRunQueue();
+  _renderList();
+  _renderRunConfigs();
+}
+
+function _resetProgressUI() {
+  document.getElementById('tconf-overall').style.display = 'none';
+  document.getElementById('tconf-output-idle').style.display = '';
+}
+
+function _updateProgress(state) {
+  const idleEl    = document.getElementById('tconf-output-idle');
+  const overall   = document.getElementById('tconf-overall');
+  const track     = document.getElementById('tconf-track');
+  const bar       = document.getElementById('tconf-bar');
+  const meta      = document.getElementById('tconf-meta');
+  const count     = document.getElementById('tconf-count');
+  const pctEl     = document.getElementById('tconf-pct');
+  const currentEl = document.getElementById('tconf-current');
+  const errorsEl  = document.getElementById('tconf-errors');
+
+  idleEl.style.display  = 'none';
+  overall.style.display = '';
+  const pct = state.total > 0 ? (state.done / state.total * 100) : 0;
+  bar.style.width = `${pct}%`;
+  const active = state.status === 'running';
+  track.classList.toggle('active', active);
+  bar.classList.toggle('active', active);
+  meta.classList.toggle('active', active);
+  count.textContent    = `${state.done} / ${state.total || '?'}`;
+  pctEl.textContent    = state.total ? `${Math.round(pct)}%` : '…';
+  currentEl.textContent = state.current ? `→ ${state.current}` : '';
+  errorsEl.textContent  = state.errors > 0 ? `✗ ${state.errors}` : '';
 }
 
 // ── API key ───────────────────────────────────────────────────
@@ -846,14 +1003,7 @@ function _wireButtons() {
     _singleQueue = []; _singleResults = {};
     _saveSingleQueue(); _renderSingleQueue();
   });
-  document.getElementById('btn-batch-queue-refresh').addEventListener('click', _renderBatchQueue);
-  document.getElementById('btn-batch-queue-clear').addEventListener('click', () => {
-    if (_batchRunning) return;
-    _batchQueue = []; _batchResults = {};
-    _saveBatchQueue(); _renderBatchQueue();
-  });
   document.getElementById('btn-single-fetch').addEventListener('click', _runSingleQueue);
-  document.getElementById('btn-fetch').addEventListener('click', _runBatchQueue);
 
   document.getElementById('single-queue').addEventListener('click', e => {
     const btn = e.target.closest('.run-queue-remove');
@@ -870,20 +1020,6 @@ function _wireButtons() {
     _renderSingleQueue();
   });
 
-  document.getElementById('batch-queue').addEventListener('click', e => {
-    const btn = e.target.closest('.run-queue-remove');
-    if (!btn || btn.disabled) return;
-    const n = btn.dataset.list;
-    const removedIdx = _batchQueue.findIndex(item => item.name === n);
-    _batchQueue = _batchQueue.filter(item => item.name !== n);
-    if (_selectedBatchIdx !== null) {
-      if (_selectedBatchIdx === removedIdx) _selectedBatchIdx = null;
-      else if (_selectedBatchIdx > removedIdx) _selectedBatchIdx--;
-    }
-    delete _batchResults[n];
-    _saveBatchQueue();
-    _renderBatchQueue();
-  });
   // Global timeframe checkboxes update the currently selected queue item
   document.getElementById('single-tfs').addEventListener('change', () => {
     if (_selectedSingleIdx !== null && _selectedSingleIdx < _singleQueue.length) {
@@ -892,19 +1028,7 @@ function _wireButtons() {
       _renderSingleQueue();
     }
   });
-  document.getElementById('fetch-tfs').addEventListener('change', () => {
-    if (_selectedBatchIdx !== null && _selectedBatchIdx < _batchQueue.length) {
-      _batchQueue[_selectedBatchIdx].timeframes = _getChecked('fetch-tfs');
-      _saveBatchQueue();
-      _renderBatchQueue();
-    }
-  });
 
-  document.getElementById('btn-fetch-cancel').addEventListener('click', () => {
-    _batchCancelled = true;
-    api.post('/api/jobs/fetch/cancel');
-  });
-  document.getElementById('btn-batch-add').addEventListener('click', _addBatchList);
   document.getElementById('btn-single-add').addEventListener('click', () => {
     const dd = document.getElementById('single-ticker-dd');
     const hi = dd.querySelector('.hi');
@@ -948,7 +1072,7 @@ function _wireButtons() {
     btn.textContent = 'Update';
   });
 
-document.getElementById('btn-refresh-stats').addEventListener('click', () => {
+  document.getElementById('btn-refresh-stats').addEventListener('click', () => {
     _loadStats();
     _loadHistory();
   });
@@ -979,6 +1103,30 @@ document.getElementById('btn-refresh-stats').addEventListener('click', () => {
   });
 
   _initTickerSearch();
+}
+
+function _wireTconfButtons() {
+  document.getElementById('btn-new-tconf').addEventListener('click', _createTconf);
+  document.getElementById('btn-save-tconf').addEventListener('click', _saveTconf);
+  document.getElementById('btn-delete-tconf').addEventListener('click', _deleteTconf);
+  document.getElementById('btn-run-tconf').addEventListener('click', _startRun);
+  document.getElementById('btn-tconf-run-refresh').addEventListener('click', async () => {
+    await _loadTickerLists();
+    _renderRunConfigs();
+  });
+  document.getElementById('btn-tconf-run-clear').addEventListener('click', _clearRun);
+  document.getElementById('tconf-run-conf-list').addEventListener('click', e => {
+    const btn = e.target.closest('.run-queue-remove');
+    if (!btn || btn.disabled) return;
+    const id = +btn.dataset.id;
+    _runCheckedIds.delete(id);
+    delete _runResults[id];
+    _saveRunQueue();
+    _renderList();
+    _renderRunConfigs();
+  });
+  document.getElementById('tconf-name').addEventListener('input', () => { _dirty = true; });
+  document.getElementById('tconf-ticker-list').addEventListener('change', () => { _updateTconfListCount(); _dirty = true; });
 }
 
 // ── Single ticker autocomplete ────────────────────────────────
@@ -1039,7 +1187,6 @@ function _initTickerSearch() {
     if (e.key === 'Escape') { _ddHide(dd); return; }
     if (e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); _navigate(1);  return; }
     if (e.key === 'ArrowUp'   || e.key === '=') { e.preventDefault(); _navigate(-1); return; }
-    if (e.key === '[' || e.key === ']') { e.preventDefault(); _moveList(e.key === ']' ? 1 : -1); return; }
   });
 
   document.addEventListener('click', e => {
@@ -1163,11 +1310,13 @@ async function _uploadFile(file) {
   }
 }
 
-// ── Polling (page-load sync only) ─────────────────────────────
+// ── Polling — drives the ticker-config run queue, and also reconciles
+// a fetch job that was already running server-side when the page loaded ──
 
 function _startPolling() {
   if (_pollTimer) return;
   _pollTimer = setInterval(_poll, 2000);
+  _poll();
 }
 
 function _stopPolling() {
@@ -1176,27 +1325,43 @@ function _stopPolling() {
 }
 
 async function _poll() {
-  const status = await api.get('/api/jobs/status');
-  if (status.fetch.status !== 'running') {
+  const data  = await api.get('/api/jobs/status');
+  const state = data.fetch;
+  if (_runQueueIdx >= 0) {
+    _updateProgress(state);
+    const mapped = state.status === 'running' ? 'running' : state.status === 'done' ? 'done' : 'error';
+    _runResults[_activeId] = {
+      status: mapped, done: state.done, total: state.total, errors: state.errors,
+      error: mapped === 'error' ? state.status : undefined,
+    };
+    _renderRunConfigs();
+  }
+  if (state.status !== 'running') {
     _stopPolling();
-    _batchRunning = false;
-    _renderBatchQueue();
-    _loadStats();
-    _loadHistory();
+    if (_runQueueIdx < 0) {
+      // Reconciling a job that was already running when the page loaded —
+      // no active queue run on this tab, nothing to advance.
+      _loadStats();
+      _loadHistory();
+      return;
+    }
+    if (state.status === 'done') {
+      await _loadStats();
+      await _loadHistory();
+      await _afterConfigFinished();
+    } else {
+      _failRun(`fetch job ${state.status}`);
+    }
   }
 }
 
-function _moveList(dir) {
-  const sel = document.getElementById('fetch-list');
-  if (!sel || sel.options.length < 2) return;
-  sel.selectedIndex = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
-  sel.dispatchEvent(new Event('change'));
-}
+// ── Keyboard ──────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
   if (e.key === '`') { e.preventDefault(); window.location.href = '/indicators'; return; }
   if (e.key === '~') { e.preventDefault(); window.location.href = '/'; return; }
+  if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveTconf(); return; }
   if (e.key === 'Escape') {
     e.preventDefault();
     _setApiKeyEditMode(false);
@@ -1210,14 +1375,18 @@ document.addEventListener('keydown', e => {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   if (e.key === '-') { e.preventDefault(); _moveTickerSuggestion?.(1);  return; }
   if (e.key === '=') { e.preventDefault(); _moveTickerSuggestion?.(-1); return; }
-  if (e.key === '[') { e.preventDefault(); _moveList(-1);   return; }
-  if (e.key === ']') { e.preventDefault(); _moveList(1);    return; }
   if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; }
   if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
   if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }
   if (e.key === 'S' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/scanner'; }
   if (e.key === 'P' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/pipeline'; }
-  if (e.key === 'F' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); document.getElementById('btn-fetch').click(); }
+  // Ticker config shortcuts — matches Indicators/Scanner/Pipeline conventions.
+  if (e.key === 'N' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); _createTconf(); }
+  if (e.key === 'D' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); _deleteTconf(); }
+  if (e.key === 'R' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); _startRun(); }
+  if (e.key === ' ') { e.preventDefault(); if (_activeId) _toggleQueued(_activeId); }
+  if (e.key === '_') { e.preventDefault(); _cycleConfig(1); }
+  if (e.key === '+') { e.preventDefault(); _cycleConfig(-1); }
   if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     const input = document.getElementById('single-ticker');

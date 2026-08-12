@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS scan_results (
     FOREIGN KEY (run_id) REFERENCES scan_log(id)
 );
 
+CREATE TABLE IF NOT EXISTS ticker_configs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    ticker_list TEXT,
+    timeframes  TEXT NOT NULL DEFAULT '[]',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS pipeline_configs (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     name           TEXT NOT NULL,
@@ -116,6 +125,7 @@ CREATE TABLE IF NOT EXISTS pipeline_configs (
     timeframes     TEXT NOT NULL DEFAULT '[]',
     ind_conf_id    INTEGER,
     scan_config_id INTEGER,
+    ticker_conf_id INTEGER,
     created_at     TEXT NOT NULL,
     updated_at     TEXT
 );
@@ -150,6 +160,10 @@ def init_db() -> None:
             pass
         try:
             con.execute("ALTER TABLE pipeline_configs ADD COLUMN ind_conf_id INTEGER")
+        except Exception:
+            pass
+        try:
+            con.execute("ALTER TABLE pipeline_configs ADD COLUMN ticker_conf_id INTEGER")
         except Exception:
             pass
         # Migrate old scan schema (scan_conditions) to new (scan_criteria)

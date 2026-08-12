@@ -13,6 +13,7 @@ from backend.routers.jobs import router as jobs_router
 from backend.routers.ind_configs import router as ind_configs_router
 from backend.routers.scanner import router as scanner_router
 from backend.routers.pipeline import router as pipeline_router
+from backend.routers.ticker_configs import router as ticker_configs_router
 from backend.core import database as db
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
@@ -48,6 +49,7 @@ app.include_router(jobs_router)
 app.include_router(ind_configs_router)
 app.include_router(scanner_router)
 app.include_router(pipeline_router)
+app.include_router(ticker_configs_router)
 
 
 # ---------------------------------------------------------------------------

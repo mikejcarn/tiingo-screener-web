@@ -1,6 +1,5 @@
-import json
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -16,12 +15,12 @@ router = APIRouter(prefix="/api")
 def list_pipeline_configs():
     with db._conn() as con:
         rows = con.execute(
-            "SELECT id, name, ticker_list, timeframes, ind_conf_id, scan_config_id, updated_at "
+            "SELECT id, name, ticker_conf_id, ind_conf_id, scan_config_id, updated_at "
             "FROM pipeline_configs ORDER BY id"
         ).fetchall()
     return {"configs": [
-        {"id": r[0], "name": r[1], "ticker_list": r[2], "timeframes": json.loads(r[3] or '[]'),
-         "ind_conf_id": r[4], "scan_config_id": r[5], "updated_at": r[6]}
+        {"id": r[0], "name": r[1], "ticker_conf_id": r[2],
+         "ind_conf_id": r[3], "scan_config_id": r[4], "updated_at": r[5]}
         for r in rows
     ]}
 
@@ -34,7 +33,7 @@ def create_pipeline_config():
             "INSERT INTO pipeline_configs (name, timeframes, created_at, updated_at) VALUES (?,?,?,?)",
             ("New pipeline", "[]", now, now)
         )
-    return {"id": cur.lastrowid, "name": "New pipeline", "ticker_list": None, "timeframes": [],
+    return {"id": cur.lastrowid, "name": "New pipeline", "ticker_conf_id": None,
             "ind_conf_id": None, "scan_config_id": None, "created_at": now, "updated_at": now}
 
 
@@ -42,22 +41,21 @@ def create_pipeline_config():
 def get_pipeline_config(config_id: int):
     with db._conn() as con:
         row = con.execute(
-            "SELECT id, name, ticker_list, timeframes, ind_conf_id, scan_config_id, created_at, updated_at "
+            "SELECT id, name, ticker_conf_id, ind_conf_id, scan_config_id, created_at, updated_at "
             "FROM pipeline_configs WHERE id=?", (config_id,)
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Pipeline config not found")
     return {
-        "id": row[0], "name": row[1], "ticker_list": row[2],
-        "timeframes": json.loads(row[3] or '[]'), "ind_conf_id": row[4], "scan_config_id": row[5],
-        "created_at": row[6], "updated_at": row[7],
+        "id": row[0], "name": row[1], "ticker_conf_id": row[2],
+        "ind_conf_id": row[3], "scan_config_id": row[4],
+        "created_at": row[5], "updated_at": row[6],
     }
 
 
 class SavePipelineBody(BaseModel):
     name: str
-    ticker_list: Optional[str] = None
-    timeframes: List[str] = []
+    ticker_conf_id: Optional[int] = None
     ind_conf_id: Optional[int] = None
     scan_config_id: Optional[int] = None
 
@@ -69,8 +67,8 @@ def save_pipeline_config(config_id: int, body: SavePipelineBody):
         if not con.execute("SELECT id FROM pipeline_configs WHERE id=?", (config_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Pipeline config not found")
         con.execute(
-            "UPDATE pipeline_configs SET name=?, ticker_list=?, timeframes=?, ind_conf_id=?, scan_config_id=?, updated_at=? WHERE id=?",
-            (body.name.strip() or "Unnamed", body.ticker_list, json.dumps(body.timeframes),
+            "UPDATE pipeline_configs SET name=?, ticker_conf_id=?, ind_conf_id=?, scan_config_id=?, updated_at=? WHERE id=?",
+            (body.name.strip() or "Unnamed", body.ticker_conf_id,
              body.ind_conf_id, body.scan_config_id, now, config_id)
         )
     return {"saved": config_id, "updated_at": now}
