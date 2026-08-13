@@ -679,6 +679,15 @@ body.dash {
   cursor: pointer;
 }
 .dash-field select:focus { outline: none; }
+input[type="time"] {
+  background: var(--c-ctrl);
+  color: var(--t7);
+  border: 1px solid var(--b5);
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+input[type="time"]:focus { outline: none; border-color: var(--t4); }
 .dash-count { font-size: 11px; color: var(--t3); }
 
 .dash-checks { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 3px; }
@@ -2556,10 +2565,19 @@ body.pipeline-page {
   overflow: hidden;
 }
 
-/* ── Centre main ──────────────────────────────────────────── */
+/* ── Centre main: config card + schedule, stacked ────────────── */
 .pipeline-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pipeline-config-card {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2705,6 +2723,21 @@ body.pipeline-page {
   opacity: 0.6;
 }
 .pipeline-stage-chip-arrow { color: var(--t2); font-size: 11px; flex-shrink: 0; }
+
+/* Schedule card — sits below Pipeline Configuration; runs whatever's queued
+   on the Run Pipeline card, on a clock. Not tied to the open config. */
+.pipeline-schedule-card {
+  flex-shrink: 0;
+  border: 1px solid var(--b2);
+  border-radius: 4px;
+  background: var(--c-card);
+  box-shadow: 0 4px 20px var(--shadow-s);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pipeline-schedule-body { padding: 10px 12px 12px; }
+.pipeline-schedule-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--t7); cursor: pointer; }
 
 /* Results card */
 .pipeline-results-card {

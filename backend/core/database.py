@@ -119,15 +119,26 @@ CREATE TABLE IF NOT EXISTS ticker_configs (
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_configs (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    name           TEXT NOT NULL,
-    ticker_list    TEXT,
-    timeframes     TEXT NOT NULL DEFAULT '[]',
-    ind_conf_id    INTEGER,
-    scan_config_id INTEGER,
-    ticker_conf_id INTEGER,
-    created_at     TEXT NOT NULL,
-    updated_at     TEXT
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    name               TEXT NOT NULL,
+    ticker_list        TEXT,
+    timeframes         TEXT NOT NULL DEFAULT '[]',
+    ind_conf_id        INTEGER,
+    scan_config_id     INTEGER,
+    ticker_conf_id     INTEGER,
+    queued_for_run     INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT
+);
+
+-- Singleton (id=1) — one schedule governs whatever pipelines are queued
+-- (queued_for_run=1), rather than each pipeline having its own schedule.
+CREATE TABLE IF NOT EXISTS pipeline_schedule (
+    id        INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled   INTEGER NOT NULL DEFAULT 0,
+    days      TEXT NOT NULL DEFAULT '[]',
+    time      TEXT,
+    last_run  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_log (
@@ -166,6 +177,18 @@ def init_db() -> None:
             con.execute("ALTER TABLE pipeline_configs ADD COLUMN ticker_conf_id INTEGER")
         except Exception:
             pass
+        try:
+            con.execute("ALTER TABLE pipeline_configs ADD COLUMN queued_for_run INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
+        # Superseded by the single pipeline_schedule row below — drop the
+        # short-lived per-pipeline schedule columns if an earlier run added them.
+        for _col in ("schedule_enabled", "schedule_days", "schedule_time", "schedule_last_run"):
+            try:
+                con.execute(f"ALTER TABLE pipeline_configs DROP COLUMN {_col}")
+            except Exception:
+                pass
+        con.execute("INSERT OR IGNORE INTO pipeline_schedule (id, enabled, days, time, last_run) VALUES (1,0,'[]',NULL,NULL)")
         # Migrate old scan schema (scan_conditions) to new (scan_criteria)
         tables = {r[0] for r in con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"

@@ -39,80 +39,111 @@
     </div>
   </div>
 
-  <!-- ── Centre: editor ─────────────────────────────────────── -->
+  <!-- ── Centre: editor + schedule ────────────────────────────── -->
   <div class="pipeline-main">
 
-    <div id="pipeline-empty" class="ind-empty">
-      <div>
-        <p>No pipelines yet.</p>
-        <p>Click <strong>+ New</strong> to create one.</p>
+    <div class="pipeline-config-card">
+      <div id="pipeline-empty" class="ind-empty">
+        <div>
+          <p>No pipelines yet.</p>
+          <p>Click <strong>+ New</strong> to create one.</p>
+        </div>
+      </div>
+
+      <div id="pipeline-editor" style="display:none; flex-direction:column; overflow:hidden;">
+
+        <div class="ind-run-head">
+          <span>Pipeline Configuration</span>
+          <div class="ind-db-head-actions">
+            <button id="btn-save-pipeline" class="dash-btn-sm ind-btn-save" title="Save (Ctrl+S)">Save</button>
+            <button id="btn-delete-pipeline" class="dash-btn-sm dash-btn-sm-del" title="Delete (D)">Delete</button>
+          </div>
+        </div>
+        <div class="ind-name-row">
+          <span class="ind-name-label">Config Name</span>
+          <input type="text" id="pipeline-name" class="config-name-input" placeholder="Pipeline name">
+        </div>
+
+        <div id="pipeline-conf-dates" class="conf-dates"></div>
+
+        <div class="pipeline-stages">
+
+          <!-- Stage 1: Fetch -->
+          <div class="pipeline-stage-card" data-stage="fetch">
+            <div class="pipeline-stage-head"><span class="pipeline-stage-num">1</span> Fetch</div>
+            <div class="pipeline-stage-body">
+              <div class="dash-field">
+                <label>Ticker Config</label>
+                <div class="dash-field-right">
+                  <select id="pipeline-ticker-conf" title="Choose a ticker config (list + timeframes) to fetch"></select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pipeline-stage-arrow">↓</div>
+
+          <!-- Stage 2: Indicators -->
+          <div class="pipeline-stage-card" data-stage="indicators">
+            <div class="pipeline-stage-head"><span class="pipeline-stage-num">2</span> Indicators</div>
+            <div class="pipeline-stage-body">
+              <div class="dash-field">
+                <label>Indicator Config</label>
+                <div class="dash-field-right">
+                  <select id="pipeline-ind-config" title="Choose an indicator config to compute"></select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pipeline-stage-arrow">↓</div>
+
+          <!-- Stage 3: Scan (optional — leave unset to just fetch + compute for viewing/testing) -->
+          <div class="pipeline-stage-card" data-stage="scan">
+            <div class="pipeline-stage-head"><span class="pipeline-stage-num">3</span> Scan <span class="pipeline-stage-optional">(optional)</span></div>
+            <div class="pipeline-stage-body">
+              <div class="dash-field">
+                <label>Scan Config</label>
+                <div class="dash-field-right">
+                  <select id="pipeline-scan-config" title="Choose a scan config to run, or leave unset to stop after Indicators"></select>
+                </div>
+              </div>
+              <div id="pipeline-scan-hint" class="pipeline-derived"></div>
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
 
-    <div id="pipeline-editor" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
-
+    <div class="pipeline-schedule-card">
       <div class="ind-run-head">
-        <span>Pipeline Configuration</span>
+        <span>Schedule</span>
         <div class="ind-db-head-actions">
-          <button id="btn-save-pipeline" class="dash-btn-sm ind-btn-save" title="Save (Ctrl+S)">Save</button>
-          <button id="btn-delete-pipeline" class="dash-btn-sm dash-btn-sm-del" title="Delete (D)">Delete</button>
+          <button id="btn-save-schedule" class="dash-btn-sm ind-btn-save" title="Set schedule">Set</button>
         </div>
       </div>
-      <div class="ind-name-row">
-        <span class="ind-name-label">Config Name</span>
-        <input type="text" id="pipeline-name" class="config-name-input" placeholder="Pipeline name">
-      </div>
-
-      <div id="pipeline-conf-dates" class="conf-dates"></div>
-
-      <div class="pipeline-stages">
-
-        <!-- Stage 1: Fetch -->
-        <div class="pipeline-stage-card" data-stage="fetch">
-          <div class="pipeline-stage-head"><span class="pipeline-stage-num">1</span> Fetch</div>
-          <div class="pipeline-stage-body">
-            <div class="dash-field">
-              <label>Ticker Config</label>
-              <div class="dash-field-right">
-                <select id="pipeline-ticker-conf" title="Choose a ticker config (list + timeframes) to fetch"></select>
-              </div>
-            </div>
+      <div class="pipeline-schedule-body">
+        <div class="dash-field">
+          <label>Enabled</label>
+          <div class="dash-field-right">
+            <label class="pipeline-schedule-toggle"><input type="checkbox" id="pipeline-schedule-enabled" class="ind-toggle"> Run the queue automatically</label>
           </div>
         </div>
-
-        <div class="pipeline-stage-arrow">↓</div>
-
-        <!-- Stage 2: Indicators -->
-        <div class="pipeline-stage-card" data-stage="indicators">
-          <div class="pipeline-stage-head"><span class="pipeline-stage-num">2</span> Indicators</div>
-          <div class="pipeline-stage-body">
-            <div class="dash-field">
-              <label>Indicator Config</label>
-              <div class="dash-field-right">
-                <select id="pipeline-ind-config" title="Choose an indicator config to compute"></select>
-              </div>
-            </div>
+        <div class="dash-field">
+          <label>Time</label>
+          <div class="dash-field-right">
+            <input type="time" id="pipeline-schedule-time" title="Time of day to run the queued pipelines (server-local time)">
           </div>
         </div>
-
-        <div class="pipeline-stage-arrow">↓</div>
-
-        <!-- Stage 3: Scan (optional — leave unset to just fetch + compute for viewing/testing) -->
-        <div class="pipeline-stage-card" data-stage="scan">
-          <div class="pipeline-stage-head"><span class="pipeline-stage-num">3</span> Scan <span class="pipeline-stage-optional">(optional)</span></div>
-          <div class="pipeline-stage-body">
-            <div class="dash-field">
-              <label>Scan Config</label>
-              <div class="dash-field-right">
-                <select id="pipeline-scan-config" title="Choose a scan config to run, or leave unset to stop after Indicators"></select>
-              </div>
-            </div>
-            <div id="pipeline-scan-hint" class="pipeline-derived"></div>
-          </div>
+        <div class="dash-field">
+          <label>Days</label>
+          <div id="pipeline-schedule-days" class="dash-checks"></div>
         </div>
-
+        <div id="pipeline-schedule-hint" class="pipeline-derived"></div>
       </div>
     </div>
+
   </div>
 
   <!-- ── Right: run + results + history ────────────────────── -->

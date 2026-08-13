@@ -26,6 +26,11 @@
  * managed on the Tickers page) by id, the same way Stage 2/3 reference an
  * Indicator/Scan config — the pipeline itself no longer stores a raw ticker
  * list + timeframe set directly.
+ *
+ * The run queue (queued_for_run) is persisted server-side, not just in
+ * localStorage — a single global Schedule (backend/core/scheduler.py) can
+ * run whatever's queued on a clock even with no browser open, so the ▶
+ * toggle writes through to the server on every change.
  */
 import { api }       from './api.js';
 import { initHelp }  from './help.js';
@@ -33,8 +38,15 @@ import { initTheme, toggleTheme } from './theme.js';
 
 const _esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+// 0=Monday .. 6=Sunday — matches Python's datetime.weekday(), which the
+// backend scheduler compares against.
+const ALL_WEEKDAYS = [
+  { v: 0, label: 'Mon' }, { v: 1, label: 'Tue' }, { v: 2, label: 'Wed' },
+  { v: 3, label: 'Thu' }, { v: 4, label: 'Fri' }, { v: 5, label: 'Sat' }, { v: 6, label: 'Sun' },
+];
+
 // ── State ─────────────────────────────────────────────────────
-let _configs       = [];   // [{id, name, ticker_conf_id, ind_conf_id, scan_config_id, updated_at}]
+let _configs       = [];   // [{id, name, ticker_conf_id, ind_conf_id, scan_config_id, queued_for_run, updated_at}]
 let _activeId      = null;
 let _dirty         = false;
 let _tickerConfigs = [];   // [{id, name, ticker_list, timeframes, updated_at}]
@@ -69,9 +81,11 @@ let _fetchSigCache  = new Map();  // fetch signature -> {tickers, errors}, share
   _populateTickerConfigSelect();
   _populateIndConfigSelect();
   _refreshScanConfigOptions();
+  _buildScheduleDayChecks();
   _wireStatic();
   await _loadConfigs();
   await _loadHistory();
+  await _loadSchedule();
 })();
 
 // ── Selects ───────────────────────────────────────────────────
@@ -130,23 +144,86 @@ function _updateScanHint(compatibleCount) {
   }
 }
 
-// ── Run queue persistence ────────────────────────────────────
-function _saveRunQueue() {
-  try { localStorage.setItem('pipeline_run_queue', JSON.stringify([..._runCheckedIds])); } catch {}
+// ── Schedule ──────────────────────────────────────────────────
+// One global schedule — when it fires, it runs whatever pipelines are
+// currently queued (queued_for_run, the same set the ▶ Run button runs),
+// in the same order. Not tied to any single pipeline config.
+function _buildScheduleDayChecks() {
+  const wrap = document.getElementById('pipeline-schedule-days');
+  wrap.innerHTML = '';
+  for (const d of ALL_WEEKDAYS) {
+    const lbl = document.createElement('label');
+    lbl.innerHTML = `<input type="checkbox" value="${d.v}"> ${d.label}`;
+    wrap.appendChild(lbl);
+  }
 }
-function _loadRunQueue() {
+
+function _syncScheduleDayChecks(days) {
+  const set = new Set(days || []);
+  document.querySelectorAll('#pipeline-schedule-days input[type="checkbox"]')
+    .forEach(cb => { cb.checked = set.has(parseInt(cb.value)); });
+}
+
+function _getScheduleCheckedDays() {
+  return [...document.querySelectorAll('#pipeline-schedule-days input[type="checkbox"]:checked')]
+    .map(cb => parseInt(cb.value));
+}
+
+function _updateScheduleHint() {
+  const el      = document.getElementById('pipeline-schedule-hint');
+  const enabled = document.getElementById('pipeline-schedule-enabled').checked;
+  const time    = document.getElementById('pipeline-schedule-time').value;
+  const days    = _getScheduleCheckedDays();
+  if (!enabled) { el.textContent = ''; return; }
+  if (!time || !days.length) {
+    el.textContent = 'Pick a time and at least one day to activate the schedule.';
+    return;
+  }
+  const dayLabel = days.length === 7 ? 'every day'
+    : `every ${days.map(v => ALL_WEEKDAYS[v].label).join(', ')}`;
+  el.textContent = `Runs the queued pipelines ${dayLabel} at ${time} (server-local time).`;
+}
+
+async function _loadSchedule() {
+  const sched = await api.get('/api/pipeline-schedule');
+  document.getElementById('pipeline-schedule-enabled').checked = !!sched.enabled;
+  document.getElementById('pipeline-schedule-time').value = sched.time || '';
+  _syncScheduleDayChecks(sched.days);
+  _updateScheduleHint();
+}
+
+async function _saveSchedule() {
+  const body = {
+    enabled: document.getElementById('pipeline-schedule-enabled').checked,
+    days: _getScheduleCheckedDays(),
+    time: document.getElementById('pipeline-schedule-time').value || null,
+  };
+  const btn = document.getElementById('btn-save-schedule');
   try {
-    const saved = JSON.parse(localStorage.getItem('pipeline_run_queue') || '[]');
-    const valid = new Set(_configs.map(c => c.id));
-    _runCheckedIds = new Set(saved.filter(id => valid.has(id)));
-  } catch { _runCheckedIds = new Set(); }
+    await api.put('/api/pipeline-schedule', body);
+    btn.textContent = 'Set ✓';
+    btn.classList.add('ind-btn-save-ok');
+    setTimeout(() => { btn.textContent = 'Set'; btn.classList.remove('ind-btn-save-ok'); }, 1800);
+  } catch {
+    btn.textContent = 'Failed ✗';
+    btn.classList.add('ind-btn-save-err');
+    setTimeout(() => { btn.textContent = 'Set'; btn.classList.remove('ind-btn-save-err'); }, 2000);
+  }
+}
+
+// ── Run queue persistence ────────────────────────────────────
+// Server-persisted (queued_for_run column), not just localStorage — the
+// backend Schedule runs whatever's queued even with no browser open, so it
+// needs to see the same queue state the UI shows.
+function _setQueuedOnServer(id, queued) {
+  api.put(`/api/pipeline-configs/${id}/queue`, { queued }).catch(() => {});
 }
 
 // ── Pipeline config list ─────────────────────────────────────
 async function _loadConfigs() {
   const data = await api.get('/api/pipeline-configs');
   _configs = data.configs || [];
-  _loadRunQueue();   // restore queued pipelines before first render
+  _runCheckedIds = new Set(_configs.filter(c => c.queued_for_run).map(c => c.id));
   _renderList();
   _renderRunConfigs();
   let restoreId = null;
@@ -189,9 +266,10 @@ function _renderList() {
 }
 
 function _toggleQueued(id) {
-  if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
-  else _runCheckedIds.add(id);
-  _saveRunQueue();
+  let queued;
+  if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; queued = false; }
+  else { _runCheckedIds.add(id); queued = true; }
+  _setQueuedOnServer(id, queued);
   _renderList();
   _renderRunConfigs();
 }
@@ -338,7 +416,6 @@ async function _deleteConfig() {
   _configs = _configs.filter(c => c.id !== _activeId);
   _runCheckedIds.delete(_activeId);
   delete _runResults[_activeId];
-  _saveRunQueue();
   _activeId = null;
   _renderList();
   _renderRunConfigs();
@@ -465,7 +542,7 @@ function _clearRun() {
   if (_isRunning()) return;
   _runCheckedIds.clear();
   _runResults = {};
-  _saveRunQueue();
+  api.post('/api/pipeline-configs/clear-queue').catch(() => {});
   _renderList();
   _renderRunConfigs();
 }
@@ -784,7 +861,7 @@ function _wireStatic() {
     const id = +btn.dataset.id;
     _runCheckedIds.delete(id);
     delete _runResults[id];
-    _saveRunQueue();
+    _setQueuedOnServer(id, false);
     _renderList();
     _renderRunConfigs();
   });
@@ -801,6 +878,10 @@ function _wireStatic() {
   document.getElementById('pipeline-ticker-conf').addEventListener('change', () => { _dirty = true; });
   document.getElementById('pipeline-ind-config').addEventListener('change', () => { _refreshScanConfigOptions(); _dirty = true; });
   document.getElementById('pipeline-scan-config').addEventListener('change', () => { _dirty = true; });
+  document.getElementById('btn-save-schedule').addEventListener('click', _saveSchedule);
+  document.getElementById('pipeline-schedule-enabled').addEventListener('change', _updateScheduleHint);
+  document.getElementById('pipeline-schedule-time').addEventListener('change', _updateScheduleHint);
+  document.getElementById('pipeline-schedule-days').addEventListener('change', _updateScheduleHint);
 
   document.addEventListener('keydown', e => {
     const tag = document.activeElement?.tagName;

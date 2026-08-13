@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +16,7 @@ from backend.routers.scanner import router as scanner_router
 from backend.routers.pipeline import router as pipeline_router
 from backend.routers.ticker_configs import router as ticker_configs_router
 from backend.core import database as db
+from backend.core.scheduler import scheduler_loop
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
 from backend.core.replay_events import extract_events
@@ -34,6 +36,10 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 @app.on_event("startup")
 def startup():
     db.init_db()
+
+@app.on_event("startup")
+async def start_scheduler():
+    asyncio.create_task(scheduler_loop())
 
 app.add_middleware(NoCacheMiddleware)
 app.add_middleware(

@@ -6,7 +6,6 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
 let _tickerLists   = [];
 let _pollTimer     = null;
-let _moveTickerSuggestion = null; // set by _initTickerSearch
 
 // Single ticker queue state
 let _singleQueue   = [];
@@ -250,6 +249,19 @@ function _updateTconfListCount() {
   if (!sel || !el) return;
   const match = _tickerLists.find(l => l.name === sel.value);
   el.textContent = match ? `${match.count.toLocaleString()} tickers` : '';
+}
+
+// Opens the Ticker List <select> (if closed) and steps its selection —
+// plain .focus() doesn't visually pop the option list open, so it looks
+// like nothing happened; showPicker() actually opens it.
+function _cycleTconfTickerList(dir) {
+  if (!_activeId) return;
+  const sel = document.getElementById('tconf-ticker-list');
+  if (!sel || !sel.options.length) return;
+  sel.focus();
+  try { sel.showPicker?.(); } catch {}
+  sel.selectedIndex = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
+  sel.dispatchEvent(new Event('change'));
 }
 
 function _buildTconfTfChecks() {
@@ -1160,15 +1172,6 @@ function _initTickerSearch() {
     allItems[hiIdx]?.scrollIntoView({ block: 'nearest' });
   }
 
-  _moveTickerSuggestion = async (dir) => {
-    input.focus();
-    if (!dd.querySelector('.ticker-dd-item')) {
-      hiIdx = -1;
-      await _ddFetch(input.value.trim(), dd);
-    }
-    _navigate(dir);
-  };
-
   input.addEventListener('input', e => {
     e.target.value = e.target.value.toUpperCase();
     clearTimeout(debounce);
@@ -1371,10 +1374,14 @@ document.addEventListener('keydown', e => {
     document.activeElement?.blur();
     return;
   }
-  const tag = document.activeElement?.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-  if (e.key === '-') { e.preventDefault(); _moveTickerSuggestion?.(1);  return; }
-  if (e.key === '=') { e.preventDefault(); _moveTickerSuggestion?.(-1); return; }
+  const active = document.activeElement;
+  const tag = active?.tagName;
+  // The Ticker List select is itself the target of -/= below, so once it has
+  // focus (from a previous press) it must stay exempt from the generic guard.
+  const isTconfListSelect = active?.id === 'tconf-ticker-list';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (tag === 'SELECT' && !isTconfListSelect)) return;
+  if (e.key === '-') { e.preventDefault(); _cycleTconfTickerList(1);  return; }
+  if (e.key === '=') { e.preventDefault(); _cycleTconfTickerList(-1); return; }
   if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; }
   if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
   if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }
