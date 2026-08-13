@@ -43,12 +43,6 @@
       <button id="btn-apikey-verify" class="dash-btn-sm" title="Check that this key works with Tiingo">Verify</button>
       <button id="btn-apikey-delete" class="dash-btn-sm dash-btn-sm-del" title="Remove the saved API key">Delete</button>
       <span id="apikey-status"></span>
-      <div class="apikey-card-sep"></div>
-      <span class="tiingo-ref-label">Supported tickers</span>
-      <button id="btn-update-tickers" class="dash-btn-sm" title="Re-download the full Tiingo supported-tickers list used for search">Update</button>
-      <a href="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
-         target="_blank" class="tiingo-ref-link" title="Download supported_tickers.zip from Tiingo">&#x2197; download</a>
-      <span id="tiingo-list-meta" class="tiingo-ref-meta"></span>
     </div>
   </div>
 
@@ -62,6 +56,14 @@
       </div>
     </div>
     <div class="fetch-single-body">
+      <div class="fetch-single-tickers-row">
+        <span class="tiingo-ref-label">Search index</span>
+        <button id="btn-update-tickers" class="dash-btn-sm" title="Re-download the full Tiingo ticker list used to power this search">Update</button>
+        <span class="fetch-single-tickers-sep">|</span>
+        <a href="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
+           target="_blank" class="tiingo-ref-link" title="Download supported_tickers.zip from Tiingo">&#x2197; download</a>
+        <span id="tiingo-list-meta" class="tiingo-ref-meta"></span>
+      </div>
       <div class="fetch-add-row">
         <div id="single-ticker-wrap">
           <input id="single-ticker" class="dash-ticker-input" type="text"

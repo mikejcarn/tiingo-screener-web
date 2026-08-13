@@ -1127,11 +1127,20 @@ body.fetch-page {
   gap: 8px;
   font-size: 12px;
 }
-.apikey-card-sep { width: 1px; align-self: stretch; background: var(--b2); margin: 0 4px; }
-.apikey-card .tiingo-ref-link { margin-left: 0; }
-.apikey-card .tiingo-ref-meta { margin-bottom: 0; min-height: 0; }
-
 .fetch-single-body { padding: 16px; }
+
+/* Search index row — lives in Single Ticker(s) since that's what it feeds */
+.fetch-single-tickers-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.fetch-single-tickers-row .tiingo-ref-link { margin-left: 0; }
+.fetch-single-tickers-row .tiingo-ref-meta { margin-bottom: 0; min-height: 0; }
+.fetch-single-tickers-sep { color: var(--b6); }
 
 /* Row: Ticker Configs side-panel + editor/Ticker Lists column */
 .fetch-configs-row {
