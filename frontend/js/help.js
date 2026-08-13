@@ -18,7 +18,10 @@ const _PAGES = [
       <tr class="help-section"><td colspan="2">Ticker Configs</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker config (wraps around)</td></tr>
       <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Open / cycle the open config's Ticker List dropdown</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Focus next / previous Timeframe checkbox</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Toggle the focused Timeframe checkbox on/off</td></tr>
       <tr><td><kbd>N</kbd></td><td>New ticker config</td></tr>
+      <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save ticker config</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete ticker config</td></tr>
       <tr><td>▶ button &nbsp;or&nbsp; <kbd>Space</kbd></td><td>Add / remove open config from the run queue</td></tr>
@@ -29,6 +32,7 @@ const _PAGES = [
       <tr><td>Type any letter</td><td>Search tickers in the Single Ticker box</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate suggestions (while search box is focused)</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Add selected ticker to queue</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Fetch the queued single ticker(s)</td></tr>
       <tr><td><kbd>Escape</kbd></td><td>Clear search / close dropdown / cancel API key edit</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
@@ -66,6 +70,7 @@ const _PAGES = [
       <tr class="help-section"><td colspan="2">Scan Config List</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next scan config (wraps around)</td></tr>
       <tr><td><kbd>N</kbd></td><td>New scan config</td></tr>
+      <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save scan config</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete scan config</td></tr>
       <tr><td>▶ button &nbsp;or&nbsp; <kbd>Space</kbd> (no card focused)</td><td>Add / remove open config from the run queue</td></tr>
@@ -88,6 +93,7 @@ const _PAGES = [
       <tr class="help-section"><td colspan="2">Pipeline List</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next pipeline (wraps around)</td></tr>
       <tr><td><kbd>N</kbd></td><td>New pipeline</td></tr>
+      <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save pipeline</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete pipeline</td></tr>
       <tr><td><kbd>Space</kbd></td><td>Add / remove open pipeline from the run queue</td></tr>

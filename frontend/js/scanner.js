@@ -996,6 +996,15 @@ function _wireGlobal() {
       return;
     }
 
+    // Matches Indicators/Tickers/Pipeline's convention for jumping to the
+    // config name field.
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      const nameEl = document.getElementById('scan-name');
+      if (nameEl) { nameEl.focus(); nameEl.select(); }
+      return;
+    }
+
     if (inInput) return;
 
     if (e.key === 'N' && !ctrl) { e.preventDefault(); document.getElementById('btn-new-scan').click(); }

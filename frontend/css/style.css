@@ -699,6 +699,14 @@ input[type="time"]:focus { outline: none; border-color: var(--t4); }
   color: var(--t6);
   cursor: pointer;
 }
+/* [/] focus marker for the Timeframes row on the Tickers page — Enter toggles */
+#tconf-tfs label.kb-focused {
+  background: var(--c-ctrl);
+  box-shadow: 0 0 0 1px var(--b6);
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
 .dash-checks input[type="checkbox"],
 .ind-toggle,
 .param-checkbox {
@@ -832,6 +840,25 @@ input[type="time"]:focus { outline: none; border-color: var(--t4); }
 .ticker-dd-sym  { font-weight: 600; color: var(--t8); min-width: 70px; }
 .ticker-dd-exch { color: var(--t4); font-size: 11px; min-width: 60px; }
 .ticker-dd-type { color: var(--t3); font-size: 11px; }
+
+/* Ticker List field on the Tickers page — custom overlay so -/= can drive
+   the highlighted option directly (a native <select> popup captures its own
+   keyboard input once open, so arbitrary keys like -/= never reach it).
+   Reparented to <body> and position:fixed at open time (JS sets left/top/
+   min-width from the select's rect) — the editor card clips overflow, so an
+   absolutely-positioned dropdown left inside it gets cut off at the card edge. */
+.tconf-select-wrap { position: relative; display: inline-block; }
+#tconf-ticker-list-dd {
+  display: none;
+  position: fixed;
+  background: var(--c-surface);
+  border: 1px solid var(--b4);
+  border-radius: 3px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px var(--shadow-s);
+}
 
 .dash-ticker-input {
   background: var(--c-ctrl); color: var(--t10); border: 1px solid var(--b5);

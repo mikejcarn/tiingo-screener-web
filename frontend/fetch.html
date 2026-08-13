@@ -125,7 +125,10 @@
           <div class="dash-field">
             <label>Ticker List</label>
             <div class="dash-field-right">
-              <select id="tconf-ticker-list" title="Choose a ticker list to fetch"></select>
+              <div id="tconf-ticker-list-wrap" class="tconf-select-wrap">
+                <select id="tconf-ticker-list" title="Choose a ticker list to fetch (- / = to cycle)"></select>
+                <div id="tconf-ticker-list-dd"></div>
+              </div>
               <span id="tconf-ticker-list-count" class="dash-count" title="Number of tickers in this list"></span>
             </div>
           </div>

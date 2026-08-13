@@ -21,6 +21,7 @@ let _runCheckedIds = new Set(); // config ids queued via the ▶ button — pers
 let _runQueue      = [];        // ordered ids for the run currently in progress
 let _runQueueIdx   = -1;        // -1 idle, else index into _runQueue
 let _runResults    = {};        // id -> {status:'pending'|'running'|'done'|'error', done, total, errors, error?}
+let _tconfTfFocusIdx = -1;      // -1 none, else index into #tconf-tfs's timeframe checkboxes ([/] cycle, Enter toggles)
 
 // ── Bootstrap ─────────────────────────────────────────────────
 
@@ -251,17 +252,66 @@ function _updateTconfListCount() {
   el.textContent = match ? `${match.count.toLocaleString()} tickers` : '';
 }
 
-// Opens the Ticker List <select> (if closed) and steps its selection —
-// plain .focus() doesn't visually pop the option list open, so it looks
-// like nothing happened; showPicker() actually opens it.
+// -/= cycle the Ticker List through a custom overlay rather than the native
+// <select> popup: once a real OS select popup is open it captures its own
+// keyboard input for navigation, so arbitrary keys like -/= never reach our
+// keydown handler — only Up/Down would. This overlay is just a styled list
+// (same pattern as the single-ticker search dropdown) so -/= can drive its
+// highlighted row directly and the visible "this is a dropdown" cue survives.
 function _cycleTconfTickerList(dir) {
   if (!_activeId) return;
   const sel = document.getElementById('tconf-ticker-list');
+  const dd  = document.getElementById('tconf-ticker-list-dd');
   if (!sel || !sel.options.length) return;
   sel.focus();
-  try { sel.showPicker?.(); } catch {}
+  if (dd.style.display !== 'block') _tconfListDdOpen();
   sel.selectedIndex = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
   sel.dispatchEvent(new Event('change'));
+  _tconfListDdSyncHi();
+}
+
+function _tconfListDdOpen() {
+  const sel = document.getElementById('tconf-ticker-list');
+  const dd  = document.getElementById('tconf-ticker-list-dd');
+  dd.innerHTML = '';
+  [...sel.options].forEach((opt, i) => {
+    const item = document.createElement('div');
+    item.className = 'ticker-dd-item' + (i === sel.selectedIndex ? ' hi' : '');
+    item.dataset.index = i;
+    item.textContent = opt.textContent;
+    item.addEventListener('click', () => {
+      sel.selectedIndex = i;
+      sel.dispatchEvent(new Event('change'));
+      _tconfListDdClose();
+      sel.focus();
+    });
+    dd.appendChild(item);
+  });
+  // Reparented to <body> and fixed-positioned from the select's actual screen
+  // rect — the editor card has overflow:hidden, so a dropdown left inside it
+  // (position:absolute) gets clipped at the card's edge instead of floating
+  // over the rest of the page.
+  document.body.appendChild(dd);
+  const rect = sel.getBoundingClientRect();
+  dd.style.position = 'fixed';
+  dd.style.left = `${rect.left}px`;
+  dd.style.top = `${rect.bottom + 4}px`;
+  dd.style.minWidth = `${rect.width}px`;
+  dd.style.display = 'block';
+}
+
+function _tconfListDdSyncHi() {
+  const sel = document.getElementById('tconf-ticker-list');
+  const dd  = document.getElementById('tconf-ticker-list-dd');
+  const items = dd.querySelectorAll('.ticker-dd-item');
+  items.forEach((el, i) => el.classList.toggle('hi', i === sel.selectedIndex));
+  items[sel.selectedIndex]?.scrollIntoView({ block: 'nearest' });
+}
+
+function _tconfListDdClose() {
+  const dd = document.getElementById('tconf-ticker-list-dd');
+  dd.style.display = 'none';
+  dd.innerHTML = '';
 }
 
 function _buildTconfTfChecks() {
@@ -283,6 +333,33 @@ function _syncTconfTfChecks(timeframes) {
 
 function _getTconfCheckedTfs() {
   return [...document.querySelectorAll('#tconf-tfs input[type="checkbox"]:checked')].map(el => el.value);
+}
+
+// [/] cycle a visual focus marker across the timeframe checkboxes, Enter
+// toggles whichever one is focused — mirrors the kb-focused convention used
+// for card focus on the Indicators/Scanner/Pipeline pages.
+function _setTconfTfFocus(idx) {
+  const labels = [...document.querySelectorAll('#tconf-tfs label')];
+  labels.forEach(l => l.classList.remove('kb-focused'));
+  _tconfTfFocusIdx = idx;
+  if (idx >= 0 && labels[idx]) labels[idx].classList.add('kb-focused');
+}
+
+function _moveTconfTfFocus(dir) {
+  if (!_activeId) return;
+  const labels = document.querySelectorAll('#tconf-tfs label');
+  if (!labels.length) return;
+  const next = (_tconfTfFocusIdx + dir + labels.length) % labels.length;
+  _setTconfTfFocus(next);
+}
+
+function _toggleTconfTfFocused() {
+  const labels = document.querySelectorAll('#tconf-tfs label');
+  const lbl = labels[_tconfTfFocusIdx];
+  if (!lbl) return;
+  const cb = lbl.querySelector('input[type="checkbox"]');
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 // ── Run queue persistence ────────────────────────────────────
@@ -387,6 +464,7 @@ function _populateTconfEditorFields(cfg) {
   document.getElementById('tconf-ticker-list').value = cfg.ticker_list || '';
   _updateTconfListCount();
   _syncTconfTfChecks(cfg.timeframes);
+  _setTconfTfFocus(-1);
 }
 
 function _renderTconfDates(cfg) {
@@ -1139,6 +1217,11 @@ function _wireTconfButtons() {
   });
   document.getElementById('tconf-name').addEventListener('input', () => { _dirty = true; });
   document.getElementById('tconf-ticker-list').addEventListener('change', () => { _updateTconfListCount(); _dirty = true; });
+  document.addEventListener('click', e => {
+    const inWrap = document.getElementById('tconf-ticker-list-wrap').contains(e.target);
+    const inDd   = document.getElementById('tconf-ticker-list-dd').contains(e.target);
+    if (!inWrap && !inDd) _tconfListDdClose();
+  });
 }
 
 // ── Single ticker autocomplete ────────────────────────────────
@@ -1371,7 +1454,17 @@ document.addEventListener('keydown', e => {
     const tickerInput = document.getElementById('single-ticker');
     tickerInput.value = '';
     _ddHide(document.getElementById('single-ticker-dd'));
+    _tconfListDdClose();
+    _setTconfTfFocus(-1);
     document.activeElement?.blur();
+    return;
+  }
+  // Matches Indicators/Scanner/Pipeline's convention for jumping to the
+  // config name field.
+  if (e.key === 'Enter' && e.shiftKey) {
+    e.preventDefault();
+    const nameEl = document.getElementById('tconf-name');
+    if (nameEl) { nameEl.focus(); nameEl.select(); }
     return;
   }
   const active = document.activeElement;
@@ -1379,9 +1472,16 @@ document.addEventListener('keydown', e => {
   // The Ticker List select is itself the target of -/= below, so once it has
   // focus (from a previous press) it must stay exempt from the generic guard.
   const isTconfListSelect = active?.id === 'tconf-ticker-list';
+  if (isTconfListSelect && e.key === 'Enter') { e.preventDefault(); _tconfListDdClose(); return; }
   if (tag === 'INPUT' || tag === 'TEXTAREA' || (tag === 'SELECT' && !isTconfListSelect)) return;
   if (e.key === '-') { e.preventDefault(); _cycleTconfTickerList(1);  return; }
   if (e.key === '=') { e.preventDefault(); _cycleTconfTickerList(-1); return; }
+  // Matches the -/= convention (the "first" key moves forward, the "second"
+  // key moves backward — - is down/next, = is up/previous) rather than
+  // reading order, so [ moves right/next and ] moves left/previous.
+  if (e.key === '[') { e.preventDefault(); _moveTconfTfFocus(1);  return; }
+  if (e.key === ']') { e.preventDefault(); _moveTconfTfFocus(-1); return; }
+  if (e.key === 'Enter' && _tconfTfFocusIdx >= 0) { e.preventDefault(); _toggleTconfTfFocused(); return; }
   if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; }
   if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; }
   if (e.key === 'I' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/indicators'; }
@@ -1394,6 +1494,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); if (_activeId) _toggleQueued(_activeId); }
   if (e.key === '_') { e.preventDefault(); _cycleConfig(1); }
   if (e.key === '+') { e.preventDefault(); _cycleConfig(-1); }
+  if (e.key === 'F' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); _runSingleQueue(); }
   if (e.key.length === 1 && /[a-z]/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     const input = document.getElementById('single-ticker');

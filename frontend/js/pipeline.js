@@ -903,6 +903,15 @@ function _wireStatic() {
       return;
     }
 
+    // Matches Indicators/Tickers/Scanner's convention for jumping to the
+    // config name field.
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      const nameEl = document.getElementById('pipeline-name');
+      if (nameEl) { nameEl.focus(); nameEl.select(); }
+      return;
+    }
+
     if (inInput) return;
 
     if (e.key === 'N' && !ctrl) { e.preventDefault(); _createConfig(); }
