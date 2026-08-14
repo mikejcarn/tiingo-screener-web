@@ -350,6 +350,50 @@ function _activateFocusedStage() {
   try { el.showPicker?.(); } catch {}
 }
 
+// ── Schedule card keyboard focus (↑/↓ cycle its fields, Enter activates) ──
+// The Schedule card is a single standalone section, not one of several
+// competing cards like the stage cards above — so there's no -/= "outer"
+// layer to protect here, ArrowUp/ArrowDown drive it directly. The Set
+// button is included as the last stop so saving fits the same type-aware
+// Enter convention instead of needing a key of its own.
+function _scheduleNavItems() {
+  return [
+    document.getElementById('pipeline-schedule-enabled')?.closest('label'),
+    document.getElementById('pipeline-schedule-time'),
+    ...document.querySelectorAll('#pipeline-schedule-days label'),
+    document.getElementById('btn-save-schedule'),
+  ].filter(Boolean);
+}
+
+function _setScheduleFocus(el) {
+  document.querySelector('.pipeline-schedule-card .kb-focused')?.classList.remove('kb-focused');
+  if (!el) return;
+  el.classList.add('kb-focused');
+  el.scrollIntoView({ block: 'nearest' });
+}
+
+function _moveScheduleFocus(dir) {
+  const items = _scheduleNavItems();
+  if (!items.length) return;
+  const cur  = items.findIndex(el => el.classList.contains('kb-focused'));
+  const next = (cur + dir + items.length) % items.length;
+  _setScheduleFocus(items[next]);
+}
+
+function _activateScheduleFocused() {
+  const el = document.querySelector('.pipeline-schedule-card .kb-focused');
+  if (!el) return false;
+  if (el.id === 'btn-save-schedule') { el.click(); return true; }
+  if (el.tagName === 'INPUT' && el.type === 'time') {
+    el.focus();
+    try { el.showPicker?.(); } catch {}
+    return true;
+  }
+  const cb = el.querySelector('input[type="checkbox"]');
+  if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change', { bubbles: true })); return true; }
+  return false;
+}
+
 async function _selectConfig(id) {
   if (_dirty && _activeId && !confirm('Discard unsaved changes?')) return;
   _activeId = id; _dirty = false;
@@ -899,6 +943,7 @@ function _wireStatic() {
     if (e.key === 'Escape') {
       e.preventDefault();
       _setStageFocus(null);
+      _setScheduleFocus(null);
       document.activeElement?.blur();
       return;
     }
@@ -933,6 +978,14 @@ function _wireStatic() {
     // focused card's primary control so its value can be changed from the keyboard.
     if (e.key === '-') { e.preventDefault(); _moveStageFocus(1); }
     if (e.key === '=') { e.preventDefault(); _moveStageFocus(-1); }
-    if (e.key === 'Enter') { e.preventDefault(); _activateFocusedStage(); }
+    // ArrowUp/ArrowDown cycle the Schedule card's own fields — it's a single
+    // standalone section, not one of several cards, so it doesn't need the
+    // -/= "outer" layer the stage cards use.
+    if (e.key === 'ArrowDown') { e.preventDefault(); _moveScheduleFocus(1); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); _moveScheduleFocus(-1); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!_activateScheduleFocused()) _activateFocusedStage();
+    }
   });
 }

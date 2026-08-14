@@ -688,6 +688,7 @@ input[type="time"] {
   font-size: 12px;
 }
 input[type="time"]:focus { outline: none; border-color: var(--t4); }
+input[type="time"].kb-focused { box-shadow: 0 0 0 1px var(--b6); border-color: var(--b6); }
 .dash-count { font-size: 11px; color: var(--t3); }
 
 .dash-checks { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 3px; }
@@ -699,8 +700,9 @@ input[type="time"]:focus { outline: none; border-color: var(--t4); }
   color: var(--t6);
   cursor: pointer;
 }
-/* [/] focus marker for the Timeframes row on the Tickers page — Enter toggles */
-#tconf-tfs label.kb-focused {
+/* kb-focus marker for a checkbox row inside any .dash-checks group (Tickers'
+   Timeframes, Pipeline's Schedule days, ...) — Enter toggles it. */
+.dash-checks label.kb-focused {
   background: var(--c-ctrl);
   box-shadow: 0 0 0 1px var(--b6);
   border-radius: 3px;
@@ -2785,6 +2787,12 @@ body.pipeline-page {
 }
 .pipeline-schedule-body { padding: 10px 12px 12px; }
 .pipeline-schedule-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--t7); cursor: pointer; }
+.pipeline-schedule-toggle.kb-focused,
+#btn-save-schedule.kb-focused {
+  background: var(--c-ctrl);
+  box-shadow: 0 0 0 1px var(--b6);
+  border-radius: 3px;
+}
 
 /* Results card */
 .pipeline-results-card {

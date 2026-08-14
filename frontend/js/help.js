@@ -107,6 +107,10 @@ const _PAGES = [
       <tr class="help-section"><td colspan="2">Stage Cards (Fetch / Indicators / Scan)</td></tr>
       <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Focus next / previous stage card (wraps around)</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Open the focused stage's config selector — arrow keys / typing change it directly</td></tr>
+
+      <tr class="help-section"><td colspan="2">Schedule Card</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Cycle Enabled → Time → Mon...Sun → Set (wraps around)</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Activate the focused field — toggle Enabled/a day, open the Time picker, or click Set</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
     <div class="help-summary">The pipeline page chains Fetch, Indicators, and Scan into one run: fetch a ticker config (list + timeframes, from the Tickers page), compute an indicator config, then optionally run a scan filtered to that indicator config — reusing each stage's config from the other pages rather than redefining it. Several pipelines can be queued (▶ button or Space) and run in order; queued pipelines that reference the same ticker config only fetch once. The Schedule card below Pipeline Configuration is a single global timer, not per-pipeline — enable it, pick days and a time (server-local), hit Set, and it runs whatever's currently queued, in the same order the ▶ Run button would. Useful once the app is deployed and running continuously; it has no effect while the server isn't running.</div>`,
