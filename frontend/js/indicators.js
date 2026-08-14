@@ -662,6 +662,7 @@ function _updateQueueStatus() {
 
 function _setKeyboardFocus(ind) {
   document.querySelector('#ind-list .ind-card.kb-focused')?.classList.remove('kb-focused');
+  _setParamFocus(null); // switching cards always drops any param-level focus
   _focusedIndKey = ind || null;
   if (!_focusedIndKey) return;
   const card = document.querySelector(`#ind-list .ind-card[data-indicator="${CSS.escape(_focusedIndKey)}"]`);
@@ -683,6 +684,124 @@ function _toggleFocusedCard() {
   if (!card) return;
   const checkbox = card.querySelector('.ind-toggle');
   if (checkbox) { checkbox.checked = !card.classList.contains('enabled'); _onToggle(checkbox); _dirty = true; }
+}
+
+// ── Param-level keyboard focus ───────────────────────────────
+// -/= always cycle indicator cards (see the keydown handler below) — they
+// deliberately never re-scope to params, so a card being open can't ever
+// trap you from reaching the next/previous card. Once the kb-focused card
+// is open, ArrowUp/ArrowDown instead cycle its visible param fields
+// top-to-bottom, and Enter becomes type-aware per field rather than
+// toggling the card.
+
+// Returns the kb-focused card's DOM element, but only if it's open — closed
+// cards have no param-tree to navigate, so -/= should fall back to card cycling.
+function _openFocusedCardEl() {
+  if (!_focusedIndKey) return null;
+  const card = document.querySelector(`#ind-list .ind-card[data-indicator="${CSS.escape(_focusedIndKey)}"]`);
+  return card?.classList.contains('enabled') ? card : null;
+}
+
+// Flat, visually-ordered list of navigable param stops in an open card:
+// leaf fields plus collapsible group headers (so a collapsed group can still
+// be reached and re-expanded), skipping anything hidden inside a collapsed
+// group. offsetParent-based visibility check does that for free, without
+// having to hand-replicate the .collapsed CSS rule here.
+function _paramNavItems(card) {
+  const tree = card?.querySelector('.param-tree');
+  if (!tree) return [];
+  return [...tree.querySelectorAll('.param-field, .param-group-head')]
+    .filter(el => el.offsetParent !== null);
+}
+
+function _setParamFocus(el) {
+  document.querySelector('#ind-list .param-field.kb-focused, #ind-list .param-group-head.kb-focused')
+    ?.classList.remove('kb-focused');
+  if (!el) return;
+  el.classList.add('kb-focused');
+  el.scrollIntoView({ block: 'nearest' });
+}
+
+function _moveParamFocus(dir) {
+  const card  = _openFocusedCardEl();
+  const items = _paramNavItems(card);
+  if (!items.length) return;
+  const cur  = items.findIndex(el => el.classList.contains('kb-focused'));
+  const next = (cur + dir + items.length) % items.length;
+  _setParamFocus(items[next]);
+}
+
+function _focusedParamEl() {
+  return document.querySelector('#ind-list .param-field.kb-focused, #ind-list .param-group-head.kb-focused');
+}
+
+function _activateFocusedParam() {
+  const el = _focusedParamEl();
+  if (!el) return false;
+
+  if (el.classList.contains('param-group-head')) {
+    el.closest('.param-group')?.classList.toggle('collapsed');
+    return true;
+  }
+
+  const fire = input => input?.dispatchEvent(new Event('change', { bubbles: true }));
+  switch (el.dataset.type) {
+    case 'bool': {
+      const cb = el.querySelector('.param-checkbox');
+      if (cb) { cb.checked = !cb.checked; fire(cb); }
+      break;
+    }
+    case 'nullable_num': {
+      const cb = el.querySelector('.param-nullable-toggle');
+      if (cb) { cb.checked = !cb.checked; fire(cb); }
+      break;
+    }
+    case 'nullable_list': {
+      const cb = el.querySelector('.param-nullable-list-toggle');
+      if (cb) { cb.checked = !cb.checked; fire(cb); }
+      break;
+    }
+    case 'string': {
+      const select = el.querySelector('select.param-select');
+      if (select) {
+        select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        el.querySelector('.param-input')?.focus();
+        el.querySelector('.param-input')?.select();
+      }
+      break;
+    }
+    default: { // int, float, list_num, json — focus + select so typing replaces the value
+      const input = el.querySelector('.param-input');
+      input?.focus();
+      input?.select?.();
+    }
+  }
+  _dirty = true;
+  return true;
+}
+
+// Shared by the spinner ▲/▼ buttons and ArrowLeft/ArrowRight on a focused numeric field.
+function _stepNumInput(input, dir) {
+  if (!input || input.disabled) return;
+  const step = parseFloat(input.step) || 1;
+  const min  = input.min !== '' ? parseFloat(input.min) : -Infinity;
+  const max  = input.max !== '' ? parseFloat(input.max) : Infinity;
+  let cur = parseFloat(input.value);
+  if (isNaN(cur)) cur = min !== -Infinity ? min : 0;
+  let next = Math.round((cur + dir * step) * 1e6) / 1e6;
+  next = Math.max(min, Math.min(max, next));
+  input.value = next;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function _stepFocusedParamNum(dir) {
+  const el = _focusedParamEl();
+  if (!el || (el.dataset.type !== 'int' && el.dataset.type !== 'float' && el.dataset.type !== 'nullable_num')) return;
+  const input = el.querySelector('.param-num');
+  _stepNumInput(input, dir);
+  _dirty = true;
 }
 
 function _wireListEvents() {
@@ -768,18 +887,8 @@ function _wireListEvents() {
     const spinBtn = e.target.closest('.param-num-up, .param-num-down');
     if (spinBtn) {
       const input = spinBtn.closest('.param-num-wrap')?.querySelector('input[type="number"]');
-      if (input && !input.disabled) {
-        const step = parseFloat(input.step) || 1;
-        const min  = input.min !== '' ? parseFloat(input.min) : -Infinity;
-        const max  = input.max !== '' ? parseFloat(input.max) : Infinity;
-        let cur = parseFloat(input.value);
-        if (isNaN(cur)) cur = min !== -Infinity ? min : 0;
-        const dir  = spinBtn.classList.contains('param-num-up') ? 1 : -1;
-        let next = Math.round((cur + dir * step) * 1e6) / 1e6;
-        next = Math.max(min, Math.min(max, next));
-        input.value = next;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      }
+      const dir   = spinBtn.classList.contains('param-num-up') ? 1 : -1;
+      _stepNumInput(input, dir);
     }
 
     // Add another config to a *_params multi-editor
@@ -1656,9 +1765,21 @@ document.addEventListener('keydown', e => {
   if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveConfig(); return; }
 
   if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
-    if (e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); _moveFocus(1);  return; }
-    if (e.key === 'ArrowUp'   || e.key === '=') { e.preventDefault(); _moveFocus(-1); return; }
-    if (e.key === 'Enter') { e.preventDefault(); _toggleFocusedCard(); return; }
+    // -/= always cycle indicator cards, never re-scope — otherwise they get
+    // "stuck" cycling the open card's params with no way back out to the
+    // next/previous card. ArrowUp/ArrowDown are dedicated to param cycling
+    // instead, only doing anything once a card is open.
+    if (e.key === '-') { e.preventDefault(); _moveFocus(1);  return; }
+    if (e.key === '=') { e.preventDefault(); _moveFocus(-1); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); _moveParamFocus(1);  return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); _moveParamFocus(-1); return; }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); _stepFocusedParamNum(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); _stepFocusedParamNum(1);  return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!_activateFocusedParam()) _toggleFocusedCard();
+      return;
+    }
     if (e.key === ' ' || e.key === '\\') {
       e.preventDefault();
       if (_selectedId) {

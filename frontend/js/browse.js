@@ -21,8 +21,6 @@ let _listIdx   = 0;
 let _scanListName = null;  // name of the virtual scan-results list, if present
 let _scanLocked   = false; // true while _applyScanRun is programmatically setting controls
 let _refreshGen   = 0;     // incremented each call; stale async responses are dropped
-let _loadGen      = 0;     // same pattern for _loadTicker async conf-validity check
-const _indTickerCache = new Map(); // "confId:tf" → Set<ticker>, populated lazily
 
 // Per-TF preferences: { tf: { min_bars, conf_id } } — persisted to localStorage
 const _tfPrefs = (() => { try { return JSON.parse(localStorage.getItem('tf_prefs') || '{}'); } catch { return {}; } })();
@@ -161,33 +159,16 @@ function _applyTfPrefs(tf, flash = true) {
 
 // ── Load a ticker ─────────────────────────────────────────────
 
-// Returns true if the conf has data for ticker+tf; caches per conf+tf to avoid redundant fetches.
-async function _validConf(ticker, tf, confId) {
-  const key = `${confId}:${tf}`;
-  if (!_indTickerCache.has(key)) {
-    try {
-      const data = await api.get(`/api/indicators/tickers-list?config_id=${confId}&timeframe=${tf}`);
-      _indTickerCache.set(key, new Set(data.tickers || []));
-    } catch {
-      return true; // on network error, don't discard the conf selection
-    }
-  }
-  return _indTickerCache.get(key).has(ticker);
-}
-
+// The selected indicator config is never auto-cleared here: a ticker lacking
+// computed data for it just renders with no overlay (the replay WS falls
+// back to raw OHLCV) — the config stays as chosen instead of being silently
+// reverted, which used to happen with zero feedback and looked like a bug.
 async function _loadTicker(idx) {
   if (!tickers.length) return;
-  const myGen  = ++_loadGen;
   const safeIdx = ((idx % tickers.length) + tickers.length) % tickers.length;
   const ticker = tickers[safeIdx];
   const tf     = tfSelect.value;
-  let conf     = parseInt(confSelect.value) || 0;
-
-  if (conf) {
-    const valid = await _validConf(ticker, tf, conf);
-    if (myGen !== _loadGen) return; // a newer _loadTicker superseded this one
-    if (!valid) { confSelect.value = ''; conf = 0; }
-  }
+  const conf   = parseInt(confSelect.value) || 0;
 
   tickerIdx = safeIdx;
   const restoreDate = getCurrentBarInfo()?.date || null;
@@ -504,9 +485,10 @@ function _wireNav() {
     if (e.key === 'ArrowDown' && e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); _stepMinBars(-1); return; }
     if (e.key === '{' ) { e.preventDefault(); _cycleSelect(scanSelect,  -1); }
     if (e.key === '}' ) { e.preventDefault(); _cycleSelect(scanSelect,   1); }
-    if (e.key === ':' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
-    if (e.key === ';' ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
-    if (e.key === "'")  { e.preventDefault(); _cycleSelect(confSelect,  -1); }
+    // Both unshifted and physically adjacent — avoids the shift-key mixup
+    // with {/} (scan) that : (shift+;) caused.
+    if (e.key === ';' ) { e.preventDefault(); _cycleSelect(confSelect,  -1); }
+    if (e.key === "'" ) { e.preventDefault(); _cycleSelect(confSelect,   1); }
     if (e.key === '/' ) { e.preventDefault(); toggleTheme(); return; }
     if (e.key === 'C' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === 'T' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); window.location.href = '/fetch'; return; }

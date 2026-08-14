@@ -1669,6 +1669,17 @@ body.ind-page {
 .param-group.collapsed .param-group-body { display: none; }
 .param-group.collapsed .param-group-arrow { transform: rotate(-90deg); }
 
+/* Param-focus marker (ArrowUp/ArrowDown once a card is open) — shared by
+   the Indicators and Scanner pages' param-navigation framework. */
+.param-field.kb-focused,
+.param-group-head.kb-focused {
+  background: var(--c-ctrl);
+  box-shadow: 0 0 0 1px var(--b6);
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
 .param-multi-item + .param-multi-item {
   margin-top: 6px;
   padding-top: 6px;

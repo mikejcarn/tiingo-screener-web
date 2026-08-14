@@ -56,8 +56,10 @@ const _PAGES = [
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
 
       <tr class="help-section"><td colspan="2">Indicator Cards</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Navigate indicator cards</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator on / off</td></tr>
+      <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Navigate indicator cards (always — even while a card is open)</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Cycle the open card's parameters, once it's open</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator on / off — or, if a parameter is focused, activate it (toggle checkbox, cycle dropdown, focus text field, expand/collapse a group)</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step the focused numeric parameter by its increment</td></tr>
       <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Toggle focused indicator in / out of run queue</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
@@ -80,8 +82,11 @@ const _PAGES = [
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
 
       <tr class="help-section"><td colspan="2">Criteria Cards</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>-</kbd> / <kbd>=</kbd></td><td>Focus next / previous criteria card (wraps around)</td></tr>
-      <tr><td><kbd>Enter</kbd> &nbsp;or&nbsp; <kbd>Space</kbd> (card focused)</td><td>Select / deselect the focused criteria card (also opens / closes it)</td></tr>
+      <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Focus next / previous criteria card (always — even while one is open)</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Cycle the focused card's parameters, once it's open</td></tr>
+      <tr><td><kbd>Enter</kbd> &nbsp;or&nbsp; <kbd>Space</kbd> (card focused, no param focused)</td><td>Select / deselect the focused criteria card (also opens / closes it)</td></tr>
+      <tr><td><kbd>Enter</kbd> (param focused)</td><td>Activate the focused parameter (toggle checkbox, cycle dropdown, focus text/number field)</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step the focused numeric parameter by its increment</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
     <div class="help-summary">The scanner page tests your ticker database against configurable criteria. Each scan config is linked to an indicator config, so criteria can reference both OHLCV data and computed indicators. Results can be opened directly in the chart page for bar-by-bar review.</div>`,
@@ -128,7 +133,7 @@ const _PAGES = [
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>
-      <tr><td><kbd>'</kbd> / <kbd>;</kbd> &nbsp;or&nbsp; <kbd>:</kbd> (prev only)</td><td>Previous / next indicator config</td></tr>
+      <tr><td><kbd>;</kbd> / <kbd>'</kbd></td><td>Previous / next indicator config (also clears the selected scan result, since it may no longer apply)</td></tr>
       <tr><td><kbd>{</kbd> / <kbd>}</kbd></td><td>Previous / next scan result</td></tr>
       <tr><td><kbd>Shift+↑</kbd> / <kbd>Shift+↓</kbd></td><td>Increase / decrease min bars filter by 100</td></tr>
       <tr><td>Any lowercase letter</td><td>Focus ticker search input</td></tr>

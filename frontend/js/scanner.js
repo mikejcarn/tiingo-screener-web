@@ -545,6 +545,8 @@ function _renderParamFields(schema, params, container) {
   for (const [key, s] of Object.entries(schema)) {
     const wrap = document.createElement('div');
     wrap.className = 'param-field';
+    wrap.dataset.key  = key;
+    wrap.dataset.type = s.type || 'number'; // matches the render branch's fallback below
     const lbl = document.createElement('span');
     lbl.className = 'param-key'; lbl.textContent = s.label || key;
     const pdesc = s.description || _criteriaParamDescriptions[key];
@@ -598,7 +600,7 @@ function _renderParamFields(schema, params, container) {
 }
 
 // ── Keyboard focus ────────────────────────────────────────────
-function _setCritFocus(idx) { _focusedIdx = idx; _syncFocus(); }
+function _setCritFocus(idx) { _setParamFocus(null); _focusedIdx = idx; _syncFocus(); }
 
 function _syncFocus() {
   document.querySelectorAll('.scan-crit-card').forEach((card, i) => {
@@ -610,8 +612,101 @@ function _syncFocus() {
 function _moveCritFocus(dir) {
   const cards = document.querySelectorAll('.scan-crit-card');
   if (!cards.length) return;
+  _setParamFocus(null); // moving cards always drops any param-level focus
   _focusedIdx = (_focusedIdx + dir + cards.length) % cards.length;
   _syncFocus();
+}
+
+// ── Param-level keyboard focus (same framework as the Indicators page) ──
+// -/= always cycle criteria cards — they never re-scope to params, so an
+// open card can't ever trap you from reaching the next/previous card.
+// ArrowUp/ArrowDown instead cycle the focused card's visible param fields
+// once its body is expanded, and Enter becomes type-aware per field rather
+// than toggling the card.
+
+// A card's body can be expanded even when the *current* timeframe's own
+// checkbox is unchecked (it stays open as long as any timeframe has this
+// criteria enabled) — so "open" is whether the body is actually visible,
+// not the card's per-tf .enabled class.
+function _openFocusedCardEl() {
+  const card = document.querySelector('.scan-crit-card.kb-focused');
+  const body = card?.querySelector('.ind-card-body');
+  return body && !body.classList.contains('collapsed') ? card : null;
+}
+
+function _paramNavItems(card) {
+  const body = card?.querySelector('.ind-card-body');
+  if (!body) return [];
+  return [...body.querySelectorAll('.param-field')].filter(el => el.offsetParent !== null);
+}
+
+function _setParamFocus(el) {
+  document.querySelector('.scan-crit-card .param-field.kb-focused')?.classList.remove('kb-focused');
+  if (!el) return;
+  el.classList.add('kb-focused');
+  el.scrollIntoView({ block: 'nearest' });
+}
+
+function _moveParamFocus(dir) {
+  const card  = _openFocusedCardEl();
+  const items = _paramNavItems(card);
+  if (!items.length) return;
+  const cur  = items.findIndex(el => el.classList.contains('kb-focused'));
+  const next = (cur + dir + items.length) % items.length;
+  _setParamFocus(items[next]);
+}
+
+function _focusedParamEl() {
+  return document.querySelector('.scan-crit-card .param-field.kb-focused');
+}
+
+function _activateFocusedParam() {
+  const el = _focusedParamEl();
+  if (!el) return false;
+  const fire = input => input?.dispatchEvent(new Event('change', { bubbles: true }));
+  switch (el.dataset.type) {
+    case 'bool': {
+      const cb = el.querySelector('.param-checkbox');
+      if (cb) { cb.checked = !cb.checked; fire(cb); }
+      break;
+    }
+    case 'select': {
+      const select = el.querySelector('select.param-input');
+      if (select) {
+        select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
+        fire(select);
+      }
+      break;
+    }
+    default: { // int, number, list_int, list_str — focus + select so typing replaces the value
+      const input = el.querySelector('.param-input');
+      input?.focus();
+      input?.select?.();
+    }
+  }
+  _markDirty();
+  return true;
+}
+
+// Same math as the Indicators page's spinner buttons — scanner's number
+// fields have no spin buttons of their own, so this is the only place it lives.
+function _stepNumInput(input, dir) {
+  if (!input || input.disabled) return;
+  const step = parseFloat(input.step) || 1;
+  const min  = input.min !== '' ? parseFloat(input.min) : -Infinity;
+  const max  = input.max !== '' ? parseFloat(input.max) : Infinity;
+  let cur = parseFloat(input.value);
+  if (isNaN(cur)) cur = min !== -Infinity ? min : 0;
+  let next = Math.round((cur + dir * step) * 1e6) / 1e6;
+  next = Math.max(min, Math.min(max, next));
+  input.value = next;
+  input.dispatchEvent(new Event('change', { bubbles: true })); // scanner's param inputs commit on 'change', not 'input'
+}
+
+function _stepFocusedParamNum(dir) {
+  const el = _focusedParamEl();
+  if (!el || (el.dataset.type !== 'int' && el.dataset.type !== 'number')) return;
+  _stepNumInput(el.querySelector('.param-num'), dir);
 }
 
 // Enter selects/deselects the focused card AND opens/closes it in one action —
@@ -1030,11 +1125,20 @@ function _wireGlobal() {
       if (i < _FIXED_TFS.length - 1) _setActiveTf(_FIXED_TFS[i + 1]);
     }
 
-    // -/= (redundant with ArrowUp/ArrowDown) cycle keyboard focus between the
-    // criteria cards of the open config — matches Pipeline's stage-card keys.
-    if (e.key === 'ArrowUp'   || e.key === '=') { e.preventDefault(); _moveCritFocus(-1); }
-    if (e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); _moveCritFocus(1); }
-    if (e.key === 'Enter')     { e.preventDefault(); _toggleFocusedCard(); }
+    // -/= cycle keyboard focus between criteria cards — always, even while
+    // one is open, so they can never get stuck inside it (matches the
+    // Indicators page). ArrowUp/ArrowDown instead cycle the focused card's
+    // param fields once it's open, and Enter is type-aware per field.
+    if (e.key === '-') { e.preventDefault(); _moveCritFocus(1); }
+    if (e.key === '=') { e.preventDefault(); _moveCritFocus(-1); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); _moveParamFocus(1); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); _moveParamFocus(-1); }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); _stepFocusedParamNum(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); _stepFocusedParamNum(1); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!_activateFocusedParam()) _toggleFocusedCard();
+    }
     // Space toggles the focused criteria card's checkbox when one is kb-focused
     // (-/=/arrows); otherwise it queues/dequeues the open scan config for a run
     // (matches Indicators/Pipeline's Space-to-queue convention).
