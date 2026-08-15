@@ -22,7 +22,8 @@ let autoFit    = localStorage.getItem('replay_autofit') === 'true';
 let lockMode   = localStorage.getItem('replay_lock_mode')  || null;
 let lockValue  = localStorage.getItem('replay_lock_value') || null;
 let _lastChartX     = null;  // last known mouse x over the chart, in #chart-local px — for '.' hover-anchor
-let _measureActive  = false; // mid live-measurement (started by Alt+Click)
+let _lastChartY     = null;  // last known mouse y over the chart, in #chart-local px — for Alt+Space measurement
+let _measureActive  = false; // mid live-measurement (started by Alt+Click or Alt+Space)
 let _measureStart   = null;  // {x, y} in #chart-local pixel coords — the locked start point
 
 // DOM refs
@@ -55,6 +56,7 @@ export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   _measureActive = false;
   _measureStart  = null;
   _lastChartX    = null;
+  _lastChartY    = null;
 
   chart = new ChartManager(document.getElementById('chart'));
   _setStatus('connecting…');
@@ -230,15 +232,33 @@ function _wireControls() {
   });
 
   // '.' — place/remove a manual anchored VWAP at whichever candle is under the cursor.
-  // Alt+Click — lock a measurement start point; move the mouse freely to explore
-  //             the $ / % change live; click again (any click) to dismiss it.
+  // Alt+Click or Alt+Space — lock a measurement start point (at the click position,
+  // or wherever the mouse last was over the chart for the keyboard version); move
+  // the mouse freely to explore the $ / % change live; click again, or press
+  // Alt+Space again, to dismiss it.
   const chartEl = document.getElementById('chart');
 
   chartEl.addEventListener('mousemove', (e) => {
     const rect = chartEl.getBoundingClientRect();
     _lastChartX = e.clientX - rect.left;
+    _lastChartY = e.clientY - rect.top;
   });
-  chartEl.addEventListener('mouseleave', () => { _lastChartX = null; });
+  chartEl.addEventListener('mouseleave', () => { _lastChartX = null; _lastChartY = null; });
+
+  // Toggles the live measurement: starts it locked at (x, y) if idle, clears it
+  // if already active — shared by Alt+Click (event coords) and Alt+Space (last
+  // known mouse position over the chart, since a keypress has no coords of its own).
+  function _toggleMeasureAt(x, y) {
+    if (_measureActive) {
+      chart.clearMeasure();
+      _measureActive = false;
+      _measureStart  = null;
+      return;
+    }
+    _measureStart  = { x, y };
+    _measureActive = true;
+    chart.updateMeasure(_measureStart.x, _measureStart.y, _measureStart.x, _measureStart.y);
+  }
 
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
@@ -253,6 +273,12 @@ function _wireControls() {
     if (e.key === '.' && !e.altKey) {
       if (_lastChartX == null) return;
       chart.toggleManualAnchorAtX(_lastChartX);
+      return;
+    }
+    if (e.key === ' ' && e.altKey) {
+      e.preventDefault();
+      if (!_measureActive && (_lastChartX == null || _lastChartY == null)) return;
+      _toggleMeasureAt(_lastChartX, _lastChartY);
     }
   });
 
@@ -261,16 +287,10 @@ function _wireControls() {
     const rect = chartEl.getBoundingClientRect();
 
     if (_measureActive) {
-      chart.clearMeasure();
-      _measureActive = false;
-      _measureStart  = null;
+      _toggleMeasureAt(); // args unused when clearing
       return;
     }
-    if (e.altKey) {
-      _measureStart  = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      _measureActive = true;
-      chart.updateMeasure(_measureStart.x, _measureStart.y, _measureStart.x, _measureStart.y);
-    }
+    if (e.altKey) _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
   });
 
   window.addEventListener('mousemove', (e) => {
@@ -328,7 +348,7 @@ function _wireKeys() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT') return;
-    if (e.key === ' ')          { e.preventDefault(); setPlaying(!playing); }
+    if (e.key === ' ' && !e.altKey) { e.preventDefault(); setPlaying(!playing); } // Alt+Space is the measurement shortcut instead
     const ctrl = e.ctrlKey || e.metaKey;
     if (e.key === 'ArrowRight' && !e.shiftKey && !ctrl) { e.preventDefault(); setPlaying(false); jump(current + 1); }
     if (e.key === 'ArrowLeft'  && !e.shiftKey && !ctrl) { e.preventDefault(); setPlaying(false); jump(current - 1); }
