@@ -227,11 +227,27 @@ async function _refreshTickers(preferTicker) {
   _listIdx   = _lists.indexOf(list);
   const prev = preferTicker ?? tickers[tickerIdx];
 
-  // Virtual scan list (localStorage) — treat as fixed
+  // Virtual scan list (localStorage) — fixed ticker set, but min_bars still
+  // filters it against the current timeframe's OHLCV bar counts, same as any
+  // other list, otherwise a full-history scan could surface thin tickers.
   if (_scanListName && list === _scanListName) {
-    try { tickers = JSON.parse(localStorage.getItem('scan_tickers') || '[]'); } catch { tickers = []; }
+    let scanTickers;
+    try { scanTickers = JSON.parse(localStorage.getItem('scan_tickers') || '[]'); } catch { scanTickers = []; }
+    const minBars = parseInt(minBarsInput.value) || 0;
+    if (minBars > 0 && scanTickers.length && tf) {
+      try {
+        const data = await api.post('/api/tickers/filter-min-bars',
+          { tickers: scanTickers, timeframe: tf, min_bars: minBars });
+        if (myGen !== _refreshGen) return; // a newer refresh started while we were awaiting
+        const qualifying = new Set(data.tickers || []);
+        tickers = scanTickers.filter(t => qualifying.has(t));
+      } catch { tickers = scanTickers; }
+    } else {
+      tickers = scanTickers;
+    }
     const i = tickers.indexOf(prev);
     if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
+    document.getElementById('chart-empty').style.display = 'none';
     _loadTicker(i >= 0 ? i : 0);
     return;
   }
@@ -282,17 +298,28 @@ async function _applyScanRun() {
     return;
   }
   try {
-    const data = await api.get(`/api/scan/runs/${runId}`);
-    tickers = data.tickers || [];
-    if (!tickers.length) return;
-
-    _scanLocked = true;
     const opt = scanSelect.selectedOptions[0];
     // Auto-set timeframe
     const tfs = JSON.parse(opt.dataset.timeframes || '[]');
-    if (tfs.length && timeframes.includes(tfs[0])) {
-      tfSelect.value = tfs[0];
-      _prevTf = tfs[0]; // keep _prevTf in sync with programmatic TF change
+    const tf  = (tfs.length && timeframes.includes(tfs[0])) ? tfs[0] : tfSelect.value;
+
+    // min_bars still applies to scan-run ticker lists, filtered against the
+    // resolved timeframe's OHLCV bar counts — otherwise a scan meant for the
+    // full history could surface tickers with only a handful of bars.
+    const params = new URLSearchParams();
+    if (tf) params.set('timeframe', tf);
+    const minBars = parseInt(minBarsInput.value);
+    if (minBars > 0) params.set('min_bars', String(minBars));
+
+    const data = await api.get(`/api/scan/runs/${runId}?${params}`);
+    tickers = data.tickers || [];
+    if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
+    document.getElementById('chart-empty').style.display = 'none';
+
+    _scanLocked = true;
+    if (tfs.length) {
+      tfSelect.value = tf;
+      _prevTf = tf; // keep _prevTf in sync with programmatic TF change
     }
     // Auto-set indicator conf
     const confId = opt.dataset.indConfId;
@@ -340,7 +367,7 @@ function _wireNav() {
     _tfPrefs[tfSelect.value] = { ...(_tfPrefs[tfSelect.value] || {}), min_bars: v };
     _saveTfPrefs();
     _updateMinBarsActive();
-    _refreshTickers();
+    if (scanSelect.value) _applyScanRun(); else _refreshTickers();
   });
   document.getElementById('min-bars-up').addEventListener('click',   () => _stepMinBars(1));
   document.getElementById('min-bars-down').addEventListener('click', () => _stepMinBars(-1));

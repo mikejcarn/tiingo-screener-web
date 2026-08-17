@@ -381,8 +381,8 @@ def list_scan_runs():
 
 
 @router.get("/scan/runs/{run_id}")
-def get_scan_run(run_id: int):
-    tickers = db.get_scan_run_tickers(run_id)
+def get_scan_run(run_id: int, timeframe: Optional[str] = None, min_bars: Optional[int] = None):
+    tickers = db.get_scan_run_tickers(run_id, timeframe=timeframe, min_bars=min_bars)
     if not tickers:
         raise HTTPException(status_code=404, detail="Scan run not found or no results")
     return {"tickers": tickers}

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+from typing import List, Optional
+from pydantic import BaseModel
 from backend.core import database as db
 from backend.core.globals import TIMEFRAME_ALIASES
 
@@ -24,6 +25,21 @@ def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = No
     lists = db.list_ticker_lists()
     has_singles = db.has_single_tickers()
     return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs, "lists": lists, "has_singles": has_singles}
+
+
+class FilterMinBarsBody(BaseModel):
+    tickers: List[str]
+    timeframe: str
+    min_bars: int
+
+
+@router.post("/tickers/filter-min-bars")
+def filter_tickers_min_bars(body: FilterMinBarsBody):
+    """Filter an arbitrary client-held ticker list (e.g. a scan result kept in
+    localStorage) down to those with at least min_bars OHLCV rows for timeframe."""
+    tf = _resolve_tf(body.timeframe)
+    qualifying = db.filter_tickers_min_bars(body.tickers, tf, body.min_bars)
+    return {"tickers": qualifying}
 
 
 @router.get("/data/ohlcv/preview")

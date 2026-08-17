@@ -398,6 +398,21 @@ def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = N
         return [r[0] for r in con.execute(query + " ORDER BY 1", params).fetchall()]
 
 
+def filter_tickers_min_bars(tickers: list[str], timeframe: str, min_bars: int) -> list[str]:
+    """Given an arbitrary ticker list (e.g. a scan run held client-side), return the
+    subset with at least min_bars rows of OHLCV data for timeframe."""
+    if not tickers:
+        return []
+    placeholders = ','.join('?' * len(tickers))
+    with _conn() as con:
+        rows = con.execute(
+            f"SELECT ticker FROM ohlcv WHERE timeframe=? AND ticker IN ({placeholders}) "
+            "GROUP BY ticker HAVING COUNT(*) >= ?",
+            [timeframe] + tickers + [min_bars]
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
 def list_ticker_lists() -> list[str]:
     with _conn() as con:
         return [r[0] for r in con.execute(
@@ -549,11 +564,21 @@ def get_scan_runs(limit: int = 50) -> list:
              'ind_conf_id': r[6], 'timeframes': json.loads(r[7] or '[]')} for r in rows]
 
 
-def get_scan_run_tickers(run_id: int) -> list:
+def get_scan_run_tickers(run_id: int, timeframe: Optional[str] = None,
+                         min_bars: Optional[int] = None) -> list:
     with _conn() as con:
-        rows = con.execute(
-            "SELECT ticker FROM scan_results WHERE run_id=? ORDER BY ticker", (run_id,)
-        ).fetchall()
+        if timeframe and min_bars:
+            rows = con.execute(
+                "SELECT sr.ticker FROM scan_results sr "
+                "INNER JOIN (SELECT ticker FROM ohlcv WHERE timeframe=? "
+                "GROUP BY ticker HAVING COUNT(*) >= ?) o ON sr.ticker = o.ticker "
+                "WHERE sr.run_id=? ORDER BY sr.ticker",
+                (timeframe, min_bars, run_id)
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT ticker FROM scan_results WHERE run_id=? ORDER BY ticker", (run_id,)
+            ).fetchall()
     return [r[0] for r in rows]
 
 
