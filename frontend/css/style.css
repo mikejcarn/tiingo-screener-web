@@ -2402,6 +2402,12 @@ body.scan-page {
   flex-shrink: 0;
   white-space: nowrap;
 }
+.scan-ind-conf-group {
+  font-size: 11px;
+  color: var(--t5);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 
 /* Conditions section */
 .scan-section-head {

@@ -412,7 +412,10 @@ function _renderList() {
     const qBtn = document.createElement('button');
     qBtn.className = 'ind-queue-btn' + (queued ? ' queued' : '');
     qBtn.dataset.id = cfg.id;
-    qBtn.title = queued ? 'Remove from run queue (Space)' : 'Add to run queue (Space)';
+    qBtn.disabled = _isRunning();
+    qBtn.title = _isRunning()
+      ? 'Queue is locked while a run is in progress'
+      : (queued ? 'Remove from run queue (Space)' : 'Add to run queue (Space)');
     qBtn.textContent = '▶';
     item.append(info, qBtn);
     item.addEventListener('click', e => { if (!e.target.closest('.ind-queue-btn')) _selectConfig(cfg.id); });
@@ -421,7 +424,13 @@ function _renderList() {
   }
 }
 
+// Guarded against an active run: the ▶ button already disables itself while
+// running (see _renderList), but Space bypasses that DOM state entirely, so
+// the check has to live here too — otherwise Space could silently drop the
+// in-progress config out of _runCheckedIds, making it vanish from the Run
+// Ticker Configs card even though the fetch job itself kept running unaffected.
 function _toggleQueued(id) {
+  if (_isRunning()) return;
   if (_runCheckedIds.has(id)) { _runCheckedIds.delete(id); delete _runResults[id]; }
   else _runCheckedIds.add(id);
   _saveRunQueue();
@@ -632,6 +641,7 @@ function _finishQueueRun() {
   _runQueue    = [];
   _runQueueIdx = -1;
   document.getElementById('btn-run-tconf').disabled = false;
+  _renderList();       // re-syncs each ▶ button's disabled state now that _isRunning() is false
   _renderRunConfigs();
 }
 
@@ -642,6 +652,7 @@ function _abortQueue(id, msg) {
   _runQueue    = [];
   _runQueueIdx = -1;
   document.getElementById('btn-run-tconf').disabled = false;
+  _renderList();       // re-syncs each ▶ button's disabled state now that _isRunning() is false
   _renderRunConfigs();
 }
 

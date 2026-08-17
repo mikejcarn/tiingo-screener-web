@@ -858,6 +858,10 @@ function _wireListEvents() {
           if (targetEl) targetEl.outerHTML = _renderParamValue(targetKey, subParams);
         }
       }
+      // Selecting an option leaves this <select> holding real keyboard focus
+      // otherwise, silently blocking every letter shortcut (N, D, R, ...)
+      // until Escape or a stray click.
+      e.target.blur();
     }
 
     _dirty = true;
@@ -1017,6 +1021,8 @@ async function _createConfig() {
   _configList.push(created);
   _renderConfigList();
   await _selectConfig(created.id);
+  const nameEl = document.getElementById('config-name');
+  nameEl.focus(); nameEl.select();
 }
 
 async function _clearResults() {
@@ -1354,14 +1360,17 @@ function _wireDbSummary() {
   document.getElementById('db-detail-conf-sel').addEventListener('change', async e => {
     _dbSectionConfigId = parseInt(e.target.value);
     await _refreshDetailTfs();
+    e.target.blur();
   });
   document.getElementById('db-detail-tf-sel').addEventListener('change', async e => {
     _dbActiveTf = e.target.value;
     await _refreshDetailTickers();
+    e.target.blur();
   });
   document.getElementById('db-detail-ticker-sel').addEventListener('change', e => {
     _dbPreviewTicker = e.target.value;
     _loadDbPreview();
+    e.target.blur();
   });
 }
 
@@ -1764,6 +1773,17 @@ document.addEventListener('keydown', e => {
 
   if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveConfig(); return; }
 
+  // Enter on an int/float/string/list/json param (focused there by
+  // _activateFocusedParam) "confirms" the edit and blurs it — without this,
+  // that field holds real keyboard focus indefinitely and every other
+  // shortcut (N, D, R, ...) silently stops working until Escape or a stray
+  // click, since typing e.g. "N" just types into the field instead.
+  if (e.key === 'Enter' && tag === 'INPUT' && document.activeElement.classList.contains('param-input')) {
+    e.preventDefault();
+    document.activeElement.blur();
+    return;
+  }
+
   if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.ctrlKey && !e.metaKey) {
     // -/= always cycle indicator cards, never re-scope — otherwise they get
     // "stuck" cycling the open card's params with no way back out to the
@@ -1816,14 +1836,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'P') { e.preventDefault(); window.location.href = '/pipeline'; return; }
     if (e.key === 'R') { e.preventDefault(); _startCompute(); return; }
     if (e.key === 'D') { e.preventDefault(); _deleteConfig(); return; }
-    if (e.key === 'N') {
-      e.preventDefault();
-      _createConfig().then(() => {
-        const nameEl = document.getElementById('config-name');
-        if (nameEl) { nameEl.focus(); nameEl.select(); }
-      });
-      return;
-    }
+    if (e.key === 'N') { e.preventDefault(); _createConfig(); return; }
   }
   if (
     e.key.length === 1 &&

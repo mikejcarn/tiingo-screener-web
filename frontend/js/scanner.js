@@ -112,6 +112,21 @@ function _populateIndConfs() {
   }
 }
 
+// Cycles the Indicator Configuration select, skipping disabled options (configs
+// with no computed data) — matches ;/' on the Chart page's own ind-conf select.
+function _cycleIndConfSel(dir) {
+  const sel = document.getElementById('scan-ind-conf');
+  const n = sel.options.length;
+  if (n < 2) return;
+  let idx = sel.selectedIndex;
+  for (let i = 0; i < n; i++) {
+    idx = ((idx + dir) % n + n) % n;
+    if (!sel.options[idx].disabled) break;
+  }
+  sel.selectedIndex = idx;
+  sel.dispatchEvent(new Event('change'));
+}
+
 // ── Dropdown value helpers ────────────────────────────────────
 // Encode: ind_conf → "conf:ID", ticker list → "list:NAME", none → ""
 function _encodeSource(indConfId, tickerList) {
@@ -126,12 +141,22 @@ function _decodeSource(val) {
   return { indConfId: null, tickerList: null };
 }
 function _updateNoDataWarning() {
+  const sel  = document.getElementById('scan-ind-conf');
   const warn = document.getElementById('scan-no-data-warn');
-  if (!warn) return;
-  const val = document.getElementById('scan-ind-conf')?.value || '';
+  const val  = sel?.value || '';
   const { indConfId } = _decodeSource(val);
-  const show = indConfId && !_confsWithData.has(indConfId);
-  warn.style.display = show ? '' : 'none';
+  if (warn) {
+    const show = indConfId && !_confsWithData.has(indConfId);
+    warn.style.display = show ? '' : 'none';
+  }
+  // Shows which optgroup the current selection belongs to (Indicator Configs vs
+  // Tickers Only) — helps orient users cycling with ;/' or just reading the value,
+  // since "conf:X" vs "list:Y" isn't otherwise obvious from the select alone.
+  const groupEl = document.getElementById('scan-ind-conf-group');
+  if (groupEl) {
+    const opt = sel?.selectedOptions?.[0];
+    groupEl.textContent = opt?.parentElement?.tagName === 'OPTGROUP' ? opt.parentElement.label : '';
+  }
 }
 
 // ── Criteria tooltip ──────────────────────────────────────────
@@ -729,6 +754,15 @@ function _collectAllEntries() {
     .flatMap(card => card._collect?.() || []);
 }
 
+// ── Create ────────────────────────────────────────────────────
+async function _createScan() {
+  const cfg = await api.post('/api/scan-configs');
+  _activeId = cfg.id; _dirty = false;
+  await _loadConfigs();
+  const nameEl = document.getElementById('scan-name');
+  nameEl.focus(); nameEl.select();
+}
+
 // ── Save ──────────────────────────────────────────────────────
 async function _saveScan() {
   if (!_activeId) return;
@@ -1012,11 +1046,7 @@ function _markDirty() { _dirty = true; }
 
 // ── Wiring ────────────────────────────────────────────────────
 function _wireGlobal() {
-  document.getElementById('btn-new-scan').addEventListener('click', async () => {
-    const cfg = await api.post('/api/scan-configs');
-    _activeId = cfg.id; _dirty = false;
-    await _loadConfigs();
-  });
+  document.getElementById('btn-new-scan').addEventListener('click', _createScan);
 
   document.getElementById('btn-save-scan').addEventListener('click', _saveScan);
 
@@ -1069,6 +1099,10 @@ function _wireGlobal() {
     _updateNoDataWarning();
     _fetchIndConfTfs(indConfId);
     _checkCompat(indConfId, _activeTf);
+    // Selecting an option leaves this <select> holding real keyboard focus
+    // otherwise, silently blocking every letter shortcut (N, D, R, ...) until
+    // Escape or a stray click — same fix as Pipeline's stage selects.
+    e.target.blur();
   });
 
   document.addEventListener('keydown', e => {
@@ -1100,9 +1134,20 @@ function _wireGlobal() {
       return;
     }
 
+    // Enter on a param field _activateFocusedParam focused for typing (int,
+    // number, list_int, list_str) "confirms" the edit and blurs it — without
+    // this, that field holds real focus indefinitely and every other
+    // shortcut (N, D, R, ...) silently stops working until Escape or a stray
+    // click, since typing e.g. "N" just types into the field instead.
+    if (e.key === 'Enter' && tag === 'INPUT' && document.activeElement.classList.contains('param-input')) {
+      e.preventDefault();
+      document.activeElement.blur();
+      return;
+    }
+
     if (inInput) return;
 
-    if (e.key === 'N' && !ctrl) { e.preventDefault(); document.getElementById('btn-new-scan').click(); }
+    if (e.key === 'N' && !ctrl) { e.preventDefault(); _createScan(); }
     if (e.key === 'D' && !ctrl) { e.preventDefault(); document.getElementById('btn-delete-scan').click(); }
     if (e.key === 'R' && !ctrl) { e.preventDefault(); _runScan(); }
     if (e.key === 'T' && !ctrl) { e.preventDefault(); window.location.href = '/fetch'; }
@@ -1124,6 +1169,10 @@ function _wireGlobal() {
       const i = _FIXED_TFS.indexOf(_activeTf);
       if (i < _FIXED_TFS.length - 1) _setActiveTf(_FIXED_TFS[i + 1]);
     }
+
+    // ; / ' cycle the Indicator Configuration dropdown (matches the Chart page).
+    if (e.key === ';') { e.preventDefault(); _cycleIndConfSel(-1); }
+    if (e.key === "'") { e.preventDefault(); _cycleIndConfSel(1); }
 
     // -/= cycle keyboard focus between criteria cards — always, even while
     // one is open, so they can never get stuck inside it (matches the

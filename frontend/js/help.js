@@ -80,6 +80,7 @@ const _PAGES = [
 
       <tr class="help-section"><td colspan="2">Timeframes</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
+      <tr><td><kbd>;</kbd> / <kbd>'</kbd></td><td>Previous / next Indicator Configuration (skips configs with no computed data; shows which group — Indicator Configs vs Tickers Only — next to the dropdown)</td></tr>
 
       <tr class="help-section"><td colspan="2">Criteria Cards</td></tr>
       <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Focus next / previous criteria card (always — even while one is open)</td></tr>

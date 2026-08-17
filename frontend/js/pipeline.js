@@ -919,12 +919,19 @@ function _wireStatic() {
     _loadHistory();
   });
   document.getElementById('pipeline-name').addEventListener('input', () => { _dirty = true; });
-  document.getElementById('pipeline-ticker-conf').addEventListener('change', () => { _dirty = true; });
-  document.getElementById('pipeline-ind-config').addEventListener('change', () => { _refreshScanConfigOptions(); _dirty = true; });
-  document.getElementById('pipeline-scan-config').addEventListener('change', () => { _dirty = true; });
+  // Blur after picking a value — a stage select opened via Enter/showPicker()
+  // (see _activateFocusedStage) otherwise keeps real keyboard focus after the
+  // native popup closes, silently blocking every other shortcut (N, D, R, ...)
+  // until Escape or a stray click.
+  document.getElementById('pipeline-ticker-conf').addEventListener('change', e => { _dirty = true; e.target.blur(); });
+  document.getElementById('pipeline-ind-config').addEventListener('change', e => { _refreshScanConfigOptions(); _dirty = true; e.target.blur(); });
+  document.getElementById('pipeline-scan-config').addEventListener('change', e => { _dirty = true; e.target.blur(); });
   document.getElementById('btn-save-schedule').addEventListener('click', _saveSchedule);
   document.getElementById('pipeline-schedule-enabled').addEventListener('change', _updateScheduleHint);
-  document.getElementById('pipeline-schedule-time').addEventListener('change', _updateScheduleHint);
+  // Blur after picking a time — _activateScheduleFocused() focuses + opens this
+  // field for typing, and without releasing it afterward it keeps real
+  // keyboard focus indefinitely, silently blocking every other shortcut.
+  document.getElementById('pipeline-schedule-time').addEventListener('change', e => { _updateScheduleHint(); e.target.blur(); });
   document.getElementById('pipeline-schedule-days').addEventListener('change', _updateScheduleHint);
 
   document.addEventListener('keydown', e => {
