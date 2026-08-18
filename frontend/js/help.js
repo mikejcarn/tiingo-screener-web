@@ -5,9 +5,10 @@ const _GLOBAL_ROWS = `
   <tr class="help-section help-section-global"><td colspan="2">Global — all pages</td></tr>
   <tr><td><kbd>/</kbd></td><td>Toggle light / dark theme</td></tr>
   <tr><td><kbd>\`</kbd> / <kbd>~</kbd></td><td>Cycle pages forward / backward (tickers → indicators → scanner → pipeline → chart)</td></tr>
+  <tr><td>Ctrl+<kbd>\`</kbd></td><td>Jump straight back to tickers (the starting point), from any page</td></tr>
   <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>S</kbd> / <kbd>P</kbd> / <kbd>C</kbd></td><td>Jump to tickers / indicators / scanner / pipeline / chart</td></tr>
   <tr><td><kbd>?</kbd></td><td>Toggle this help panel</td></tr>
-  <tr><td><kbd>-</kbd> / <kbd>=</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
+  <tr><td><kbd>-</kbd> / <kbd>=</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd> &nbsp;or&nbsp; <kbd>]</kbd> / <kbd>[</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
   <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>`;
 
 const _PAGES = [
@@ -16,9 +17,9 @@ const _PAGES = [
     label: 'tickers',
     html: `<table class="help-table"><tbody>
       <tr class="help-section"><td colspan="2">Ticker Configs</td></tr>
-      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker config (wraps around)</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Next / previous ticker config (wraps around)</td></tr>
       <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Open / cycle the open config's Ticker List dropdown</td></tr>
-      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Focus next / previous Timeframe checkbox</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Focus next / previous Timeframe checkbox (wraps around)</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Toggle the focused Timeframe checkbox on/off</td></tr>
       <tr><td><kbd>N</kbd></td><td>New ticker config</td></tr>
       <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
@@ -43,24 +44,24 @@ const _PAGES = [
     label: 'indicators',
     html: `<table class="help-table"><tbody>
       <tr class="help-section"><td colspan="2">Config List</td></tr>
-      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> &nbsp;or&nbsp; <kbd>=</kbd> / <kbd>-</kbd> &nbsp;or&nbsp; <kbd>_</kbd> / <kbd>+</kbd></td><td>Navigate configs</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Next / previous config (wraps around)</td></tr>
 
       <tr class="help-section"><td colspan="2">Config Actions</td></tr>
       <tr><td><kbd>N</kbd></td><td>New config</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save config</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete config</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Run selected configs</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run queued configs</td></tr>
       <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
 
       <tr class="help-section"><td colspan="2">Timeframes</td></tr>
-      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Next / previous timeframe tab (wraps around)</td></tr>
 
       <tr class="help-section"><td colspan="2">Indicator Cards</td></tr>
       <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Navigate indicator cards (always — even while a card is open)</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Cycle the open card's parameters, once it's open</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator on / off — or, if a parameter is focused, activate it (toggle checkbox, cycle dropdown, focus text field, expand/collapse a group)</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step the focused numeric parameter by its increment</td></tr>
-      <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Toggle focused indicator in / out of run queue</td></tr>
+      <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Add / remove open config from the run queue</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
     <div class="help-summary">The indicators page configures and computes technical overlays. Each config pairs a set of indicators with one or more timeframes. Computed results are stored alongside OHLCV data and can be overlaid on the chart page.</div>`,
@@ -70,7 +71,7 @@ const _PAGES = [
     label: 'scanner',
     html: `<table class="help-table"><tbody>
       <tr class="help-section"><td colspan="2">Scan Config List</td></tr>
-      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next scan config (wraps around)</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Next / previous scan config (wraps around)</td></tr>
       <tr><td><kbd>N</kbd></td><td>New scan config</td></tr>
       <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save scan config</td></tr>
@@ -79,14 +80,15 @@ const _PAGES = [
       <tr><td><kbd>R</kbd></td><td>Run queued scan configs</td></tr>
 
       <tr class="help-section"><td colspan="2">Timeframes</td></tr>
-      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe tab</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Next / previous timeframe tab (wraps around)</td></tr>
       <tr><td><kbd>;</kbd> / <kbd>'</kbd></td><td>Previous / next Indicator Configuration (skips configs with no computed data; shows which group — Indicator Configs vs Tickers Only — next to the dropdown)</td></tr>
 
       <tr class="help-section"><td colspan="2">Criteria Cards</td></tr>
       <tr><td><kbd>-</kbd> / <kbd>=</kbd></td><td>Focus next / previous criteria card (always — even while one is open)</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Cycle the focused card's parameters, once it's open</td></tr>
-      <tr><td><kbd>Enter</kbd> &nbsp;or&nbsp; <kbd>Space</kbd> (card focused, no param focused)</td><td>Select / deselect the focused criteria card (also opens / closes it)</td></tr>
+      <tr><td><kbd>Enter</kbd> (no param focused)</td><td>Select / deselect the focused criteria card (also opens / closes it)</td></tr>
       <tr><td><kbd>Enter</kbd> (param focused)</td><td>Activate the focused parameter (toggle checkbox, cycle dropdown, focus text/number field)</td></tr>
+      <tr><td><kbd>Space</kbd> (card focused)</td><td>Select / deselect the focused criteria card — works whether or not a param is also focused</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step the focused numeric parameter by its increment</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
@@ -97,7 +99,7 @@ const _PAGES = [
     label: 'pipeline',
     html: `<table class="help-table"><tbody>
       <tr class="help-section"><td colspan="2">Pipeline List</td></tr>
-      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next pipeline (wraps around)</td></tr>
+      <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Next / previous pipeline (wraps around)</td></tr>
       <tr><td><kbd>N</kbd></td><td>New pipeline</td></tr>
       <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save pipeline</td></tr>

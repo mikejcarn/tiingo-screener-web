@@ -940,6 +940,7 @@ function _wireStatic() {
     const ctrl = e.ctrlKey || e.metaKey;
 
     if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
+    if (e.key === '`' && ctrl) { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === '`') { e.preventDefault(); window.location.href = '/'; return; }
     if (e.key === '~') { e.preventDefault(); window.location.href = '/scanner'; return; }
 

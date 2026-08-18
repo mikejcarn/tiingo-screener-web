@@ -1111,6 +1111,7 @@ function _wireGlobal() {
     const inInput = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
 
     if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
+    if (e.key === '`' && ctrl) { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === '`') { e.preventDefault(); window.location.href = '/pipeline'; return; }
     if (e.key === '~') { e.preventDefault(); window.location.href = '/indicators'; return; }
 
@@ -1149,7 +1150,7 @@ function _wireGlobal() {
 
     if (e.key === 'N' && !ctrl) { e.preventDefault(); _createScan(); }
     if (e.key === 'D' && !ctrl) { e.preventDefault(); document.getElementById('btn-delete-scan').click(); }
-    if (e.key === 'R' && !ctrl) { e.preventDefault(); _runScan(); }
+    if (e.key === 'R' && !ctrl) { e.preventDefault(); _startScan(); }
     if (e.key === 'T' && !ctrl) { e.preventDefault(); window.location.href = '/fetch'; }
     if (e.key === 'I' && !ctrl) { e.preventDefault(); window.location.href = '/indicators'; }
     if (e.key === 'C' && !ctrl) { e.preventDefault(); window.location.href = '/'; }
@@ -1160,14 +1161,13 @@ function _wireGlobal() {
     if (e.key === '_') { e.preventDefault(); _cycleConfig(1); }
     if (e.key === '+') { e.preventDefault(); _cycleConfig(-1); }
 
-    // [ / ] cycle timeframe tabs
-    if (e.key === '[') {
-      const i = _FIXED_TFS.indexOf(_activeTf);
-      if (i > 0) _setActiveTf(_FIXED_TFS[i - 1]);
-    }
-    if (e.key === ']') {
-      const i = _FIXED_TFS.indexOf(_activeTf);
-      if (i < _FIXED_TFS.length - 1) _setActiveTf(_FIXED_TFS[i + 1]);
+    // [ / ] cycle timeframe tabs (wraps around — matches Tickers/Indicators).
+    if (e.key === '[' || e.key === ']') {
+      e.preventDefault();
+      const i    = _FIXED_TFS.indexOf(_activeTf);
+      const dir  = e.key === '[' ? 1 : -1;
+      const next = (i + dir + _FIXED_TFS.length) % _FIXED_TFS.length;
+      _setActiveTf(_FIXED_TFS[next]);
     }
 
     // ; / ' cycle the Indicator Configuration dropdown (matches the Chart page).

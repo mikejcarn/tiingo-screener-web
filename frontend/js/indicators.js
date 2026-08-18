@@ -1742,6 +1742,7 @@ function _selectFirstFilteredIndicator() {
 
 document.addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
+  if (e.key === '`' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); window.location.href = '/fetch'; return; }
   if (e.key === '`') { e.preventDefault(); window.location.href = '/scanner'; return; }
   if (e.key === '~') { e.preventDefault(); window.location.href = '/fetch'; return; }
 
@@ -1815,7 +1816,7 @@ document.addEventListener('keydown', e => {
       e.preventDefault();
       const tabs = [...document.querySelectorAll('.tf-tab')];
       const cur  = tabs.findIndex(t => t.dataset.tf === _activeTf);
-      const dir  = e.key === ']' ? 1 : -1;
+      const dir  = e.key === '[' ? 1 : -1;
       const next = (cur + dir + tabs.length) % tabs.length;
       if (tabs[next]) _switchTf(tabs[next].dataset.tf);
       return;

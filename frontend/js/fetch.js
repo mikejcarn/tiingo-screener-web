@@ -1456,6 +1456,7 @@ async function _poll() {
 
 document.addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); toggleTheme(); return; }
+  if (e.key === '`' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); window.location.href = '/fetch'; return; }
   if (e.key === '`') { e.preventDefault(); window.location.href = '/indicators'; return; }
   if (e.key === '~') { e.preventDefault(); window.location.href = '/'; return; }
   if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); _saveTconf(); return; }
