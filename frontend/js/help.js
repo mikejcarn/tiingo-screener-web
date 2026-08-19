@@ -134,7 +134,7 @@ const _PAGES = [
       <tr class="help-section"><td colspan="2">Annotations</td></tr>
       <tr><td><kbd>.</kbd></td><td>Place / remove a manually-anchored VWAP at the hovered candle (amber line, ephemeral)</td></tr>
       <tr><td>Alt+<kbd>.</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Undo the most recently placed manual aVWAP anchor (repeat to keep undoing, in order)</td></tr>
-      <tr><td>Alt+Click &nbsp;or&nbsp; Alt+Space</td><td>Lock a measurement start point (Alt+Space uses the last mouse position over the chart); move the cursor to explore $ / % change live; repeat either to dismiss</td></tr>
+      <tr><td>Alt+Click &nbsp;or&nbsp; Alt+Space</td><td>Lock a measurement start point (Alt+Space uses the last mouse position over the chart); move the cursor to explore $ / % change live; repeat either, or press Escape, to dismiss</td></tr>
 
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>

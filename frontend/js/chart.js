@@ -68,10 +68,9 @@ export class ChartManager {
     this._bars      = [];
     this._N         = 0;
     this._curN      = -1;
-    this._measureEl      = null;  // live drag-measure overlay box
-    this._measureLabelEl = null;
-    this._measureHighEl  = null;
-    this._measureLowEl   = null;
+    this._measureEl          = null;  // live drag-measure overlay box
+    this._measureLabelEl     = null;
+    this._measureCurrentLine = null;  // price-line axis marker at the live cursor price
     this._init();
   }
 
@@ -535,11 +534,7 @@ export class ChartManager {
       this._measureEl.className = 'chart-measure-box';
       this._measureLabelEl = document.createElement('div');
       this._measureLabelEl.className = 'chart-measure-label';
-      this._measureHighEl = document.createElement('div');
-      this._measureHighEl.className = 'chart-measure-price chart-measure-price-high';
-      this._measureLowEl = document.createElement('div');
-      this._measureLowEl.className = 'chart-measure-price chart-measure-price-low';
-      this._measureEl.append(this._measureLabelEl, this._measureHighEl, this._measureLowEl);
+      this._measureEl.appendChild(this._measureLabelEl);
       this._container.appendChild(this._measureEl);
     }
 
@@ -556,17 +551,29 @@ export class ChartManager {
     this._measureLabelEl.textContent =
       `${dollar >= 0 ? '+' : ''}${dollar.toFixed(2)}  (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
 
-    // Box top edge = higher screen position = higher price; bottom edge = lower price
-    this._measureHighEl.textContent = Math.max(p0, p1).toFixed(2);
-    this._measureLowEl.textContent  = Math.min(p0, p1).toFixed(2);
+    // Live price marker moves onto the price axis itself (via a native price line)
+    // instead of floating over the candles — the axis label shows the exact price
+    // at that level; $ and % both stay on the floating label above.
+    const color = up ? C_UP : C_DOWN;
+    if (!this._measureCurrentLine) {
+      this._measureCurrentLine = this._candles.createPriceLine({
+        price: p1, color, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true, title: '',
+      });
+    } else {
+      this._measureCurrentLine.applyOptions({ price: p1, color });
+    }
   }
 
   clearMeasure() {
     if (this._measureEl) {
       this._measureEl.remove();
       this._measureEl = null; this._measureLabelEl = null;
-      this._measureHighEl = null; this._measureLowEl = null;
     }
+    if (this._candles && this._measureCurrentLine) {
+      try { this._candles.removePriceLine(this._measureCurrentLine); } catch (_) {}
+    }
+    this._measureCurrentLine = null;
   }
 
   getVisibleRange() {

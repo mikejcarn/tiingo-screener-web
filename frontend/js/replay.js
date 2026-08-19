@@ -346,7 +346,15 @@ function _wireControls() {
 
 function _wireKeys() {
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { document.activeElement?.blur(); return; }
+    if (e.key === 'Escape') {
+      if (_measureActive) {
+        if (chart) chart.clearMeasure();
+        _measureActive = false;
+        _measureStart  = null;
+      }
+      document.activeElement?.blur();
+      return;
+    }
     if (document.activeElement.tagName === 'INPUT') return;
     if (e.key === ' ' && !e.altKey) { e.preventDefault(); setPlaying(!playing); } // Alt+Space is the measurement shortcut instead
     const ctrl = e.ctrlKey || e.metaKey;
