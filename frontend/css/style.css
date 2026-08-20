@@ -538,6 +538,25 @@ body:fullscreen.fs-searching #ticker-input { width: 180px; font-size: 18px; padd
 }
 body:fullscreen #ticker-watermark { display: block; }
 
+#fs-info {
+  display: none;
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-family: var(--mono, monospace);
+  color: var(--t5);
+  opacity: 0.7;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+body:fullscreen #fs-info { display: flex; }
+#fs-flag { color: #e8b923; font-size: 15px; }
+#fs-flag:empty, #fs-list:empty, #fs-count:empty { display: none; }
+
 /* ── Dashboard ────────────────────────────────────────────── */
 body.dash {
   height: auto;

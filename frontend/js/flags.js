@@ -18,6 +18,7 @@ const countEl  = document.getElementById('flagged-count');
 const wrapEl   = document.getElementById('flagged-wrap');
 const panelEl  = document.getElementById('flagged-panel');
 const listEl   = document.getElementById('flagged-list');
+const fsFlagEl = document.getElementById('fs-flag');
 
 function _renderButton() {
   if (!btnFlag || !_current) return;
@@ -25,6 +26,7 @@ function _renderButton() {
   btnFlag.classList.toggle('active', on);
   btnFlag.innerHTML = on ? '&#9733;' : '&#9734;'; // ★ / ☆
   btnFlag.title = `${on ? 'Unflag' : 'Flag'} ${_current} (Shift+L)`;
+  if (fsFlagEl) fsFlagEl.innerHTML = on ? '&#9733;' : '';
 }
 
 function _renderCount() {

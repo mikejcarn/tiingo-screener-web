@@ -178,6 +178,8 @@ async function _loadTicker(idx) {
   tickerCount.textContent  = `${tickerIdx + 1} / ${tickers.length}`;
   location.hash            = ticker;
   document.getElementById('ticker-watermark').textContent = ticker;
+  document.getElementById('fs-list').textContent  = listSelect.value || '';
+  document.getElementById('fs-count').textContent = tickerCount.textContent;
   _updateNavTitles();
   setCurrentTicker(ticker);
 
