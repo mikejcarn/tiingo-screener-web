@@ -138,6 +138,7 @@ const _PAGES = [
 
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
       <tr><td>Shift+<kbd>L</kbd> &nbsp;or&nbsp; &#9734; button</td><td>Flag / unflag the current ticker; &#9873; button opens the flagged-ticker panel (click a row to jump, &#10005; to unflag)</td></tr>
+      <tr><td>Alt+<kbd>L</kbd></td><td>Toggle ticker cycling (<kbd>=</kbd> / <kbd>-</kbd>, prev/next buttons) to the flagged tickers only; toggle again to return to the previous list</td></tr>
       <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Previous / next ticker</td></tr>
       <tr><td><kbd>_</kbd> / <kbd>+</kbd></td><td>Previous / next ticker list</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Previous / next timeframe</td></tr>

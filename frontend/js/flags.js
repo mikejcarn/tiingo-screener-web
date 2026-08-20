@@ -84,6 +84,11 @@ async function _toggleCurrent() {
   if (panelEl.classList.contains('open')) _renderPanel();
 }
 
+/** Uppercase tickers currently flagged, in no particular order. */
+export function getFlaggedTickers() {
+  return [..._flagged];
+}
+
 /** Call whenever the chart page loads a new ticker. */
 export function setCurrentTicker(ticker) {
   _current = (ticker || '').toUpperCase() || null;

@@ -10,7 +10,7 @@ import { initReplay, jump, getCurrentBarInfo, applyRangeLock } from './replay.js
 import { initHelp, isHelpVisible } from './help.js';
 import { api } from './api.js';
 import { initTheme, toggleTheme } from './theme.js';
-import { initFlags, setCurrentTicker } from './flags.js';
+import { initFlags, setCurrentTicker, getFlaggedTickers } from './flags.js';
 
 let tickers    = [];
 let timeframes = [];
@@ -22,6 +22,9 @@ let _listIdx   = 0;
 let _scanListName = null;  // name of the virtual scan-results list, if present
 let _scanLocked   = false; // true while _applyScanRun is programmatically setting controls
 let _refreshGen   = 0;     // incremented each call; stale async responses are dropped
+
+const FLAG_LIST = '★ Flagged';  // virtual list name for Alt+L flagged-only cycling
+let _listBeforeFlagCycle = null;     // list-select value to restore when Alt+L toggles off
 
 // Per-TF preferences: { tf: { min_bars, conf_id } } — persisted to localStorage
 const _tfPrefs = (() => { try { return JSON.parse(localStorage.getItem('tf_prefs') || '{}'); } catch { return {}; } })();
@@ -209,6 +212,27 @@ function _buildListSelect() {
   listSelect.value = _lists[_listIdx] || 'ALL';
 }
 
+// Alt+L — toggle ticker cycling (=, -, prev/next buttons) to the flagged set only.
+// Implemented as a virtual list-select entry so it reuses the normal refresh path;
+// toggling off restores whatever list was selected beforehand.
+function _toggleFlagCycle() {
+  if (scanSelect.value) return; // a scan run already owns the ticker list
+  if (listSelect.value === FLAG_LIST) {
+    _lists = _lists.filter(l => l !== FLAG_LIST);
+    _listIdx = Math.max(0, _lists.indexOf(_listBeforeFlagCycle));
+    _buildListSelect();
+    _refreshTickers();
+    return;
+  }
+  const flagged = getFlaggedTickers();
+  if (!flagged.length) return;
+  _listBeforeFlagCycle = listSelect.value;
+  if (!_lists.includes(FLAG_LIST)) _lists = [FLAG_LIST, ..._lists];
+  _listIdx = _lists.indexOf(FLAG_LIST);
+  _buildListSelect();
+  _refreshTickers();
+}
+
 function _cycleSelect(el, delta) {
   const n = el.options.length;
   if (n < 2) return;
@@ -252,6 +276,17 @@ async function _refreshTickers(preferTicker) {
     const i = tickers.indexOf(prev);
     if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
     document.getElementById('chart-empty').style.display = 'none';
+    _loadTicker(i >= 0 ? i : 0);
+    return;
+  }
+
+  // Virtual flagged-only list, toggled by Alt+L — same shape as the scan-results
+  // branch above, just backed by the in-memory flagged set instead of localStorage.
+  if (list === FLAG_LIST) {
+    tickers = getFlaggedTickers().sort();
+    if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
+    document.getElementById('chart-empty').style.display = 'none';
+    const i = tickers.indexOf(prev);
     _loadTicker(i >= 0 ? i : 0);
     return;
   }
@@ -489,6 +524,7 @@ function _wireNav() {
     if (e.key === 'Escape') { document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;
     if (e.key === 'f' || e.key === 'F') { e.preventDefault(); _toggleFullscreen(); return; }
+    if (e.key.toLowerCase() === 'l' && e.altKey) { e.preventDefault(); _toggleFlagCycle(); return; }
     if (e.key === '`') { e.preventDefault(); window.location.href = '/fetch'; return; }
     if (e.key === '~') { e.preventDefault(); window.location.href = '/pipeline'; return; }
     if (isHelpVisible()) return;
