@@ -23,10 +23,16 @@ const fsFlagEl = document.getElementById('fs-flag');
 function _renderButton() {
   if (!btnFlag || !_current) return;
   const on = _flagged.has(_current);
+  const glyph = on ? '&#9733;' : '&#9734;'; // ★ / ☆
+  const title = `${on ? 'Unflag' : 'Flag'} ${_current} (Shift+L)`;
   btnFlag.classList.toggle('active', on);
-  btnFlag.innerHTML = on ? '&#9733;' : '&#9734;'; // ★ / ☆
-  btnFlag.title = `${on ? 'Unflag' : 'Flag'} ${_current} (Shift+L)`;
-  if (fsFlagEl) fsFlagEl.innerHTML = on ? '&#9733;' : '';
+  btnFlag.innerHTML = glyph;
+  btnFlag.title = title;
+  if (fsFlagEl) {
+    fsFlagEl.classList.toggle('active', on);
+    fsFlagEl.innerHTML = glyph;
+    fsFlagEl.title = title;
+  }
 }
 
 function _renderCount() {
@@ -109,6 +115,7 @@ export async function initFlags(jumpToTicker) {
 
   btnFlag.addEventListener('click', () => { btnFlag.blur(); _toggleCurrent(); });
   btnPanel.addEventListener('click', () => { btnPanel.blur(); _togglePanel(); });
+  if (fsFlagEl) fsFlagEl.addEventListener('click', () => _toggleCurrent());
 
   document.addEventListener('click', (e) => {
     if (!panelEl.classList.contains('open')) return;

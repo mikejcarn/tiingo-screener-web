@@ -541,21 +541,30 @@ body:fullscreen #ticker-watermark { display: block; }
 #fs-info {
   display: none;
   position: absolute;
-  top: 20px;
-  right: 24px;
-  align-items: center;
-  gap: 8px;
+  top: 92px;
+  left: 26px;
+  align-items: baseline;
+  gap: 10px;
   font-size: 13px;
   font-family: var(--mono, monospace);
-  color: var(--t5);
-  opacity: 0.7;
   pointer-events: none;
   user-select: none;
   z-index: 1;
 }
 body:fullscreen #fs-info { display: flex; }
-#fs-flag { color: #e8b923; font-size: 15px; }
-#fs-flag:empty, #fs-list:empty, #fs-count:empty { display: none; }
+#fs-list, #fs-count { color: var(--t5); opacity: 0.7; }
+#fs-list:empty, #fs-count:empty { display: none; }
+
+#fs-flag {
+  color: var(--t6);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+#fs-flag:hover  { color: var(--t9); }
+#fs-flag.active { color: #e8b923; }
+#fs-flag.active:hover { opacity: 0.85; }
 
 /* ── Dashboard ────────────────────────────────────────────── */
 body.dash {
