@@ -20,6 +20,14 @@
   </div>
   <button id="btn-next-ticker" title="Next ticker (-)">&#9654;</button>
   <span id="ticker-count" title="Position in ticker list"></span>
+  <button id="btn-flag-ticker" class="flag-star-btn" title="Flag this ticker (Shift+L)">&#9734;</button>
+  <div id="flagged-wrap">
+    <button id="btn-flagged-panel" title="View flagged tickers">&#9873;<span id="flagged-count"></span></button>
+    <div id="flagged-panel">
+      <div class="flagged-panel-header">Flagged tickers</div>
+      <div id="flagged-list"></div>
+    </div>
+  </div>
   <div class="nav-sep"></div>
   <span class="nav-label">list</span>
   <select id="list-select" title="Ticker list (_ previous / + next)"></select>

@@ -10,6 +10,7 @@ import { initReplay, jump, getCurrentBarInfo, applyRangeLock } from './replay.js
 import { initHelp, isHelpVisible } from './help.js';
 import { api } from './api.js';
 import { initTheme, toggleTheme } from './theme.js';
+import { initFlags, setCurrentTicker } from './flags.js';
 
 let tickers    = [];
 let timeframes = [];
@@ -178,6 +179,7 @@ async function _loadTicker(idx) {
   location.hash            = ticker;
   document.getElementById('ticker-watermark').textContent = ticker;
   _updateNavTitles();
+  setCurrentTicker(ticker);
 
   // Re-initialise replay, restoring the current date if possible
   initReplay(ticker, tf, conf, restoreDate);
@@ -452,6 +454,7 @@ function _wireNav() {
 
   initTheme();
   initHelp('chart');
+  initFlags((name) => { const i = tickers.indexOf(name); if (i >= 0) _loadTicker(i); });
 
   // Fullscreen
   const btnFullscreen = document.getElementById('btn-fullscreen');

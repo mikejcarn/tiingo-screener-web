@@ -1,5 +1,6 @@
 import sqlite3
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import pandas as pd
@@ -152,6 +153,12 @@ CREATE TABLE IF NOT EXISTS pipeline_log (
     ind_errors    INTEGER NOT NULL DEFAULT 0,
     scan_run_id   INTEGER,
     ran_at        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS flagged_tickers (
+    ticker     TEXT PRIMARY KEY,
+    note       TEXT,
+    flagged_at TEXT NOT NULL
 );
 """
 
@@ -660,3 +667,33 @@ def get_fetch_log(ticker: str, timeframe: str) -> Optional[dict]:
     if row is None:
         return None
     return {"fetched_at": row[0], "last_date": row[1]}
+
+
+# ── Flagged tickers ──────────────────────────────────────────
+
+def toggle_flag(ticker: str, note: Optional[str] = None) -> bool:
+    """Flag the ticker if unflagged, unflag it otherwise. Returns the new flagged state."""
+    ticker = ticker.upper()
+    with _conn() as con:
+        row = con.execute("SELECT 1 FROM flagged_tickers WHERE ticker=?", (ticker,)).fetchone()
+        if row:
+            con.execute("DELETE FROM flagged_tickers WHERE ticker=?", (ticker,))
+            return False
+        con.execute(
+            "INSERT INTO flagged_tickers (ticker, note, flagged_at) VALUES (?, ?, ?)",
+            (ticker, note, datetime.utcnow().isoformat())
+        )
+        return True
+
+
+def list_flags() -> list[dict]:
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT ticker, note, flagged_at FROM flagged_tickers ORDER BY flagged_at DESC"
+        ).fetchall()
+    return [{"ticker": r[0], "note": r[1], "flagged_at": r[2]} for r in rows]
+
+
+def remove_flag(ticker: str) -> None:
+    with _conn() as con:
+        con.execute("DELETE FROM flagged_tickers WHERE ticker=?", (ticker.upper(),))

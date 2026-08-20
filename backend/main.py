@@ -15,6 +15,7 @@ from backend.routers.ind_configs import router as ind_configs_router
 from backend.routers.scanner import router as scanner_router
 from backend.routers.pipeline import router as pipeline_router
 from backend.routers.ticker_configs import router as ticker_configs_router
+from backend.routers.flags import router as flags_router
 from backend.core import database as db
 from backend.core.scheduler import scheduler_loop
 from backend.core.globals import TIMEFRAME_ALIASES
@@ -56,6 +57,7 @@ app.include_router(ind_configs_router)
 app.include_router(scanner_router)
 app.include_router(pipeline_router)
 app.include_router(ticker_configs_router)
+app.include_router(flags_router)
 
 
 # ---------------------------------------------------------------------------

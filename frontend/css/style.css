@@ -218,6 +218,45 @@ button:hover { background: var(--c-hover); }
 
 #btn-prev-ticker, #btn-next-ticker { font-size: 12px; padding: 4px 8px; }
 #ticker-count { font-size: 12px; color: var(--t6); white-space: nowrap; }
+
+.flag-star-btn {
+  color: var(--t6); border-color: var(--b4); font-size: 15px; line-height: 1;
+  padding: 0 8px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.flag-star-btn.active { color: #e8b923; border-color: rgba(232,185,35,0.4); }
+
+#flagged-wrap { position: relative; }
+#btn-flagged-panel {
+  color: var(--t6); border-color: var(--b4); font-size: 13px;
+  padding: 0 8px; height: 26px;
+  display: inline-flex; align-items: center; gap: 4px; justify-content: center;
+}
+#flagged-count { font-size: 11px; font-family: var(--mono, monospace); color: var(--t7); }
+
+#flagged-panel {
+  display: none; position: absolute; top: calc(100% + 4px); right: 0;
+  background: var(--c-surface); border: 1px solid var(--b4); border-radius: 3px;
+  min-width: 160px; max-height: 320px; overflow-y: auto; z-index: 100;
+  box-shadow: 0 4px 12px var(--shadow-s);
+}
+#flagged-panel.open { display: block; }
+.flagged-panel-header {
+  padding: 6px 12px; font-size: 11px; color: var(--t5); text-transform: uppercase;
+  letter-spacing: 0.03em; border-bottom: 1px solid var(--b1);
+}
+.flagged-empty { padding: 10px 12px; font-size: 13px; color: var(--t4); }
+.flagged-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px 6px 12px; font-size: 13px; color: var(--t7); cursor: pointer;
+}
+.flagged-row:hover { background: var(--c-hover); color: var(--t10); }
+.flagged-row-ticker { white-space: nowrap; }
+.flagged-row-remove {
+  background: transparent; border: none; color: var(--t4); font-size: 11px;
+  padding: 2px 6px; line-height: 1;
+}
+.flagged-row-remove:hover { color: rgba(239,83,80,1); background: transparent; }
 #list-select { background: var(--c-ctrl); color: var(--t7); border: 1px solid var(--b5); padding: 4px 8px; border-radius: 3px; font-size: 13px; cursor: pointer; }
 #list-select:focus { outline: none; }
 
@@ -293,12 +332,20 @@ button:hover { background: var(--c-hover); }
   padding: 3px 7px;
   border-radius: 3px;
   background: var(--c-surface);
-  color: rgba(38,166,154,1);
+  color: var(--t8);
   border: 1px solid rgba(38,166,154,0.5);
 }
+.chart-measure-start {
+  color: var(--t8);
+}
+.chart-measure-delta {
+  color: rgba(38,166,154,1);
+}
 .chart-measure-box.down .chart-measure-label {
-  color: rgba(239,83,80,1);
   border-color: rgba(239,83,80,0.5);
+}
+.chart-measure-box.down .chart-measure-delta {
+  color: rgba(239,83,80,1);
 }
 
 /* ── Replay controls bar (bottom) ────────────────────────── */

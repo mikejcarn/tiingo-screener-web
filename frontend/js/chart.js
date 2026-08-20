@@ -70,6 +70,8 @@ export class ChartManager {
     this._curN      = -1;
     this._measureEl          = null;  // live drag-measure overlay box
     this._measureLabelEl     = null;
+    this._measureStartEl     = null;  // starting-price span within the label (neutral color)
+    this._measureDeltaEl     = null;  // $ / % change span within the label (up/down color)
     this._measureCurrentLine = null;  // price-line axis marker at the live cursor price
     this._init();
   }
@@ -534,6 +536,11 @@ export class ChartManager {
       this._measureEl.className = 'chart-measure-box';
       this._measureLabelEl = document.createElement('div');
       this._measureLabelEl.className = 'chart-measure-label';
+      this._measureStartEl = document.createElement('span');
+      this._measureStartEl.className = 'chart-measure-start';
+      this._measureDeltaEl = document.createElement('span');
+      this._measureDeltaEl.className = 'chart-measure-delta';
+      this._measureLabelEl.append(this._measureStartEl, this._measureDeltaEl);
       this._measureEl.appendChild(this._measureLabelEl);
       this._container.appendChild(this._measureEl);
     }
@@ -548,8 +555,9 @@ export class ChartManager {
 
     const dollar = p1 - p0;
     const pct    = p0 !== 0 ? (dollar / p0) * 100 : 0;
-    this._measureLabelEl.textContent =
-      `${dollar >= 0 ? '+' : ''}${dollar.toFixed(2)}  (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+    this._measureStartEl.textContent = `${p0.toFixed(2)}  `;
+    this._measureDeltaEl.textContent =
+      `${dollar >= 0 ? '+' : '-'}${Math.abs(dollar).toFixed(2)}  (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
 
     // Live price marker moves onto the price axis itself (via a native price line)
     // instead of floating over the candles — the axis label shows the exact price
@@ -569,6 +577,7 @@ export class ChartManager {
     if (this._measureEl) {
       this._measureEl.remove();
       this._measureEl = null; this._measureLabelEl = null;
+      this._measureStartEl = null; this._measureDeltaEl = null;
     }
     if (this._candles && this._measureCurrentLine) {
       try { this._candles.removePriceLine(this._measureCurrentLine); } catch (_) {}
