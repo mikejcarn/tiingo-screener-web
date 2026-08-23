@@ -47,6 +47,35 @@ def col_styles_for_columns(columns: list) -> dict:
     def _bfit_alpha(rank): return round(0.9 - (0.9 - 0.4) * _bfit_t(rank), 2)
     def _bfit_width(rank): return max(1, round(3 - 2 * _bfit_t(rank)))
 
+    # Same rank-interpolation scheme as BFIT above, scoped to its own LFIT_
+    # columns so the two families' rank counts never cross-contaminate.
+    def _lfit_rank(col):
+        m = re.search(r'_r(\d+)_avwap$', col)
+        return int(m.group(1)) if m else 1
+
+    _lfit_ranks = [_lfit_rank(c) for c in columns if c.startswith('LFIT_') and c.endswith('_avwap')]
+    _lfit_max_rank = max(_lfit_ranks) if _lfit_ranks else 1
+
+    def _lfit_t(rank):
+        return (rank - 1) / (_lfit_max_rank - 1) if _lfit_max_rank > 1 else 0.0
+
+    def _lfit_alpha(rank): return round(0.9 - (0.9 - 0.4) * _lfit_t(rank), 2)
+    def _lfit_width(rank): return max(1, round(3 - 2 * _lfit_t(rank)))
+
+    # Same rank-interpolation scheme again, scoped to its own CFIT_ columns.
+    def _cfit_rank(col):
+        m = re.search(r'_r(\d+)_avwap$', col)
+        return int(m.group(1)) if m else 1
+
+    _cfit_ranks = [_cfit_rank(c) for c in columns if c.startswith('CFIT_') and c.endswith('_avwap')]
+    _cfit_max_rank = max(_cfit_ranks) if _cfit_ranks else 1
+
+    def _cfit_t(rank):
+        return (rank - 1) / (_cfit_max_rank - 1) if _cfit_max_rank > 1 else 0.0
+
+    def _cfit_alpha(rank): return round(0.9 - (0.9 - 0.4) * _cfit_t(rank), 2)
+    def _cfit_width(rank): return max(1, round(3 - 2 * _cfit_t(rank)))
+
     for col in columns:
         cfg = _cfg_idx(col)
 
@@ -183,5 +212,24 @@ def col_styles_for_columns(columns: list) -> dict:
               and col.endswith('_avwap')):
             rank = _bfit_rank(col)
             _add(col, f'rgba(255,165,0,{_bfit_alpha(rank)})', _bfit_width(rank), 'solid')
+
+        # ── aVWAP Liquidity Fit — anchors ranked by touch count ─────────────
+        # Same rank-driven width/opacity idea as Best Fit, but its own color
+        # (violet, otherwise unused in this file) so the two sibling
+        # indicators stay visually distinguishable if both are loaded at
+        # once. Also direction-agnostic — one color for both sides.
+        elif ((col.startswith('LFIT_high_') or col.startswith('LFIT_low_'))
+              and col.endswith('_avwap')):
+            rank = _lfit_rank(col)
+            _add(col, f'rgba(147,112,219,{_lfit_alpha(rank)})', _lfit_width(rank), 'solid')
+
+        # ── aVWAP Curve Fit — anchors ranked by curve strength ──────────────
+        # Neon green (otherwise unused in this file) — a third sibling color,
+        # distinct from Volume Fit's orange and Liquidity Fit's violet.
+        # Direction-agnostic like the other two.
+        elif ((col.startswith('CFIT_high_') or col.startswith('CFIT_low_'))
+              and col.endswith('_avwap')):
+            rank = _cfit_rank(col)
+            _add(col, f'rgba(0,255,0,{_cfit_alpha(rank)})', _cfit_width(rank), 'solid')
 
     return styles
