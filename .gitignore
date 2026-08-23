@@ -6,4 +6,6 @@ data/tickers/
 data/indicators/
 data/scans/
 data/screener.db
+data/screener.db-wal
+data/screener.db-shm
 .env
