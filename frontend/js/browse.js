@@ -49,13 +49,21 @@ export async function initBrowse() {
   tickers    = data.tickers    || [];
   timeframes = data.timeframes || [];
   confs      = data.ind_confs  || [];
-  // Check for scan results stored by the scanner page
+  // Check for scan results stored by the scanner page. This localStorage entry
+  // is never invalidated when the underlying DB data changes (e.g. all tickers
+  // deleted), so treat it as stale unless at least one of its tickers still
+  // exists — otherwise it lingers forever as a dead, unselectable-in-practice
+  // list entry with no server-side data behind it.
   const _scanTickers = (() => { try { const t = localStorage.getItem('scan_tickers'); return t ? JSON.parse(t) : null; } catch { return null; } })();
   const _scanLabel   = (() => { try { return localStorage.getItem('scan_label') || 'Scan Results'; } catch { return 'Scan Results'; } })();
-  if (_scanTickers?.length) {
+  const _scanStillValid = !!(_scanTickers?.length && _scanTickers.some(t => tickers.includes(t)));
+  if (_scanStillValid) {
     _scanListName = `⊕ ${_scanLabel}`;
     _lists = [_scanListName, 'All', ...(data.lists || [])];
   } else {
+    if (_scanTickers?.length) {
+      try { localStorage.removeItem('scan_tickers'); localStorage.removeItem('scan_label'); } catch {}
+    }
     _lists = ['All', ...(data.lists || [])];
   }
   _buildListSelect();
@@ -496,6 +504,10 @@ function _wireNav() {
   // Fullscreen
   const btnFullscreen = document.getElementById('btn-fullscreen');
   function _toggleFullscreen() {
+    // Blur whatever's focused first — an open native <select> popup (e.g. the
+    // indicators dropdown) is rendered outside the page's own DOM/CSS layer,
+    // so hiding #nav underneath it on fullscreen entry doesn't force it closed.
+    document.activeElement?.blur();
     const p = document.fullscreenElement
       ? document.exitFullscreen()
       : document.body.requestFullscreen();
