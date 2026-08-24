@@ -19,7 +19,10 @@ param_descriptions = {
                "gives every config a shade of this indicator's color, tiered by opacity from "
                "most- to least-recently-added config. 'highlight_first' keeps the first "
                "config at full color and renders every other config as a shade of grey "
-               "instead, so the primary config stands out from the rest.",
+               "instead, so the primary config stands out from the rest. 'grayscale' renders "
+               "every config as a shade of grey (no hue at all), so price action stands out "
+               "against the aVWAP lines instead of one config standing out against the others "
+               "— useful for high-resolution snapshots.",
 }
 
 
@@ -34,6 +37,7 @@ def calculate_aVWAP_valleys(df, valleys_params={'periods': 25, 'max_aVWAPs': Non
     styling — how the (possibly multiple) configs are colored on the chart:
         'shades'          — every config a shade of teal, tiered by opacity (default)
         'highlight_first' — first config full teal, every other config a shade of grey
+        'grayscale'       — every config a shade of grey, no teal at all
 
     Multiple configs (pass a list) each get their own independent periods/max_aVWAPs
     and are kept in separately-labelled anchor groups:

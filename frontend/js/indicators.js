@@ -14,7 +14,7 @@ const PARAM_ENUMS = {
   indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI'],
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
   mode: ['combined', 'bullish', 'bearish'],
-  styling: ['shades', 'highlight_first'],
+  styling: ['shades', 'highlight_first', 'grayscale'],
 };
 
 

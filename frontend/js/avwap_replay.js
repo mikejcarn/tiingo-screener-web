@@ -87,6 +87,25 @@ function _highlightFirstColor(r, g, b, rank, total) {
   return [`rgba(${gr},${gg},${gb},${alpha.toFixed(2)})`, 1, 0];
 }
 
+// 'grayscale' peaks/valleys styling: every config (not just "the others") renders
+// in the same muted grey family, tiered by opacity exactly like 'shades' would tier
+// hue — so multiple configs stay distinguishable from each other, but none of them
+// compete with price action for attention. Ignores the hue passed in (r,g,b) entirely,
+// unlike 'highlight_first' which still uses it for the first config. Thin (width 1)
+// like highlight_first's grey tier, but its own opacity ceiling — a bit higher than
+// GREY_OPACITY_MAX/MIN since here grey is the only color in play, not a muted backdrop
+// next to a full-color highlight.
+const GRAYSCALE_OPACITY_MAX = 0.6;
+const GRAYSCALE_OPACITY_MIN = 0.3;
+
+function _grayscaleColor(r, g, b, rank, total) {
+  const alpha = total > 1
+    ? GRAYSCALE_OPACITY_MAX - (rank / (total - 1)) * (GRAYSCALE_OPACITY_MAX - GRAYSCALE_OPACITY_MIN)
+    : GRAYSCALE_OPACITY_MAX;
+  const [gr, gg, gb] = GREY_TIER_RGB;
+  return [`rgba(${gr},${gg},${gb},${alpha.toFixed(2)})`, 1, 0];
+}
+
 
 export class DynamicVWAPEngine {
   /**
@@ -255,13 +274,17 @@ export class DynamicVWAPEngine {
     let m = key.match(/^peak_c(\d+)$/);
     if (m) {
       const info = rankMaps.peak?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
-      const colorFn = this._peaksStyle === 'highlight_first' ? _highlightFirstColor : _cfgTierColor;
+      const colorFn = this._peaksStyle === 'highlight_first' ? _highlightFirstColor
+                    : this._peaksStyle === 'grayscale'       ? _grayscaleColor
+                    : _cfgTierColor;
       return colorFn(239, 83, 80, info.rank, info.total);
     }
     m = key.match(/^valley_c(\d+)$/);
     if (m) {
       const info = rankMaps.valley?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
-      const colorFn = this._valleysStyle === 'highlight_first' ? _highlightFirstColor : _cfgTierColor;
+      const colorFn = this._valleysStyle === 'highlight_first' ? _highlightFirstColor
+                     : this._valleysStyle === 'grayscale'      ? _grayscaleColor
+                     : _cfgTierColor;
       return colorFn(38, 166, 154, info.rank, info.total);
     }
     return null;
