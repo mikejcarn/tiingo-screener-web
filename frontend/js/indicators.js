@@ -15,6 +15,7 @@ const PARAM_ENUMS = {
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
   mode: ['combined', 'bullish', 'bearish'],
   styling: ['shades', 'highlight_first', 'grayscale'],
+  anchor_type: ['peak', 'valley'],
 };
 
 

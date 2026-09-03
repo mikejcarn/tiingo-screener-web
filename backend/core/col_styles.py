@@ -11,6 +11,14 @@ from backend.core.color_palette import get_color_palette
 
 _LW = {'solid': 0, 'dotted': 1, 'dashed': 2, 'large_dashed': 3, 'sparse_dotted': 4}
 
+# aVWAP-Pinch grayscale counterparts: rank/total embedded in the column name by
+# aVWAP_pinch.py (e.g. aVWAP_pinch_valley_gray_0_3_278) since this module only
+# sees column names, not the indicator's call params. Same opacity range/tiering
+# as the peaks/valleys grayscale styling in avwap_replay.js's GRAYSCALE constants.
+_PINCH_GRAY_RE = re.compile(r'^aVWAP_pinch_(?:peak|valley)_gray_(\d+)_(\d+)_')
+_PINCH_GRAYSCALE_MAX = 0.6
+_PINCH_GRAYSCALE_MIN = 0.3
+
 
 def _cfg_idx(col: str) -> int:
     m = re.search(r'_c(\d+)_', col)
@@ -91,10 +99,14 @@ def col_styles_for_columns(columns: list) -> dict:
             continue
 
         # These column types are all handled by the client-side DynamicVWAPEngine
-        # via replay_events — skip static rendering entirely.
+        # via replay_events — skip static rendering entirely. Peak/valley columns
+        # from that engine are always named aVWAP_peak_c<N>_<idx> (see
+        # replay_events._PEAK_RE/_VALLEY_RE) — matched narrowly here so this
+        # doesn't also swallow aVWAP-Pinch's plain aVWAP_peak_<idx>/aVWAP_valley_<idx>
+        # anchor columns, which need static rendering below.
         if (col.startswith('aVWAP_QQEMOD_')
-                or col.startswith('aVWAP_peak_')
-                or col.startswith('aVWAP_valley_')
+                or re.match(r'^aVWAP_peak_c\d+_', col)
+                or re.match(r'^aVWAP_valley_c\d+_', col)
                 or col.startswith('aVWAP_OB_')          # OB aVWAPs (incl. ghost)
                 or col.startswith('aVWAP_BoS_')         # BoS aVWAPs
                 or col.startswith('aVWAP_CHoCH_')       # CHoCH aVWAPs
@@ -106,7 +118,13 @@ def col_styles_for_columns(columns: list) -> dict:
             continue
 
         # ── aVWAP pinch ──────────────────────────────────────────────────────
-        if col.startswith('aVWAP_pinch_peak_'):
+        pinch_gray = _PINCH_GRAY_RE.match(col)
+        if pinch_gray:
+            rank, total = int(pinch_gray.group(1)), int(pinch_gray.group(2))
+            alpha = (_PINCH_GRAYSCALE_MAX - (rank / (total - 1)) * (_PINCH_GRAYSCALE_MAX - _PINCH_GRAYSCALE_MIN)) \
+                if total > 1 else _PINCH_GRAYSCALE_MAX
+            _add(col, f'rgba(100,100,100,{alpha:.2f})', 1)
+        elif col.startswith('aVWAP_pinch_peak_'):
             _add(col, colors['red_trans_3'],  1)
         elif col.startswith('aVWAP_pinch_valley_'):
             _add(col, colors['teal_trans_3'], 1)

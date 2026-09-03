@@ -13,6 +13,8 @@ def calculate_avwap_pinch(
     counterpart_periods=20,       # Lookback for counterpart detection
     counterpart_max_aVWAPs=3,     # Number of counterpart aVWAPs per anchor (pinch side)
     beyond_max_aVWAPs=3,          # Number of beyond aVWAPs per anchor (far side of anchor)
+    constrain_counterparts=False, # Truncate pinch counterparts where they cross the anchor
+    grayscale_counterparts=False, # Render pinch counterparts in muted grey instead of teal/red
 ):
     """
     Calculate aVWAP pinch pairs plus beyond (handoff) aVWAPs.
@@ -31,6 +33,15 @@ def calculate_avwap_pinch(
         counterpart_periods   : Rolling lookback for counterpart/beyond detection
         counterpart_max_aVWAPs: Number of pinch counterpart aVWAPs per anchor
         beyond_max_aVWAPs     : Number of beyond (handoff) aVWAPs per anchor
+        constrain_counterparts: When True, each pinch counterpart aVWAP is truncated
+                                 (NaN'd out) starting at the first bar where it crosses
+                                 onto the wrong side of its anchor's aVWAP — keeps the
+                                 fanning pattern visually clean instead of letting
+                                 counterpart lines cross back over the anchor line
+        grayscale_counterparts: When True, pinch counterparts render as muted grey
+                                 (tiered by opacity, nearest counterpart most opaque)
+                                 instead of teal/red — keeps candle color/direction
+                                 legible against the fan instead of competing with it
 
     Output columns:
         aVWAP_peak_{idx}          — anchor aVWAP at a detected peak        (solid)
@@ -39,6 +50,10 @@ def calculate_avwap_pinch(
         aVWAP_valley_{idx}        — anchor aVWAP at a detected valley      (solid)
         aVWAP_pinch_peak_{idx}    — pinch counterpart above the valley     (solid)
         aVWAP_pinch_below_{idx}   — beyond/handoff valleys below anchor    (dotted)
+
+    When grayscale_counterparts=True, pinch counterpart keys instead look like
+    aVWAP_pinch_valley_gray_{rank}_{total}_{idx} — col_styles.py reads the embedded
+    rank/total to tier grey opacity across that anchor's counterparts.
     """
 
     df = df.reset_index()
@@ -98,10 +113,19 @@ def calculate_avwap_pinch(
             result[main_key] = calculate_avwap(df, anchor_idx)
 
         # Pinch counterparts — converging side
-        for idx in find_pinch(df, pinch_pool, anchor_idx, anchor_price, counterpart_max_aVWAPs):
-            key = f'aVWAP_{pinch_label}_{idx}'
+        pinch_matches = find_pinch(df, pinch_pool, anchor_idx, anchor_price, counterpart_max_aVWAPs)
+        total_pinch = len(pinch_matches)
+        for rank, idx in enumerate(pinch_matches):
+            # rank/total embedded in the key so col_styles.py (name-only, no access to
+            # this call's params) can tier grayscale opacity per counterpart.
+            key = f'aVWAP_{pinch_label}_gray_{rank}_{total_pinch}_{idx}' if grayscale_counterparts \
+                else f'aVWAP_{pinch_label}_{idx}'
             if key not in result:
-                result[key] = calculate_avwap(df, idx)
+                series = calculate_avwap(df, idx)
+                if constrain_counterparts:
+                    direction = 'below' if anchor_type == 'peak' else 'above'
+                    series = _truncate_at_cross(series, result[main_key], direction)
+                result[key] = series
 
         # Beyond handoffs — far side of anchor
         for idx in find_beyond(df, beyond_pool, anchor_idx, anchor_price, beyond_max_aVWAPs):
@@ -115,6 +139,29 @@ def calculate_avwap_pinch(
     avwap_cols = list(result.keys())
     df.set_index('date', inplace=True)
     return df[avwap_cols] if avwap_cols else df[[]]
+
+
+def _truncate_at_cross(counterpart, anchor, direction):
+    """
+    NaN out `counterpart` from the first bar onward where it crosses onto the
+    wrong side of `anchor` (its corresponding peak/valley anchor aVWAP).
+
+    direction='below' — counterpart must stay below anchor (peak-anchor pinch valleys)
+    direction='above' — counterpart must stay above anchor (valley-anchor pinch peaks)
+    """
+    # counterpart always starts at or after anchor's own start index (it's found
+    # after the anchor), so its index range is a subset of anchor's — align anchor
+    # down to that range before comparing (pandas requires identical index labels).
+    anchor = anchor.reindex(counterpart.index)
+    both_valid = counterpart.notna() & anchor.notna()
+    violation = (both_valid & (counterpart >= anchor)) if direction == 'below' \
+           else (both_valid & (counterpart <= anchor))
+    if not violation.any():
+        return counterpart
+    cross_pos = violation.values.argmax()
+    truncated = counterpart.copy()
+    truncated.iloc[cross_pos:] = float('nan')
+    return truncated
 
 
 def _find_highest_valleys_above(df, valley_indices, after_idx, anchor_price, max_counterparts):

@@ -184,6 +184,8 @@ _PARAM_DESCRIPTIONS = {
     'counterpart_periods':   "Lookback period for the opposing VWAPs that must converge toward the primary.",
     'counterpart_max_aVWAPs':"Maximum number of opposing VWAPs to track for convergence detection.",
     'beyond_max_aVWAPs':     "Maximum number of secondary VWAPs to draw beyond the convergence zone.",
+    'constrain_counterparts':"Truncate pinch counterpart VWAPs at the first bar where they cross their anchor's VWAP, keeping the fan visually clean.",
+    'grayscale_counterparts':"Render pinch counterpart VWAPs in muted grey instead of teal/red, so candle color/direction stays legible against the fan.",
     # ── aVWAP anchor score ───────────────────────────────────────────────────
     'valleys':               "Score and output valley (swing low) anchors.",
     'peaks':                 "Score and output peak (swing high) anchors.",
