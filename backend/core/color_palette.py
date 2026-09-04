@@ -39,6 +39,23 @@ def get_color_palette():
         'aqua': f"rgba(0, 255, 255, 0.75)",
         'magenta': f"rgba(255, 26, 202, 1.0)",
 
+        # Sequential stdev-zone ramps (candle_colors ZScore / aVWAPStDev modes).
+        # Real OKLCH lightness steps, not alpha of a shared base color — alpha
+        # gets flattened to 1.0 for candle border/wick, so same-RGB-different-
+        # alpha steps rendered as visually identical borders. 3 steps per side
+        # (1/2/3 stdev) is the most this can carry while keeping every step
+        # pairwise distinguishable: validated via the dataviz skill's
+        # validate_palette.js (--ordinal and adjacent-pair CVD/normal-vision
+        # checks) against both this app's chart surfaces (#000 dark, #f8f3eb
+        # light) — 6 steps/side failed the normal-vision separation floor
+        # (worst adjacent ΔE ~6.5, need >=15), 3 steps/side clears it (>=15.6).
+        'stdev_red_1':  '#F37D6F',   # 0-1 stdev (weakest)
+        'stdev_red_2':  '#D42511',   # 1-2 stdev
+        'stdev_red_3':  '#85170B',   # 2-3 stdev (strongest before the tail)
+        'stdev_teal_1': '#14B5B0',   # 0-1 stdev (weakest)
+        'stdev_teal_2': '#0E817D',   # 1-2 stdev
+        'stdev_teal_3': '#09504D',   # 2-3 stdev (strongest before the tail)
+
         'gray': f"rgba(100,100,100,1.0)",
         'gray_trans': f"rgba(100,100,100,0.5)",
 

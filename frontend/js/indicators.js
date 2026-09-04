@@ -11,11 +11,19 @@ const NULLABLE_LIST_KEYS = new Set(['BoS_swing_lengths', 'CHoCH_swing_lengths', 
 
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
-  indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'RelVolume'],
+  indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'RelVolume', 'aVWAPStDev'],
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
   mode: ['combined', 'bullish', 'bearish'],
   styling: ['shades', 'highlight_first', 'grayscale'],
   anchor_type: ['peak', 'valley'],
+};
+
+// Display text for enum option values that shouldn't show their raw
+// internal identifier (e.g. backend dict keys / saved-config values) —
+// value stays the same, only the visible dropdown text changes.
+const PARAM_ENUM_LABELS = {
+  RelVolume: 'aVWAP-Range: Relative-Volume',
+  aVWAPStDev: 'aVWAP-Range: StDev',
 };
 
 
@@ -429,7 +437,7 @@ function _renderParamValue(key, val) {
   if (typeof val === 'string') {
     const opts = PARAM_ENUMS[key];
     if (opts) {
-      const options = opts.map(o => `<option value="${_esc(o)}"${o === val ? ' selected' : ''}>${_esc(o)}</option>`).join('');
+      const options = opts.map(o => `<option value="${_esc(o)}"${o === val ? ' selected' : ''}>${_esc(PARAM_ENUM_LABELS[o] || o)}</option>`).join('');
       return `<div class="param-field" data-key="${_esc(key)}" data-type="string">
         <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
         <select class="param-input param-select">${options}</select>

@@ -192,6 +192,37 @@ import numpy as np
 import pandas as pd
 from backend.indicators.indicators import get_indicators
 from backend.core.color_palette import get_color_palette
+from backend.indicators.indicators_list.aVWAP import calculate_avwap, calculate_avwap_stdev
+
+
+def _zscore_bucket_color(colors, z):
+    """Diverging teal/red ladder shared by the ZScore and aVWAPStDev color
+    modes — teal above zero (overbought side), red below (oversold side).
+
+    8 buckets at the classic 1/2/3-stdev breakpoints (3 per side + a tail),
+    not the finer 0.5-wide, 14-bucket version this used to be. That finer
+    version looked like it had 14 distinct steps, but every step was the
+    same RGB as its same-side neighbors at a different alpha — and candle
+    borders/wicks always render at full opacity (chart.js flattens alpha to
+    1.0 there), so those neighbors drew an identical border and were only
+    told apart by a sliver of body-fill opacity. Measured with the dataviz
+    skill's validate_palette.js against both this app's chart surfaces
+    (#000 dark, #f8f3eb light): 6 real, distinct-lightness steps per side
+    still fails the normal-vision separation floor for adjacent zones
+    (worst ΔE ~6.5 of a required >=15) — there just isn't room for that many
+    reliably-distinct steps in one hue on this contrast budget. 3 steps per
+    side clears it (>=15.6) with margin, so that's the ceiling. Tails
+    (beyond +/-3 stdev) hue-shift to magenta/neon, same escalating-intensity
+    convention banker_RSI's color map already uses."""
+    if          z <= -3.0: return colors['magenta']
+    elif -3.0 < z <= -2.0: return colors['stdev_red_3']
+    elif -2.0 < z <= -1.0: return colors['stdev_red_2']
+    elif -1.0 < z <=    0: return colors['stdev_red_1']
+    elif    0 < z <=  1.0: return colors['stdev_teal_1']
+    elif  1.0 < z <=  2.0: return colors['stdev_teal_2']
+    elif  2.0 < z <=  3.0: return colors['stdev_teal_3']
+    elif  3.0 < z:         return colors['neon']
+    return colors['black']
 
 # Sub-params shown per centreline mode. Keys must match the **kwargs names that
 # ZScore / StDev forward to their sub-indicators.
@@ -224,6 +255,9 @@ _SUB_DEFAULTS = {
     # aVWAP_pinch's own params — set matching values on both indicators to
     # scope this coloring to the same fan.
     'RelVolume':        {'anchor_type': 'peak', 'anchor_periods': 100, 'anchor_max_aVWAPs': 1, 'vol_span': 15},
+    # Same anchor detection as RelVolume/aVWAP_pinch — set matching values on
+    # all three to scope them to the same fan.
+    'aVWAPStDev':       {'anchor_type': 'peak', 'anchor_periods': 100, 'anchor_max_aVWAPs': 1},
 }
 
 # Consumed by _get_indicator_defaults: top-level param defaults shown in editor.
@@ -277,7 +311,13 @@ def calculate_candle_colors(df, indicator_color='QQEMOD', custom_params=None):
         params = dict(_SUB_DEFAULTS['RelVolume'])
         if custom_params:
             params.update(custom_params)
-        return {'Volume_Color': _relvolume_colors(df, **params)}
+        return {'Fill_Color': _relvolume_colors(df, **params)}
+
+    if indicator_color == 'aVWAPStDev':
+        params = dict(_SUB_DEFAULTS['aVWAPStDev'])
+        if custom_params:
+            params.update(custom_params)
+        return {'Fill_Color': _avwap_stdev_colors(df, **params)}
 
     default_params = {
         'ZScore': {
@@ -336,21 +376,7 @@ def calculate_candle_colors(df, indicator_color='QQEMOD', custom_params=None):
     # Define color mapping functions ------------------------------------------
 
     def map_zscore(zscore):
-        if          zscore <= -3.0: return colors['magenta']
-        elif -3.0 < zscore <= -2.5: return colors['red_dark']
-        elif -2.5 < zscore <= -2.0: return colors['red']
-        elif -2.0 < zscore <= -1.5: return colors['red']
-        elif -1.5 < zscore <= -1.0: return colors['red_trans_3']
-        elif -1.0 < zscore <= -0.5: return colors['red_trans_2']
-        elif -0.5 < zscore <=    0: return colors['red_trans_1'] 
-        elif    0 < zscore <=  0.5: return colors['teal_trans_1'] 
-        elif  0.5 < zscore <=  1.0: return colors['teal_trans_2']
-        elif  1.0 < zscore <=  1.5: return colors['teal_trans_3']
-        elif  1.5 < zscore <=  2.0: return colors['teal_trans_3']
-        elif  2.0 < zscore <=  2.5: return colors['teal']
-        elif  2.5 < zscore <=  3.0: return colors['teal']
-        elif  3.0 < zscore:         return colors['neon']
-        return colors['black']
+        return _zscore_bucket_color(colors, zscore)
 
     def map_banker_RSI(banker_RSI):
         if    15 <= banker_RSI <=   20: return colors['neon']
@@ -434,7 +460,7 @@ def _relvolume_colors(df, anchor_type='peak', anchor_periods=100, anchor_max_aVW
     (anchor_type / anchor_periods / anchor_max_aVWAPs) — set the same values
     on both indicators to scope this to the same fan.
 
-    Returns a 'Volume_Color' series (not 'color') — chart.js renders this as
+    Returns a 'Fill_Color' series (not 'color') — chart.js renders this as
     a body-fill-only tint and leaves the candle's border/wick on their normal
     up/down coloring. Deliberately one hue (orange) rather than a teal/red
     split: this is a volume signal, not a directional one, and a dark red
@@ -514,6 +540,90 @@ def _relvolume_colors(df, anchor_type='peak', anchor_periods=100, anchor_max_aVW
 
         for offset, a in enumerate(alpha.values):
             out.iloc[start + offset] = f"rgba({RGB[0]},{RGB[1]},{RGB[2]},{a:.2f})"
+
+    out.index = orig_index
+    return out
+
+
+def _stdev_zone_fill_color(colors, z):
+    """Fill-tint tiers for aVWAPStDev's stdev zones — same escalating-
+    intensity convention banker_RSI's color map already uses (teal_trans_0
+    -> teal_trans_3 -> aqua -> neon), mirrored on the red side (red_trans_0
+    -> red_trans_3 -> red_dark -> magenta). Unlike _zscore_bucket_color
+    (which backs a full-candle recolor, and needs opaque steps since
+    chart.js forces that path's border/wick to full alpha), this is safe to
+    build from alpha variants of the same hue: aVWAPStDev renders through
+    Fill_Color, a body-only tint that never touches the border/wick, so each
+    tier's own alpha renders as given instead of collapsing into its
+    neighbors'."""
+    if          z <= -3.0: return colors['magenta']
+    elif -3.0 < z <= -2.0: return colors['red_dark']
+    elif -2.0 < z <= -1.0: return colors['red_trans_3']
+    elif -1.0 < z <=    0: return colors['red_trans_0']
+    elif    0 < z <=  1.0: return colors['teal_trans_0']
+    elif  1.0 < z <=  2.0: return colors['teal_trans_3']
+    elif  2.0 < z <=  3.0: return colors['aqua']
+    elif  3.0 < z:         return colors['neon']
+    return None
+
+
+def _avwap_stdev_colors(df, anchor_type='peak', anchor_periods=100, anchor_max_aVWAPs=1):
+    """
+    Colors candles by how many anchor-VWAP standard deviations the bar's
+    typical price sits above/below the anchor's own cumulative volume-
+    weighted VWAP, within each aVWAP-Pinch anchor's range. Same anchor
+    detection as RelVolume/aVWAP_pinch (anchor_type/anchor_periods/
+    anchor_max_aVWAPs) — set matching values on all three to scope them to
+    the same fan.
+
+    Reuses calculate_avwap / calculate_avwap_stdev (aVWAP.py) — the same
+    cumulative VWAP + volume-weighted dispersion aVWAP_pinch's own
+    show_stdev_bands draws as lines — so the "center" and "normal deviation"
+    here are anchored to the same structural point (peak/valley) as the rest
+    of the fan, instead of drifting with a rolling window like the ZScore
+    mode's centreline. Above the aVWAP reads as overbought, below as
+    oversold, tiered by _stdev_zone_fill_color.
+
+    Returns a 'Fill_Color' series (not 'color') — chart.js renders this as a
+    body-fill-only tint and leaves the candle's border/wick on their normal
+    up/down coloring, so the stdev-zone signal never overrides whether the
+    candle itself was bullish/bearish — same rendering path as RelVolume.
+    Bars outside any selected anchor's range are left untinted (None) so the
+    candle renders exactly as it would with no candle_colors indicator at
+    all — the one deliberate cliff, marking where the anchor's range starts.
+    """
+    orig_index = df.index
+    df = df.reset_index(drop=False)
+    n = len(df)
+    colors = get_color_palette()
+    out = pd.Series([None] * n, index=df.index, dtype=object)
+
+    base_cols = [c for c in ['Open', 'High', 'Low', 'Close', 'Volume'] if c in df.columns]
+    pv = get_indicators(df[base_cols].copy(), ['peaks_valleys'], {'peaks_valleys': {'periods': anchor_periods}})
+    col = 'Peaks' if anchor_type == 'peak' else 'Valleys'
+    if col not in pv.columns:
+        out.index = orig_index
+        return out
+
+    anchors = sorted(pv[pv[col] == 1].index.tolist(), reverse=True)
+    if anchor_max_aVWAPs is not None:
+        anchors = anchors[:anchor_max_aVWAPs]
+    anchors = sorted(anchors)
+    if not anchors:
+        out.index = orig_index
+        return out
+
+    typical = (df['High'] + df['Low'] + df['Close']) / 3
+
+    for seg_i, start in enumerate(anchors):
+        end = anchors[seg_i + 1] - 1 if seg_i + 1 < len(anchors) else n - 1
+        vwap = calculate_avwap(df, start)
+        stdev = calculate_avwap_stdev(df, start).replace(0, np.nan)
+        z = ((typical - vwap) / stdev).fillna(0.0)
+        seg_z = z.iloc[start:end + 1]
+
+        for offset, zi in enumerate(seg_z.values):
+            out.iloc[start + offset] = _stdev_zone_fill_color(colors, zi)
 
     out.index = orig_index
     return out

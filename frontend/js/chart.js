@@ -226,12 +226,13 @@ export class ChartManager {
         low:   b.Low   ?? b.low,
         close: b.Close ?? b.close,
       };
-      const volClr = b.Volume_Color;
-      if (volClr) {
-        // Body-fill-only tint (e.g. RelVolume) — border/wick stay on normal
-        // up/down coloring so a volume signal never reads as directional.
+      const fillClr = b.Fill_Color;
+      if (fillClr) {
+        // Body-fill-only tint (RelVolume, aVWAPStDev) — border/wick stay on
+        // normal up/down coloring so the tint's signal (volume, stdev zone)
+        // never overrides whether the candle itself was bullish/bearish.
         const ud = entry.close >= entry.open;
-        entry.color       = volClr;
+        entry.color       = fillClr;
         entry.borderColor = ud ? C_UP : C_DOWN;
         entry.wickColor   = ud ? C_UP : C_DOWN;
       } else {
