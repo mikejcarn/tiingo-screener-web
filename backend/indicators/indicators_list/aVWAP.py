@@ -1150,6 +1150,21 @@ def calculate_avwap(df, anchor_index):
     return df_anchored['cumulative_volume_price'] / df_anchored['cumulative_volume']
 
 
+def calculate_avwap_stdev(df, anchor_index):
+    """
+    Cumulative volume-weighted standard deviation of typical price around the
+    anchored VWAP from the same anchor point — the same math as calculate_avwap
+    itself, just tracking dispersion instead of the mean. Used to draw
+    standard-deviation bands (vwap ± k*stdev) around an anchor aVWAP line.
+    """
+    df_anchored = df.iloc[anchor_index:].copy()
+    typical = (df_anchored['High'] + df_anchored['Low'] + df_anchored['Close']) / 3
+    vwap = calculate_avwap(df, anchor_index)
+    cumulative_volume = df_anchored['Volume'].cumsum()
+    cumulative_sq_dev = (df_anchored['Volume'] * (typical - vwap) ** 2).cumsum()
+    return np.sqrt(cumulative_sq_dev / cumulative_volume)
+
+
 def calculate_rolling_aVWAP_avg(df, aVWAP_dict, lookback=None):
     """Calculate average of aVWAP values"""
     if not aVWAP_dict:

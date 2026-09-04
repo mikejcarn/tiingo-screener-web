@@ -19,6 +19,14 @@ _PINCH_GRAY_RE = re.compile(r'^aVWAP_pinch_(?:peak|valley)_gray_(\d+)_(\d+)_')
 _PINCH_GRAYSCALE_MAX = 0.6
 _PINCH_GRAYSCALE_MIN = 0.3
 
+# aVWAP-Pinch stdev bands: multiple k embedded in the column name by aVWAP_pinch.py
+# (e.g. aVWAP_peak_stdev_upper_1_278) — tiered so the tightest band (smallest k) is
+# most visible and wider bands fade out, same interpolate-from-actual-columns idea
+# as the BFIT/LFIT/CFIT rank tiering below.
+_STDEV_BAND_RE = re.compile(r'^aVWAP_(peak|valley)_stdev_(upper|lower)_([\d.]+)_')
+_STDEV_BAND_MAX_ALPHA = 0.65
+_STDEV_BAND_MIN_ALPHA = 0.45
+
 
 def _cfg_idx(col: str) -> int:
     m = re.search(r'_c(\d+)_', col)
@@ -84,6 +92,20 @@ def col_styles_for_columns(columns: list) -> dict:
     def _cfit_alpha(rank): return round(0.9 - (0.9 - 0.4) * _cfit_t(rank), 2)
     def _cfit_width(rank): return max(1, round(3 - 2 * _cfit_t(rank)))
 
+    # aVWAP-Pinch stdev bands — interpolate opacity across whatever k values this
+    # config's columns actually contain (mirrors the BFIT/LFIT/CFIT rank scheme).
+    def _stdev_k(col):
+        m = _STDEV_BAND_RE.match(col)
+        return float(m.group(3)) if m else 1.0
+
+    _stdev_ks = sorted({_stdev_k(c) for c in columns if _STDEV_BAND_RE.match(c)})
+    _stdev_k_min = _stdev_ks[0] if _stdev_ks else 1.0
+    _stdev_k_max = _stdev_ks[-1] if _stdev_ks else 1.0
+
+    def _stdev_alpha(k):
+        t = (k - _stdev_k_min) / (_stdev_k_max - _stdev_k_min) if _stdev_k_max > _stdev_k_min else 0.0
+        return round(_STDEV_BAND_MAX_ALPHA - (_STDEV_BAND_MAX_ALPHA - _STDEV_BAND_MIN_ALPHA) * t, 2)
+
     for col in columns:
         cfg = _cfg_idx(col)
 
@@ -132,6 +154,16 @@ def col_styles_for_columns(columns: list) -> dict:
             _add(col, colors['teal_trans_2'], 1, 'dotted')
         elif col.startswith('aVWAP_pinch_below_'):
             _add(col, colors['red_trans_2'],  1, 'dotted')
+
+        # ── aVWAP pinch stdev bands ──────────────────────────────────────────
+        # Matched before the generic aVWAP_peak_/aVWAP_valley_ branches below,
+        # which would otherwise swallow these (they share the same prefix).
+        # Same red/teal family as the anchor line they belong to, dashed, with
+        # opacity tiered so the tightest band reads clearest and wider bands fade.
+        elif _STDEV_BAND_RE.match(col):
+            side, k = _STDEV_BAND_RE.match(col).group(1), _stdev_k(col)
+            rgb = '239,83,80' if side == 'peak' else '38,166,154'
+            _add(col, f'rgba({rgb},{_stdev_alpha(k)})', 1, 'dashed')
 
         # ── aVWAP anchor score (peaks / valleys) ────────────────────────────
         elif col.startswith('aVWAP_peak_'):

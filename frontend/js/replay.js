@@ -19,8 +19,9 @@ let playing  = false;
 let fps      = 8;
 let playTimer = null;
 let autoFit    = localStorage.getItem('replay_autofit') === 'true';
-let lockMode   = localStorage.getItem('replay_lock_mode')  || null;
-let lockValue  = localStorage.getItem('replay_lock_value') || null;
+let lockMode   = localStorage.getItem('replay_lock_mode')   || null;
+let lockValue  = localStorage.getItem('replay_lock_value')  || null;
+let lockValue2 = localStorage.getItem('replay_lock_value2') || null;
 let _lastChartX     = null;  // last known mouse x over the chart, in #chart-local px — for '.' hover-anchor
 let _lastChartY     = null;  // last known mouse y over the chart, in #chart-local px — for Alt+Space measurement
 let _measureActive  = false; // mid live-measurement (started by Alt+Click or Alt+Space)
@@ -71,6 +72,23 @@ function _findBarByDate(targetDate) {
     if (d <= targetDate) return i;
   }
   return 0;
+}
+
+function _dateAt(idx) {
+  const b = bars[Math.max(0, Math.min(N - 1, idx))];
+  return (b?.Date || b?.date || '').slice(0, 10);
+}
+
+// Resolves a lock-value string to a bar index — plain digits are a bar #,
+// anything else is treated as a date (first bar on/after it).
+function _resolveIndex(value, fallback) {
+  if (value == null || value === '') return fallback;
+  if (/^\d+$/.test(value)) return parseInt(value, 10);
+  let idx = N - 1;
+  for (let i = 0; i < N; i++) {
+    if ((bars[i]?.Date || bars[i]?.date || '').slice(0, 10) >= value) { idx = i; break; }
+  }
+  return idx;
 }
 
 // ── WebSocket ─────────────────────────────────────────────────
@@ -133,15 +151,17 @@ export function getCurrentBarInfo() {
   return { bar: current, date: (b?.Date || b?.date || '').slice(0, 10) };
 }
 
-export function applyRangeLock(mode, value) {
-  lockMode  = mode  || null;
-  lockValue = value || null;
+export function applyRangeLock(mode, value, value2) {
+  lockMode   = mode   || null;
+  lockValue  = value  || null;
+  lockValue2 = value2 || null;
   _applyLock();
 }
 
 export function clearRangeLock() {
   lockMode = null;
   lockValue = null;
+  lockValue2 = null;
 }
 
 function _applyLock() {
@@ -158,6 +178,19 @@ function _applyLock() {
       if ((bars[i]?.Date || bars[i]?.date || '').slice(0, 10) >= lockValue) { idx = i; break; }
     }
     jump(idx);
+  } else if (lockMode === 'range' && lockValue) {
+    // Windows the initial view to [start, end] — full history stays loaded
+    // underneath, so scrubbing/stepping/playing past either edge still works.
+    const startIdx = _resolveIndex(lockValue, 0);
+    const endIdx   = _resolveIndex(lockValue2, N - 1);
+    jump(endIdx);
+    chart.setVisibleRange(_dateAt(startIdx), _dateAt(endIdx));
+  } else if (lockMode === 'recent' && lockValue) {
+    const count    = Math.max(1, parseInt(lockValue) || N);
+    const endIdx   = N - 1;
+    const startIdx = Math.max(0, endIdx - count + 1);
+    jump(endIdx);
+    chart.setVisibleRange(_dateAt(startIdx), _dateAt(endIdx));
   }
 }
 

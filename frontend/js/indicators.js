@@ -11,7 +11,7 @@ const NULLABLE_LIST_KEYS = new Set(['BoS_swing_lengths', 'CHoCH_swing_lengths', 
 
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
-  indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI'],
+  indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'RelVolume'],
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
   mode: ['combined', 'bullish', 'bearish'],
   styling: ['shades', 'highlight_first', 'grayscale'],

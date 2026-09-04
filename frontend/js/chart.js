@@ -226,17 +226,27 @@ export class ChartManager {
         low:   b.Low   ?? b.low,
         close: b.Close ?? b.close,
       };
-      const clr = b.color;
-      if (clr && clr !== '#000000') {
-        const opaque = clr.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),[^)]+\)/, 'rgba($1,$2,$3,1.0)');
-        entry.color       = clr;
-        entry.borderColor = opaque;
-        entry.wickColor   = opaque;
-      } else if (clr === '#000000') {
+      const volClr = b.Volume_Color;
+      if (volClr) {
+        // Body-fill-only tint (e.g. RelVolume) — border/wick stay on normal
+        // up/down coloring so a volume signal never reads as directional.
         const ud = entry.close >= entry.open;
-        entry.color       = 'rgba(0,0,0,0)';
+        entry.color       = volClr;
         entry.borderColor = ud ? C_UP : C_DOWN;
         entry.wickColor   = ud ? C_UP : C_DOWN;
+      } else {
+        const clr = b.color;
+        if (clr && clr !== '#000000') {
+          const opaque = clr.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),[^)]+\)/, 'rgba($1,$2,$3,1.0)');
+          entry.color       = clr;
+          entry.borderColor = opaque;
+          entry.wickColor   = opaque;
+        } else if (clr === '#000000') {
+          const ud = entry.close >= entry.open;
+          entry.color       = 'rgba(0,0,0,0)';
+          entry.borderColor = ud ? C_UP : C_DOWN;
+          entry.wickColor   = ud ? C_UP : C_DOWN;
+        }
       }
       return entry;
     });

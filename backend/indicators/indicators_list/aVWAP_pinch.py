@@ -1,10 +1,19 @@
 import pandas as pd
 from backend.indicators.indicators import get_indicators
-from backend.indicators.indicators_list.aVWAP import calculate_avwap
+from backend.indicators.indicators_list.aVWAP import calculate_avwap, calculate_avwap_stdev
 
 
 
 display_name = "aVWAP — Pinch"
+
+# Merged into the app-wide param tooltip dict (backend/routers/ind_configs.py)
+# keyed by param name alone.
+param_descriptions = {
+    'show_stdev_bands': "Draw standard-deviation bands (vwap ± k×stdev, one pair per stdev_multiples entry) around each anchor aVWAP — the volume-weighted dispersion of price around that VWAP since the anchor, same idea as Bollinger Bands but anchored instead of rolling.",
+    'stdev_multiples':  "Which multiples of the anchor's volume-weighted stdev to draw band pairs at (e.g. 1, 2 draws a ±1 and a ±2 band). Only used when show_stdev_bands is on.",
+}
+
+
 def calculate_avwap_pinch(
     df,
     anchor_type='peak',           # 'peak' or 'valley' — the main anchor type
@@ -15,6 +24,8 @@ def calculate_avwap_pinch(
     beyond_max_aVWAPs=3,          # Number of beyond aVWAPs per anchor (far side of anchor)
     constrain_counterparts=False, # Truncate pinch counterparts where they cross the anchor
     grayscale_counterparts=False, # Render pinch counterparts in muted grey instead of teal/red
+    show_stdev_bands=False,       # Draw stdev bands around each anchor aVWAP
+    stdev_multiples=[1, 2],       # Band pairs to draw, in multiples of the anchor's stdev
 ):
     """
     Calculate aVWAP pinch pairs plus beyond (handoff) aVWAPs.
@@ -42,6 +53,17 @@ def calculate_avwap_pinch(
                                  (tiered by opacity, nearest counterpart most opaque)
                                  instead of teal/red — keeps candle color/direction
                                  legible against the fan instead of competing with it
+        show_stdev_bands      : When True, draw standard-deviation bands around each
+                                 anchor aVWAP — the cumulative volume-weighted stdev of
+                                 price around that VWAP since the anchor (same math as
+                                 the VWAP itself, tracking dispersion instead of the
+                                 mean), same idea as Bollinger Bands but anchored
+                                 instead of rolling. Scoped to the anchor line only —
+                                 not drawn on pinch counterparts or beyond handoffs,
+                                 which would get cluttered fast at typical counterpart
+                                 counts.
+        stdev_multiples        : Which multiples of that stdev to draw band pairs at.
+                                 Each entry k adds a vwap+k*stdev / vwap-k*stdev pair.
 
     Output columns:
         aVWAP_peak_{idx}          — anchor aVWAP at a detected peak        (solid)
@@ -50,6 +72,9 @@ def calculate_avwap_pinch(
         aVWAP_valley_{idx}        — anchor aVWAP at a detected valley      (solid)
         aVWAP_pinch_peak_{idx}    — pinch counterpart above the valley     (solid)
         aVWAP_pinch_below_{idx}   — beyond/handoff valleys below anchor    (dotted)
+        aVWAP_{peak|valley}_stdev_{upper|lower}_{k}_{idx} — stdev band at k
+                                 multiples above/below the anchor aVWAP (dashed,
+                                 fading out at higher k) — only when show_stdev_bands
 
     When grayscale_counterparts=True, pinch counterpart keys instead look like
     aVWAP_pinch_valley_gray_{rank}_{total}_{idx} — col_styles.py reads the embedded
@@ -111,6 +136,16 @@ def calculate_avwap_pinch(
         main_key = f'aVWAP_{main_label}_{anchor_idx}'
         if main_key not in result:
             result[main_key] = calculate_avwap(df, anchor_idx)
+
+        # Standard-deviation bands around the anchor aVWAP only — not on
+        # counterparts/beyond, which would get cluttered fast at typical counts
+        if show_stdev_bands:
+            stdev = calculate_avwap_stdev(df, anchor_idx)
+            vwap = result[main_key]
+            for k in stdev_multiples:
+                k_str = f'{k:g}'
+                result[f'aVWAP_{main_label}_stdev_upper_{k_str}_{anchor_idx}'] = vwap + k * stdev
+                result[f'aVWAP_{main_label}_stdev_lower_{k_str}_{anchor_idx}'] = vwap - k * stdev
 
         # Pinch counterparts — converging side
         pinch_matches = find_pinch(df, pinch_pool, anchor_idx, anchor_price, counterpart_max_aVWAPs)

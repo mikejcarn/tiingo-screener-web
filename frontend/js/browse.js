@@ -449,36 +449,55 @@ function _wireNav() {
   });
 
   // Load position lock — always active, no button needed
-  const lockModeEl  = document.getElementById('lock-mode');
-  const lockValueEl = document.getElementById('lock-value');
+  const lockModeEl   = document.getElementById('lock-mode');
+  const lockValueEl  = document.getElementById('lock-value');
+  const lockValue2El = document.getElementById('lock-value-2');
 
   function _needsValue() {
-    return lockModeEl.value === 'bar' || lockModeEl.value === 'date';
+    return ['bar', 'date', 'range', 'recent'].includes(lockModeEl.value);
+  }
+  function _needsValue2() {
+    return lockModeEl.value === 'range';
   }
 
+  const _placeholders = {
+    bar:    'bar #',
+    date:   'YYYY-MM-DD',
+    range:  'start bar/date',
+    recent: '# bars back',
+  };
+
   function _updateLockUI() {
-    lockValueEl.style.display = _needsValue() ? '' : 'none';
-    lockValueEl.placeholder   = lockModeEl.value === 'bar' ? 'bar #' : 'YYYY-MM-DD';
+    lockValueEl.style.display  = _needsValue()  ? '' : 'none';
+    lockValue2El.style.display = _needsValue2() ? '' : 'none';
+    lockValueEl.placeholder    = _placeholders[lockModeEl.value] || '';
     lockModeEl.classList.toggle('active', lockModeEl.value !== 'start');
   }
 
   function _commitLock() {
-    applyRangeLock(lockModeEl.value, _needsValue() ? (lockValueEl.value.trim() || null) : null);
+    applyRangeLock(
+      lockModeEl.value,
+      _needsValue()  ? (lockValueEl.value.trim()  || null) : null,
+      _needsValue2() ? (lockValue2El.value.trim() || null) : null,
+    );
   }
 
   function _saveLock() {
     try {
-      localStorage.setItem('replay_lock_mode',  lockModeEl.value);
-      localStorage.setItem('replay_lock_value', lockValueEl.value.trim());
+      localStorage.setItem('replay_lock_mode',   lockModeEl.value);
+      localStorage.setItem('replay_lock_value',  lockValueEl.value.trim());
+      localStorage.setItem('replay_lock_value2', lockValue2El.value.trim());
     } catch {}
   }
 
   // Restore persisted lock state before first apply
-  const _savedLockMode  = localStorage.getItem('replay_lock_mode');
-  const _savedLockValue = localStorage.getItem('replay_lock_value');
+  const _savedLockMode   = localStorage.getItem('replay_lock_mode');
+  const _savedLockValue  = localStorage.getItem('replay_lock_value');
+  const _savedLockValue2 = localStorage.getItem('replay_lock_value2');
   if (_savedLockMode) {
-    lockModeEl.value  = _savedLockMode;
-    lockValueEl.value = _savedLockValue || '';
+    lockModeEl.value   = _savedLockMode;
+    lockValueEl.value  = _savedLockValue  || '';
+    lockValue2El.value = _savedLockValue2 || '';
   }
 
   lockModeEl.addEventListener('change', () => {
@@ -487,12 +506,19 @@ function _wireNav() {
     _saveLock();
   });
 
-  // Digits only for bar mode; commit on Enter or blur
+  // Digits only for bar/recent; digits+dashes (bar or date) for range; commit on Enter or blur
   lockValueEl.addEventListener('input', () => {
-    if (lockModeEl.value === 'bar') lockValueEl.value = lockValueEl.value.replace(/\D/g, '');
+    if (lockModeEl.value === 'bar' || lockModeEl.value === 'recent') lockValueEl.value = lockValueEl.value.replace(/\D/g, '');
+    else if (lockModeEl.value === 'range') lockValueEl.value = lockValueEl.value.replace(/[^0-9\-]/g, '');
   });
   lockValueEl.addEventListener('change', () => { _commitLock(); _saveLock(); });
   lockValueEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { lockValueEl.blur(); } });
+
+  lockValue2El.addEventListener('input', () => {
+    lockValue2El.value = lockValue2El.value.replace(/[^0-9\-]/g, '');
+  });
+  lockValue2El.addEventListener('change', () => { _commitLock(); _saveLock(); });
+  lockValue2El.addEventListener('keydown', (e) => { if (e.key === 'Enter') { lockValue2El.blur(); } });
 
   _updateLockUI();
   _commitLock(); // apply restored (or default) lock on page load
@@ -531,7 +557,7 @@ function _wireNav() {
   }
 
   // Global keyboard shortcuts
-  const _lockModes = ['start', 'end', 'bar', 'date'];
+  const _lockModes = ['start', 'end', 'bar', 'date', 'range', 'recent'];
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { document.activeElement?.blur(); return; }
     if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT') return;

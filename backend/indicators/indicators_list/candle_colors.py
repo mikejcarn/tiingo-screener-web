@@ -188,6 +188,7 @@
 
 
 
+import numpy as np
 import pandas as pd
 from backend.indicators.indicators import get_indicators
 from backend.core.color_palette import get_color_palette
@@ -219,6 +220,10 @@ _SUB_DEFAULTS = {
     'supertrend':       {'periods': 14, 'multiplier': 3},
     'TTM_squeeze':      {'bb_length': 20, 'bb_std_dev': 2.0,
                          'kc_length': 20, 'kc_mult': 1.5, 'use_true_range': True},
+    # anchor_type/anchor_periods/anchor_max_aVWAPs use the same names as
+    # aVWAP_pinch's own params — set matching values on both indicators to
+    # scope this coloring to the same fan.
+    'RelVolume':        {'anchor_type': 'peak', 'anchor_periods': 100, 'anchor_max_aVWAPs': 1, 'vol_span': 15},
 }
 
 # Consumed by _get_indicator_defaults: top-level param defaults shown in editor.
@@ -232,6 +237,25 @@ defaults = {
 param_options = {
     'indicator_color': _SUB_DEFAULTS,
     'centreline':      _CENTRELINE_SUB_DEFAULTS,
+}
+
+# Merged into the app-wide param tooltip dict (backend/routers/ind_configs.py)
+# keyed by param name alone, so only genuinely new keys belong here — anchor_type
+# etc. already have tooltips contributed by aVWAP_pinch.py.
+param_descriptions = {
+    'vol_span': (
+        "RelVolume only. How many recent bars define 'normal' volume, as an "
+        "exponentially-weighted average — recent bars count more, older ones "
+        "fade out gradually rather than dropping off a hard window edge, so "
+        "the sense of 'normal' doesn't drift the longer the pinch range runs. "
+        "Each bar's opacity is then driven by log(volume ÷ this average): equal "
+        "multiples (2x, 4x, 8x...) add equal opacity, so an extreme spike still "
+        "reads as more intense than a moderate one instead of both clipping to "
+        "the same full color. Also sets how many bars must accumulate in a "
+        "range before its saturation point (what counts as 'fully opaque') "
+        "starts auto-calibrating off that range's own 95th-percentile "
+        "deviation, instead of using a fixed fallback."
+    ),
 }
 
 
@@ -248,6 +272,12 @@ def calculate_candle_colors(df, indicator_color='QQEMOD', custom_params=None):
     Returns:
         dict: {'color': pd.Series of colors matching df index}
     """
+
+    if indicator_color == 'RelVolume':
+        params = dict(_SUB_DEFAULTS['RelVolume'])
+        if custom_params:
+            params.update(custom_params)
+        return {'Volume_Color': _relvolume_colors(df, **params)}
 
     default_params = {
         'ZScore': {
@@ -395,6 +425,98 @@ def calculate_candle_colors(df, indicator_color='QQEMOD', custom_params=None):
         return {'color': color_series}
    
     return {'color': pd.Series([colors['black']] * len(df), index=df.index)}
+
+
+def _relvolume_colors(df, anchor_type='peak', anchor_periods=100, anchor_max_aVWAPs=1, vol_span=15):
+    """
+    Colors candles by volume relative to an EWMA volume baseline within each
+    aVWAP-Pinch anchor's range. Mirrors aVWAP_pinch's own anchor detection
+    (anchor_type / anchor_periods / anchor_max_aVWAPs) — set the same values
+    on both indicators to scope this to the same fan.
+
+    Returns a 'Volume_Color' series (not 'color') — chart.js renders this as
+    a body-fill-only tint and leaves the candle's border/wick on their normal
+    up/down coloring. Deliberately one hue (orange) rather than a teal/red
+    split: this is a volume signal, not a directional one, and a dark red
+    "low volume" candle previously read as a strong bearish move, which is
+    the opposite of what it meant. Bars outside any selected anchor's range
+    are left untinted (None) so the candle renders exactly as it would with
+    no candle_colors indicator at all — that boundary is the one deliberate
+    cliff, marking where the anchor's range actually starts.
+
+    Baseline: an EWMA of volume (span=vol_span), not a fixed lookback window
+    or a plain expanding mean — old bars fade out gradually rather than
+    dropping off a hard window edge (fixed window) or never letting go
+    (expanding mean, which dilutes further from the anchor a range runs, so
+    the same relative spike reads louder early in a range and quieter late
+    in it — an artifact of the window growing, not the data). EWMA keeps the
+    "effective lookback" roughly constant across the whole range. Still
+    fully causal (only ever uses bars up to and including the current one),
+    so a bar's color never depends on volume the replay hasn't reached yet.
+
+    Opacity: driven by log(volume ÷ baseline) rather than the raw ratio, so
+    equal multiples (2x, 4x, 8x...) add equal opacity — a genuinely extreme
+    day reads more intense than a moderate one instead of both clipping to
+    the same full color. |log_ratio| is symmetric around zero by
+    construction, so one formula handles both above- and below-average bars
+    — no separate high/low tuning needed. Opacity lands at ~0 (transparent)
+    right at the baseline itself, so bars inside the range fade smoothly
+    toward transparent as volume nears "normal" instead of jumping to a
+    solid fill.
+
+    Saturation (what |log_ratio| counts as "fully opaque") is auto-calibrated
+    per range rather than a fixed constant: once vol_span bars have
+    accumulated in the range, it's the expanding (causal — bars up to here
+    only) 95th percentile of |log_ratio| seen so far, so a quiet range and a
+    genuinely volatile one each use the full opacity scale relative to their
+    own behavior instead of a single global threshold under- or
+    over-shooting for either. Before vol_span bars exist, a percentile
+    estimate from a handful of points is unreliable (the one elevated bar
+    so far would just define its own threshold and always read as maximal)
+    — those early bars fall back to a fixed default instead.
+    """
+    orig_index = df.index
+    df = df.reset_index(drop=False)
+    n = len(df)
+    out = pd.Series([None] * n, index=df.index, dtype=object)
+
+    base_cols = [c for c in ['Open', 'High', 'Low', 'Close', 'Volume'] if c in df.columns]
+    pv = get_indicators(df[base_cols].copy(), ['peaks_valleys'], {'peaks_valleys': {'periods': anchor_periods}})
+    col = 'Peaks' if anchor_type == 'peak' else 'Valleys'
+    if col not in pv.columns:
+        out.index = orig_index
+        return out
+
+    anchors = sorted(pv[pv[col] == 1].index.tolist(), reverse=True)
+    if anchor_max_aVWAPs is not None:
+        anchors = anchors[:anchor_max_aVWAPs]
+    anchors = sorted(anchors)
+    if not anchors:
+        out.index = orig_index
+        return out
+
+    volume = df['Volume']
+    RGB = (255, 165, 0)          # orange — a volume-only hue, distinct from the up/down teal/red pair
+    SAT_PERCENTILE = 0.95        # per-range saturation = this percentile of |log_ratio| seen so far
+    FALLBACK_SAT_LOG = 0.85      # used only until vol_span bars accumulate (ratio ~2.3x)
+    MIN_SAT_LOG = 0.05           # floor so a dead-flat volume stretch can't divide-by-near-zero
+
+    for seg_i, start in enumerate(anchors):
+        end = anchors[seg_i + 1] - 1 if seg_i + 1 < len(anchors) else n - 1
+        seg_vol = volume.iloc[start:end + 1]
+        baseline = seg_vol.ewm(span=vol_span, min_periods=1).mean()
+        ratio = seg_vol.divide(baseline).replace([float('inf'), float('-inf')], 1.0).fillna(1.0).clip(lower=1e-6)
+        abs_log_ratio = np.log(ratio).abs()
+
+        sat = abs_log_ratio.expanding(min_periods=vol_span).quantile(SAT_PERCENTILE)
+        sat = sat.fillna(FALLBACK_SAT_LOG).clip(lower=MIN_SAT_LOG)
+        alpha = (abs_log_ratio / sat).clip(upper=1.0)
+
+        for offset, a in enumerate(alpha.values):
+            out.iloc[start + offset] = f"rgba({RGB[0]},{RGB[1]},{RGB[2]},{a:.2f})"
+
+    out.index = orig_index
+    return out
 
 
 def calculate_indicator(df, **params):
