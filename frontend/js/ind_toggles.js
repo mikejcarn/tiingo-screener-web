@@ -18,6 +18,7 @@ import { getIndicatorState, toggleIndicatorVisible } from './replay.js';
 let _displayNames = {}; // {indicatorName: display_name} — best-effort, falls back to raw name
 
 function _label(name) {
+  if (name === '__candles__') return 'Candles';
   return _displayNames[name] || name;
 }
 

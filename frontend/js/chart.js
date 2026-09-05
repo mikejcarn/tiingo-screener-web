@@ -636,6 +636,10 @@ export class ChartManager {
     if (touchedTint && this._curN >= 0) this.reveal(this._curN);
   }
 
+  setCandlesVisible(visible) {
+    if (this._candles) this._candles.applyOptions({ visible });
+  }
+
   destroy() {
     this._divMarkers    = [];
     this._divShowLabels = true;

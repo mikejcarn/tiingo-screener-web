@@ -65,22 +65,32 @@ function _saveHiddenIndicators() {
   } catch {}
 }
 
+// Synthetic entry for the base candlestick series itself — not tied to any
+// indicator/config, so it lives outside indicatorColumns but shares the same
+// hidden-set/persistence/toggle mechanics as everything else in the panel.
+const CANDLES_KEY = '__candles__';
+
 function _applyIndicatorVisibility() {
   if (!chart) return;
+  chart.setCandlesVisible(!hiddenIndicators.has(CANDLES_KEY));
   for (const [name, cols] of Object.entries(indicatorColumns)) {
     chart.setIndicatorVisible(cols, !hiddenIndicators.has(name));
   }
 }
 
-/** [{name, visible}] for whichever indicators the current chart can toggle. */
+/** [{name, visible}] for whichever indicators (+ candles) the current chart can toggle. */
 export function getIndicatorState() {
-  return Object.keys(indicatorColumns).map(name => ({ name, visible: !hiddenIndicators.has(name) }));
+  const candles = { name: CANDLES_KEY, visible: !hiddenIndicators.has(CANDLES_KEY) };
+  const indicators = Object.keys(indicatorColumns).map(name => ({ name, visible: !hiddenIndicators.has(name) }));
+  return [candles, ...indicators];
 }
 
 export function toggleIndicatorVisible(name, visible) {
   if (visible) hiddenIndicators.delete(name); else hiddenIndicators.add(name);
   _saveHiddenIndicators();
-  if (chart) chart.setIndicatorVisible(indicatorColumns[name] || [], visible);
+  if (!chart) return;
+  if (name === CANDLES_KEY) chart.setCandlesVisible(visible);
+  else chart.setIndicatorVisible(indicatorColumns[name] || [], visible);
 }
 
 export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
