@@ -178,7 +178,25 @@ def _conn() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    # One-time bootstrap into incremental auto_vacuum — without it, deleted/
+    # replaced pages (indicator re-runs, config clears) are freed internally
+    # but never handed back to the OS, so the file only ever grows. Setting
+    # the pragma alone is enough for a brand-new (table-less) database; an
+    # existing one needs a VACUUM afterward to actually restructure into the
+    # new mode — runs at most once (this check reports mode 2 forever after).
+    # The pragma-set and that VACUUM must happen in the SAME connection/
+    # session — auto_vacuum mode only takes effect for a VACUUM run where it
+    # was set; a fresh connection just re-vacuums under the file's existing
+    # (still-unchanged) mode.
+    needs_vacuum = False
     with _conn() as con:
+        mode = con.execute("PRAGMA auto_vacuum").fetchone()[0]
+        if mode != 2:  # 0 = none, 1 = full, 2 = incremental
+            had_tables = con.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table'"
+            ).fetchone()[0] > 0
+            con.execute("PRAGMA auto_vacuum = INCREMENTAL")
+            needs_vacuum = had_tables
         con.executescript(SCHEMA)
         # Migrations
         try:
@@ -265,6 +283,11 @@ def init_db() -> None:
         except Exception:
             pass
 
+        if needs_vacuum:
+            print("[database] migrating to incremental auto_vacuum (one-time VACUUM)...")
+            con.execute("VACUUM")
+            print("[database] auto_vacuum migration done")
+
 
 # ── OHLCV ────────────────────────────────────────────────────
 
@@ -276,8 +299,16 @@ def upsert_ohlcv(ticker: str, timeframe: str, df: pd.DataFrame) -> int:
         for _, row in df.iterrows()
     ]
     with _conn() as con:
+        # Same reasoning as upsert_indicators: ON CONFLICT DO UPDATE instead
+        # of INSERT OR REPLACE, so refetching overlapping dates updates rows
+        # in place rather than deleting + re-inserting them.
         con.executemany(
-            "INSERT OR REPLACE INTO ohlcv VALUES (?,?,?,?,?,?,?,?)", rows
+            """INSERT INTO ohlcv (ticker, timeframe, date, open, high, low, close, volume)
+               VALUES (?,?,?,?,?,?,?,?)
+               ON CONFLICT (ticker, timeframe, date)
+               DO UPDATE SET open=excluded.open, high=excluded.high, low=excluded.low,
+                             close=excluded.close, volume=excluded.volume""",
+            rows
         )
     return len(rows)
 
@@ -314,8 +345,18 @@ def upsert_indicators(ticker: str, timeframe: str, ind_conf: int, df: pd.DataFra
                 if k not in ohlcv_cols and k != 'Date'}
         rows.append((ticker, timeframe, ind_conf, date, json.dumps(data)))
     with _conn() as con:
+        # ON CONFLICT DO UPDATE, not INSERT OR REPLACE — the latter deletes
+        # then re-inserts the whole row on a PK conflict (re-running a config
+        # on already-computed data, i.e. almost every run), which is exactly
+        # the churn that caused the recurring file-bloat problem. A real
+        # UPDATE lets SQLite reuse the existing row's space in place instead
+        # of freeing it and allocating fresh.
         con.executemany(
-            "INSERT OR REPLACE INTO indicators VALUES (?,?,?,?,?)", rows
+            """INSERT INTO indicators (ticker, timeframe, ind_conf, date, data)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT (ticker, timeframe, ind_conf, date)
+               DO UPDATE SET data = excluded.data""",
+            rows
         )
     return len(rows)
 
@@ -445,7 +486,22 @@ def delete_indicators(ind_conf_id: Optional[int] = None,
         return 0
     with _conn() as con:
         cur = con.execute(f"DELETE FROM indicators WHERE {' AND '.join(conditions)}", params)
-        return cur.rowcount
+        deleted = cur.rowcount
+    if deleted:
+        # Hand the freed pages back to the OS now, while we know exactly how
+        # much was just freed, rather than letting them sit on the freelist
+        # (incremental_vacuum is a no-op unless auto_vacuum=incremental —
+        # see init_db's one-time migration).
+        #
+        # PRAGMA incremental_vacuum yields one result ROW PER PAGE freed —
+        # it only actually frees a page each time the statement is stepped.
+        # execute() alone steps it once (reclaiming a single page); fetchall()
+        # is what drains every step and reclaims everything, the same way the
+        # sqlite3 CLI does it automatically. Confirmed by measurement: without
+        # this, a delete of ~330K rows only ever gave back 1 page.
+        with _conn() as con:
+            con.execute("PRAGMA incremental_vacuum").fetchall()
+    return deleted
 
 
 def has_single_tickers() -> bool:
@@ -495,8 +551,15 @@ def get_setting(key: str) -> Optional[str]:
 
 
 def set_setting(key: str, value: str) -> None:
+    # ON CONFLICT DO UPDATE, not INSERT OR REPLACE — same reasoning as
+    # upsert_indicators/upsert_ohlcv, for consistency even though this
+    # table's write volume is negligible.
     with _conn() as con:
-        con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (key, value))
+        con.execute(
+            """INSERT INTO settings (key, value) VALUES (?,?)
+               ON CONFLICT (key) DO UPDATE SET value = excluded.value""",
+            (key, value)
+        )
 
 
 # ── Fetch log ────────────────────────────────────────────────
@@ -504,9 +567,18 @@ def set_setting(key: str, value: str) -> None:
 def log_fetch(ticker: str, timeframe: str, last_date: Optional[str],
               ticker_list: Optional[str] = None) -> None:
     from datetime import datetime
+    # ON CONFLICT DO UPDATE, not INSERT OR REPLACE — same reasoning as
+    # upsert_indicators/upsert_ohlcv. Called on every ticker fetch; the table
+    # is capped at one row per (ticker, timeframe) so this was never a major
+    # bloat source, but it's the same bug pattern.
     with _conn() as con:
         con.execute(
-            "INSERT OR REPLACE INTO fetch_log VALUES (?,?,?,?,?)",
+            """INSERT INTO fetch_log (ticker, timeframe, fetched_at, last_date, ticker_list)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT (ticker, timeframe)
+               DO UPDATE SET fetched_at  = excluded.fetched_at,
+                             last_date   = excluded.last_date,
+                             ticker_list = excluded.ticker_list""",
             (ticker, timeframe, datetime.utcnow().isoformat(), last_date, ticker_list)
         )
 

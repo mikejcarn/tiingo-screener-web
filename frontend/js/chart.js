@@ -653,6 +653,14 @@ export class ChartManager {
     if (this._candles) this._candles.applyOptions({ visible });
   }
 
+  /** Show/hide one segment type ('fvg'/'ob'/'bos'/'liq'/'gap' — see _buildSegments).
+   * Safe to call before segments exist yet; replay.js re-applies after loadEvents(). */
+  setSegmentVisible(type, visible) {
+    const series = this._segSeries[type];
+    if (!series) return;
+    for (const s of series) s.applyOptions({ visible });
+  }
+
   destroy() {
     this._divMarkers    = [];
     this._divShowLabels = true;

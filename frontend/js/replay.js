@@ -23,6 +23,7 @@ let lockMode   = localStorage.getItem('replay_lock_mode')   || null;
 let lockValue  = localStorage.getItem('replay_lock_value')  || null;
 let lockValue2 = localStorage.getItem('replay_lock_value2') || null;
 let indicatorColumns  = {};        // {indicatorName: [col, ...]} from the latest 'meta' message
+let segmentIndicators = {};        // {indicatorName: segmentType} — subset of indicatorColumns that's segment-backed (FVG/OB/BoS_CHoCH/liquidity/gaps), routed to setSegmentVisible instead of setIndicatorVisible
 let hiddenIndicators  = new Set(); // indicator names currently hidden, for the active ind_conf
 let currentIndConf    = null;
 let _lastChartX     = null;  // last known mouse x over the chart, in #chart-local px — for '.' hover-anchor
@@ -74,7 +75,10 @@ function _applyIndicatorVisibility() {
   if (!chart) return;
   chart.setCandlesVisible(!hiddenIndicators.has(CANDLES_KEY));
   for (const [name, cols] of Object.entries(indicatorColumns)) {
-    chart.setIndicatorVisible(cols, !hiddenIndicators.has(name));
+    const visible = !hiddenIndicators.has(name);
+    const segType = segmentIndicators[name];
+    if (segType) chart.setSegmentVisible(segType, visible);
+    else chart.setIndicatorVisible(cols, visible);
   }
 }
 
@@ -89,7 +93,9 @@ export function toggleIndicatorVisible(name, visible) {
   if (visible) hiddenIndicators.delete(name); else hiddenIndicators.add(name);
   _saveHiddenIndicators();
   if (!chart) return;
+  const segType = segmentIndicators[name];
   if (name === CANDLES_KEY) chart.setCandlesVisible(visible);
+  else if (segType) chart.setSegmentVisible(segType, visible);
   else chart.setIndicatorVisible(indicatorColumns[name] || [], visible);
 }
 
@@ -107,9 +113,10 @@ export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   _measureStart  = null;
   _lastChartX    = null;
   _lastChartY    = null;
-  indicatorColumns = {};
-  currentIndConf   = indConf;
-  hiddenIndicators = _loadHiddenIndicators(indConf);
+  indicatorColumns  = {};
+  segmentIndicators = {};
+  currentIndConf    = indConf;
+  hiddenIndicators  = _loadHiddenIndicators(indConf);
 
   chart = new ChartManager(document.getElementById('chart'));
   _setStatus('connecting…');
@@ -158,7 +165,8 @@ function _connectWS(ticker, timeframe, indConf) {
     if (msg.type === 'meta') {
       N      = msg.total;
       styles = msg.styles || {};
-      indicatorColumns = msg.indicator_columns || {};
+      indicatorColumns  = msg.indicator_columns  || {};
+      segmentIndicators = msg.segment_indicators || {};
       return;
     }
     if (msg.type === 'bars') {

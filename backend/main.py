@@ -20,7 +20,7 @@ from backend.core import database as db
 from backend.core.scheduler import scheduler_loop
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
-from backend.core.indicator_groups import columns_by_indicator
+from backend.core.indicator_groups import columns_by_indicator, segment_indicators
 from backend.core.replay_events import extract_events
 from backend.indicators.indicators import load_config_from_db
 
@@ -102,6 +102,7 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
 
     indicator_list, ind_params = load_config_from_db(ind_conf, tf)
     indicator_columns = columns_by_indicator(indicator_list, columns)
+    seg_indicators = segment_indicators(indicator_columns)
 
     await websocket.send_text(json.dumps({
         "type": "meta",
@@ -112,6 +113,7 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         "columns": columns,
         "styles": styles,
         "indicator_columns": indicator_columns,
+        "segment_indicators": seg_indicators,
     }))
 
     # Send all bars up-front so the client can load them in one shot

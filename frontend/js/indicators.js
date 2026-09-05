@@ -16,6 +16,7 @@ const PARAM_ENUMS = {
   mode: ['combined', 'bullish', 'bearish'],
   styling: ['shades', 'highlight_first', 'grayscale'],
   anchor_type: ['peak', 'valley'],
+  rank_by: ['volfrac', 'volume'],
 };
 
 // Display text for enum option values that shouldn't show their raw
@@ -24,6 +25,8 @@ const PARAM_ENUMS = {
 const PARAM_ENUM_LABELS = {
   RelVolume: 'aVWAP-Range: Relative-Volume',
   aVWAPStDev: 'aVWAP-Range: StDev',
+  volfrac: 'Volume Fraction (self-relative)',
+  volume: 'Raw Volume (structural)',
 };
 
 

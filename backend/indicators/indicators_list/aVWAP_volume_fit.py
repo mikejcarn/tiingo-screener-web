@@ -15,16 +15,34 @@ so variance stays low), even if hardly anyone was actually transacting
 there. It couldn't tell "well-fit because the market kept validating this
 level" apart from "well-fit because nothing happened."
 
-Volume-crossing fixes that by measuring participation directly: for each
-candidate, what fraction of ALL volume since it formed occurred while price
-was actually near its line (within band_k * ATR)? A high fraction means
-the market has consistently, disproportionately transacted near this exact
-evolving level. Deliberately a FRACTION of the anchor's own total volume,
-not a raw cumulative sum — a raw sum would just favor old anchors again
-(more elapsed time = more opportunity to accumulate volume, whether or not
-it was ever near the line). Normalizing by the anchor's own total volume
-means an old anchor only wins if the market kept genuinely returning to it,
-not merely for having existed a long time.
+Volume-crossing measures participation directly: for each candidate, how
+much volume occurred while price was actually near its line (within
+band_k * ATR)? That raw amount is then usable two ways — rank_by picks
+which:
+
+  rank_by='volfrac' (default) — that volume as a FRACTION of the anchor's
+    own total volume since it formed. Self-relative: an old anchor only
+    wins if the market kept genuinely returning to it, not merely for
+    having existed a long time, so a young anchor can outrank an old one
+    immediately if the market is concentrating there right now.
+
+  rank_by='volume' — the same volume, raw, not normalized. The volume-
+    profile / point-of-control sense of "structural reference": a level
+    where a large absolute amount of trading has occurred, which is
+    itself what makes it act as support/resistance. This naturally favors
+    anchors that have had more time to accumulate volume — intentional
+    here, not a confound to normalize away, since an old, heavily-traded
+    level having proven itself over time is exactly the point.
+
+Either way, a plain fraction OR raw sum would be a worse metric on its
+own than what actually gets compared here: this file rejected an earlier
+"survival length" approach (how many bars before volume-weighted variance
+broke a threshold) because that measured temporal stability, not
+significance — a quiet, thinly-traded stretch produces a long survival
+time almost for free (price barely moved, so variance stays low), even if
+hardly anyone was actually transacting there. Volume-crossing, in either
+ranking mode, requires actual participation near the line, not just an
+absence of movement.
 
 The proximity band itself is ATR-based (an independent volatility measure),
 not derived from the anchor's own accumulated variance — a self-referential
@@ -33,17 +51,25 @@ most of its volume by construction, which would flatten this metric's
 ability to discriminate between anchors.
 
 Output columns:
-  Per selected anchor "{high|low}_p{period}_r{rank}" (rank 1 = highest
-  volume-crossing fraction within that period):
+  Per selected anchor "{high|low}_p{period}_r{rank}" (rank 1 = best by
+  rank_by within that period):
     BFIT_{anchor}_avwap    — anchored VWAP (NaN before the anchor's bar)
     BFIT_{anchor}_volfrac  — fraction (0-1) of the anchor's total volume
                              that occurred near its line, last bar only
+    BFIT_{anchor}_volnear  — the same volume, raw (not normalized),
+                             last bar only. Computed and stored regardless
+                             of rank_by, so both scores stay inspectable
+                             no matter which one drove the ranking.
   Ticker-level summary (last bar only, computed across ALL candidates —
   not just the selected top-N — so period/top_n choices don't skew it):
     BFIT_summary_mean_volfrac — average volume-crossing fraction, a
                                  chart-level "how much does this ticker's
                                  volume concentrate near its own aVWAPs"
-                                 read, comparable ticker-to-ticker.
+                                 read, comparable ticker-to-ticker. Always
+                                 the fraction, even under rank_by='volume'
+                                 — raw volume isn't comparable across
+                                 tickers with different typical volumes,
+                                 so it wouldn't serve this stat's purpose.
 """
 
 import numpy as np
@@ -58,6 +84,7 @@ param_labels = {
     'band_k':       'Proximity Band (×ATR)',
     'atr_period':   'ATR Period',
     'min_history':  'Minimum Bars Required',
+    'rank_by':      'Rank Anchors By',
 }
 
 param_descriptions = {
@@ -68,14 +95,21 @@ param_descriptions = {
                     "required for that swing to qualify as a legitimate anchor. Filters out price "
                     "extremes nobody was actually trading at.",
     'top_n':       "How many top-ranked anchors to keep per side (high/low) per period, ordered by "
-                    "volume-crossing fraction. Rank 1 renders boldest and most opaque; each lower rank "
-                    "fades and thins, smoothly across however many are kept.",
+                    "rank_by. Rank 1 renders boldest and most opaque; each lower rank fades and thins, "
+                    "smoothly across however many are kept.",
     'band_k':      "Width of the proximity band around each anchor's aVWAP, in multiples of ATR, used "
                     "to decide whether a bar's volume counts as 'near' that line. Independent of the "
                     "anchor's own accumulated variance, so the ranking isn't self-referential.",
     'atr_period':  "Lookback period for the ATR used to size the proximity band around each anchor's aVWAP.",
     'min_history': "Minimum bars of history required before this indicator runs at all — returns "
                     "nothing for tickers with less.",
+    'rank_by':     "How to rank and select the top_n anchors per side/period. 'volfrac' (self-relative) "
+                    "— fraction of the anchor's OWN total volume that occurred near its line; a young "
+                    "anchor can outrank an old one immediately if the market is concentrating there right "
+                    "now. 'volume' (structural) — the same volume, raw and not normalized; favors anchors "
+                    "that have had more time to accumulate volume, on the view that a level's absolute "
+                    "traded volume is itself evidence of it being an established structural reference "
+                    "(the volume-profile / point-of-control idea), not something to normalize away.",
 }
 
 
@@ -105,9 +139,22 @@ def _swing_candidates(df, window, vol_mult):
 
 def _avwap_and_volfrac(df, atr, anchor_pos, band_k):
     """
-    aVWAP series (full-length, NaN before anchor_pos) + the fraction of this
-    anchor's total volume that occurred while price was within band_k*ATR
-    of its own evolving aVWAP.
+    aVWAP series (full-length, NaN before anchor_pos) + two scores for this
+    anchor, both from the same volume-near-the-line measurement:
+      volfrac    — that volume as a FRACTION of the anchor's own total volume
+                   since it formed. Self-relative: an anchor only wins on
+                   this if the market kept genuinely returning to it, not
+                   merely for having existed a long time (see rank_by='volfrac'
+                   in calculate_avwap_volume_fit).
+      volume_near — the same volume, as a raw absolute sum. Not normalized,
+                   so it reads as "how much real trading has concentrated at
+                   this exact structural level" — the volume-profile /
+                   point-of-control sense of significance (see
+                   rank_by='volume'). This naturally tends to favor anchors
+                   that have had more time to accumulate volume, which is a
+                   feature here, not a bug: a level's absolute traded volume
+                   is itself evidence of it being an established structural
+                   reference, not a confound to normalize away.
     """
     close, high, low, vol = df['Close'].values, df['High'].values, df['Low'].values, df['Volume'].values
     typical = (high + low + close) / 3.0
@@ -130,11 +177,11 @@ def _avwap_and_volfrac(df, atr, anchor_pos, band_k):
 
     out = np.full(n, np.nan)
     out[seg] = avwap
-    return pd.Series(out, index=df.index), volfrac
+    return pd.Series(out, index=df.index), volfrac, float(volume_near)
 
 
 def calculate_avwap_volume_fit(df, periods=(10, 25, 50, 100), vol_mult=1.5, top_n=3,
-                                band_k=1.0, atr_period=14, min_history=30):
+                                band_k=1.0, atr_period=14, min_history=30, rank_by='volfrac'):
     if len(df) < min_history:
         return {}
 
@@ -142,25 +189,37 @@ def calculate_avwap_volume_fit(df, periods=(10, 25, 50, 100), vol_mult=1.5, top_
     atr = _atr(df, atr_period)
     out = {}
     all_volfracs = []
+    score_idx = 0 if rank_by == 'volfrac' else 1  # index into each scored tuple's (volfrac, volume_near)
 
     for period in periods:
         high_pos, low_pos = _swing_candidates(df, period, vol_mult)
         for side, positions in (('high', high_pos), ('low', low_pos)):
             scored = []
             for pos in positions:
-                avwap_series, volfrac = _avwap_and_volfrac(df, atr, pos, band_k)
+                avwap_series, volfrac, volume_near = _avwap_and_volfrac(df, atr, pos, band_k)
                 if volfrac is None or np.isnan(volfrac):
                     continue
-                scored.append((volfrac, pos, avwap_series))
+                scored.append((volfrac, volume_near, pos, avwap_series))
                 all_volfracs.append(volfrac)
-            scored.sort(key=lambda x: x[0], reverse=True)  # higher volfrac = better, wins the rank
+            # rank_by='volfrac' (default): self-relative — an anchor wins by how
+            #   much of ITS OWN volume concentrated near it, so a young anchor
+            #   can outrank an old one immediately.
+            # rank_by='volume': raw accumulated volume near the line — the
+            #   volume-profile/point-of-control sense of "structural
+            #   reference." Naturally favors anchors that have had more time
+            #   to accumulate volume; that's intentional here; see
+            #   _avwap_and_volfrac's docstring.
+            scored.sort(key=lambda x: x[score_idx], reverse=True)
 
-            for rank, (volfrac, pos, avwap_series) in enumerate(scored[:top_n], start=1):
+            for rank, (volfrac, volume_near, pos, avwap_series) in enumerate(scored[:top_n], start=1):
                 label = f'{side}_p{period}_r{rank}'
                 out[f'BFIT_{label}_avwap'] = avwap_series
                 volfrac_col = np.full(n, np.nan)
                 volfrac_col[-1] = volfrac
                 out[f'BFIT_{label}_volfrac'] = pd.Series(volfrac_col, index=df.index)
+                volnear_col = np.full(n, np.nan)
+                volnear_col[-1] = volume_near
+                out[f'BFIT_{label}_volnear'] = pd.Series(volnear_col, index=df.index)
 
     if all_volfracs:
         mean_col = np.full(n, np.nan)
