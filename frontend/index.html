@@ -45,6 +45,13 @@
   <div class="nav-sep"></div>
   <span class="nav-label">indicators</span>
   <select id="conf-select" title="Indicator configuration (; previous / ' next)"></select>
+  <div id="ind-toggle-wrap" class="ind-toggle-wrap">
+    <button id="btn-ind-toggle-panel" class="btn-ind-toggle" title="Show/hide individual indicators — data stays loaded">&#9776;</button>
+    <div id="ind-toggle-panel" class="ind-toggle-panel">
+      <div class="ind-toggle-panel-header">Show / hide indicators</div>
+      <div id="ind-toggle-list"></div>
+    </div>
+  </div>
   <div class="nav-sep"></div>
   <span class="nav-label" title="Selecting a scan result sets the ticker list, timeframe, and indicators together">scan</span>
   <select id="scan-select" title="Load a saved scan result — sets ticker list, timeframe, and indicators ({ previous / } next)"></select>
@@ -67,6 +74,14 @@
   <div id="fs-header">
     <div id="ticker-watermark"></div>
     <div id="fs-info">
+      <div id="fs-ind-toggle-wrap" class="ind-toggle-wrap">
+        <button id="btn-fs-ind-toggle-panel" class="btn-ind-toggle" title="Show/hide individual indicators — data stays loaded">&#9776;</button>
+        <div id="fs-ind-toggle-panel" class="ind-toggle-panel">
+          <div class="ind-toggle-panel-header">Show / hide indicators</div>
+          <div id="fs-ind-toggle-list"></div>
+        </div>
+      </div>
+      <span class="ctrl-dot">&middot;</span>
       <span id="fs-list"></span>
       <span id="fs-count"></span>
       <span id="fs-flag"></span>

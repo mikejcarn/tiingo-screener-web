@@ -257,6 +257,43 @@ button:hover { background: var(--c-hover); }
   padding: 2px 6px; line-height: 1;
 }
 .flagged-row-remove:hover { color: rgba(239,83,80,1); background: transparent; }
+
+.ind-toggle-wrap { position: relative; }
+.btn-ind-toggle {
+  color: var(--t6); border-color: var(--b4); font-size: 13px;
+  padding: 0 8px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+.ind-toggle-panel {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0;
+  background: var(--c-surface); border: 1px solid var(--b4); border-radius: 3px;
+  min-width: 200px; max-height: 320px; overflow-y: auto; z-index: 100;
+  box-shadow: 0 4px 12px var(--shadow-s);
+}
+.ind-toggle-panel.open { display: block; }
+
+/* Fullscreen instance lives inside #fs-header, which is pointer-events:none
+   (a watermark overlay that shouldn't block clicking the chart underneath) —
+   re-enable it here same as #fs-flag does, so this one control stays clickable. */
+#fs-ind-toggle-wrap { pointer-events: auto; }
+#btn-fs-ind-toggle-panel {
+  background: transparent; border: none; color: var(--t6); font-size: 16px;
+  line-height: 1; padding: 0; cursor: pointer;
+}
+#btn-fs-ind-toggle-panel:hover { color: var(--t9); }
+.ind-toggle-panel-header {
+  padding: 6px 12px; font-size: 11px; color: var(--t5); text-transform: uppercase;
+  letter-spacing: 0.03em; border-bottom: 1px solid var(--b1);
+}
+.ind-toggle-empty { padding: 10px 12px; font-size: 13px; color: var(--t4); }
+.ind-toggle-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; font-size: 13px; color: var(--t7); cursor: pointer;
+}
+.ind-toggle-row:hover { background: var(--c-hover); color: var(--t10); }
+.ind-toggle-name { white-space: nowrap; }
+
 #list-select { background: var(--c-ctrl); color: var(--t7); border: 1px solid var(--b5); padding: 4px 8px; border-radius: 3px; font-size: 13px; cursor: pointer; }
 #list-select:focus { outline: none; }
 
@@ -526,7 +563,11 @@ body:fullscreen.fs-searching #ticker-input { width: 180px; font-size: 18px; padd
   position: absolute;
   top: 20px;
   left: 24px;
-  z-index: 1;
+  /* Above 15 — lightweight-charts stacks its own internal canvas layers up to
+     z-index 2, which otherwise ties/wins against this and swallows clicks
+     meant for #fs-flag / the toggle button (position:absolute alone doesn't
+     matter here; it's the explicit z-index on those canvases that wins). */
+  z-index: 15;
   pointer-events: none;
   user-select: none;
 }

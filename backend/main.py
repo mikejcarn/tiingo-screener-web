@@ -20,6 +20,7 @@ from backend.core import database as db
 from backend.core.scheduler import scheduler_loop
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
+from backend.core.indicator_groups import columns_by_indicator
 from backend.core.replay_events import extract_events
 from backend.indicators.indicators import load_config_from_db
 
@@ -99,6 +100,9 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
     columns = list(df.columns)
     styles  = col_styles_for_columns(columns)
 
+    indicator_list, ind_params = load_config_from_db(ind_conf, tf)
+    indicator_columns = columns_by_indicator(indicator_list, columns)
+
     await websocket.send_text(json.dumps({
         "type": "meta",
         "ticker": ticker.upper(),
@@ -107,6 +111,7 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         "total": len(records),
         "columns": columns,
         "styles": styles,
+        "indicator_columns": indicator_columns,
     }))
 
     # Send all bars up-front so the client can load them in one shot
@@ -117,8 +122,7 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
 
     # Send dynamic replay events (peak/valley bars, QQEMOD anchor commitments)
     try:
-        _, params = load_config_from_db(ind_conf, tf)
-        events = extract_events(df, params or {})
+        events = extract_events(df, ind_params or {})
         await websocket.send_text(json.dumps(events))
     except Exception:
         pass   # replay events are optional; chart still works without them

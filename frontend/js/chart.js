@@ -68,6 +68,7 @@ export class ChartManager {
     this._bars      = [];
     this._N         = 0;
     this._curN      = -1;
+    this._tintEnabled = true;  // candle_colors' color/Fill_Color tint — toggled via setIndicatorVisible
     this._measureEl          = null;  // live drag-measure overlay box
     this._measureLabelEl     = null;
     this._measureStartEl     = null;  // starting-price span within the label (neutral color)
@@ -226,7 +227,11 @@ export class ChartManager {
         low:   b.Low   ?? b.low,
         close: b.Close ?? b.close,
       };
-      const fillClr = b.Fill_Color;
+      // candle_colors' entire output (Fill_Color or color) is gated behind
+      // _tintEnabled — toggling that indicator off should fall back to plain
+      // up/down candles exactly as if candle_colors weren't configured at all.
+      const fillClr = this._tintEnabled ? b.Fill_Color : null;
+      const clr     = this._tintEnabled ? b.color      : null;
       if (fillClr) {
         // Body-fill-only tint (RelVolume, aVWAPStDev) — border/wick stay on
         // normal up/down coloring so the tint's signal (volume, stdev zone)
@@ -235,19 +240,16 @@ export class ChartManager {
         entry.color       = fillClr;
         entry.borderColor = ud ? C_UP : C_DOWN;
         entry.wickColor   = ud ? C_UP : C_DOWN;
-      } else {
-        const clr = b.color;
-        if (clr && clr !== '#000000') {
-          const opaque = clr.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),[^)]+\)/, 'rgba($1,$2,$3,1.0)');
-          entry.color       = clr;
-          entry.borderColor = opaque;
-          entry.wickColor   = opaque;
-        } else if (clr === '#000000') {
-          const ud = entry.close >= entry.open;
-          entry.color       = 'rgba(0,0,0,0)';
-          entry.borderColor = ud ? C_UP : C_DOWN;
-          entry.wickColor   = ud ? C_UP : C_DOWN;
-        }
+      } else if (clr && clr !== '#000000') {
+        const opaque = clr.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),[^)]+\)/, 'rgba($1,$2,$3,1.0)');
+        entry.color       = clr;
+        entry.borderColor = opaque;
+        entry.wickColor   = opaque;
+      } else if (clr === '#000000') {
+        const ud = entry.close >= entry.open;
+        entry.color       = 'rgba(0,0,0,0)';
+        entry.borderColor = ud ? C_UP : C_DOWN;
+        entry.wickColor   = ud ? C_UP : C_DOWN;
       }
       return entry;
     });
@@ -604,6 +606,34 @@ export class ChartManager {
   setVisibleRange(from, to) {
     if (!this._chart) return;
     try { this._chart.timeScale().setVisibleRange({ from, to }); } catch (_) {}
+  }
+
+  // ── Per-indicator show/hide (data stays loaded; only rendering changes) ──
+
+  setIndicatorVisible(cols, visible) {
+    let touchedTint = false;
+    const engineKinds = new Set();
+    for (const col of cols) {
+      if (col === 'color' || col === 'Fill_Color') {
+        this._tintEnabled = visible;
+        touchedTint = true;
+      } else if (col.startsWith('aVWAP_max_')) {
+        engineKinds.add('avwap_max');
+      } else if (col.startsWith('aVWAP_min_')) {
+        engineKinds.add('avwap_min');
+      } else {
+        const s = this._lines[col];
+        if (s) s.applyOptions({ visible });
+      }
+    }
+    // Generic anchor-pool kinds (e.g. aVWAP_minmax) live in the dynamic engine,
+    // not this._lines — same reveal-once-built lifecycle, just a different pool.
+    for (const key of engineKinds) {
+      if (this._engine) this._engine.setKindVisible(key, visible);
+    }
+    // Candle coloring isn't a series — it's baked into candle data on reveal —
+    // so flipping the flag needs a re-reveal to actually take effect on screen.
+    if (touchedTint && this._curN >= 0) this.reveal(this._curN);
   }
 
   destroy() {

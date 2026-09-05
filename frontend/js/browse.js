@@ -11,6 +11,7 @@ import { initHelp, isHelpVisible } from './help.js';
 import { api } from './api.js';
 import { initTheme, toggleTheme } from './theme.js';
 import { initFlags, setCurrentTicker, getFlaggedTickers } from './flags.js';
+import { initIndToggles } from './ind_toggles.js';
 
 let tickers    = [];
 let timeframes = [];
@@ -526,6 +527,7 @@ function _wireNav() {
   initTheme();
   initHelp('chart');
   initFlags((name) => { const i = tickers.indexOf(name); if (i >= 0) _loadTicker(i); });
+  initIndToggles();
 
   // Fullscreen
   const btnFullscreen = document.getElementById('btn-fullscreen');

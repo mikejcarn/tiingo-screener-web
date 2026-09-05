@@ -467,6 +467,16 @@ export class DynamicVWAPEngine {
     }
   }
 
+  // ── Show/hide a generic anchor-pool kind (e.g. 'avwap_max', 'avwap_min') ──
+  // Safe to call before the pool exists (e.g. events haven't loaded yet) —
+  // reveal() never touches `visible`, so this sticks across future reveals.
+
+  setKindVisible(key, visible) {
+    const pool = this._anchorPools[key];
+    if (!pool) return;
+    for (const s of pool.series) s.applyOptions({ visible });
+  }
+
   // ── Cleanup ───────────────────────────────────────────────────────────────
 
   destroy() {

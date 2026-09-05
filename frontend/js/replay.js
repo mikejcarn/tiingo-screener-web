@@ -22,6 +22,9 @@ let autoFit    = localStorage.getItem('replay_autofit') === 'true';
 let lockMode   = localStorage.getItem('replay_lock_mode')   || null;
 let lockValue  = localStorage.getItem('replay_lock_value')  || null;
 let lockValue2 = localStorage.getItem('replay_lock_value2') || null;
+let indicatorColumns  = {};        // {indicatorName: [col, ...]} from the latest 'meta' message
+let hiddenIndicators  = new Set(); // indicator names currently hidden, for the active ind_conf
+let currentIndConf    = null;
 let _lastChartX     = null;  // last known mouse x over the chart, in #chart-local px — for '.' hover-anchor
 let _lastChartY     = null;  // last known mouse y over the chart, in #chart-local px — for Alt+Space measurement
 let _measureActive  = false; // mid live-measurement (started by Alt+Click or Alt+Space)
@@ -44,6 +47,42 @@ let controlsWired = false;
 let keysWired     = false;
 let _restoreDate  = null;
 
+function _hiddenIndicatorsKey(indConf) {
+  return `ind_toggle_hidden_${indConf}`;
+}
+
+function _loadHiddenIndicators(indConf) {
+  try {
+    const raw = localStorage.getItem(_hiddenIndicatorsKey(indConf));
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+
+function _saveHiddenIndicators() {
+  if (currentIndConf == null) return;
+  try {
+    localStorage.setItem(_hiddenIndicatorsKey(currentIndConf), JSON.stringify([...hiddenIndicators]));
+  } catch {}
+}
+
+function _applyIndicatorVisibility() {
+  if (!chart) return;
+  for (const [name, cols] of Object.entries(indicatorColumns)) {
+    chart.setIndicatorVisible(cols, !hiddenIndicators.has(name));
+  }
+}
+
+/** [{name, visible}] for whichever indicators the current chart can toggle. */
+export function getIndicatorState() {
+  return Object.keys(indicatorColumns).map(name => ({ name, visible: !hiddenIndicators.has(name) }));
+}
+
+export function toggleIndicatorVisible(name, visible) {
+  if (visible) hiddenIndicators.delete(name); else hiddenIndicators.add(name);
+  _saveHiddenIndicators();
+  if (chart) chart.setIndicatorVisible(indicatorColumns[name] || [], visible);
+}
+
 export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   // Clean up previous instance
   if (ws)    { ws.close(); ws = null; }
@@ -58,6 +97,9 @@ export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   _measureStart  = null;
   _lastChartX    = null;
   _lastChartY    = null;
+  indicatorColumns = {};
+  currentIndConf   = indConf;
+  hiddenIndicators = _loadHiddenIndicators(indConf);
 
   chart = new ChartManager(document.getElementById('chart'));
   _setStatus('connecting…');
@@ -106,6 +148,7 @@ function _connectWS(ticker, timeframe, indConf) {
     if (msg.type === 'meta') {
       N      = msg.total;
       styles = msg.styles || {};
+      indicatorColumns = msg.indicator_columns || {};
       return;
     }
     if (msg.type === 'bars') {
@@ -115,6 +158,9 @@ function _connectWS(ticker, timeframe, indConf) {
     }
     if (msg.type === 'replay_events') {
       chart.loadEvents(msg);
+      // Dynamic-engine anchor pools (e.g. aVWAP_minmax) only exist after this —
+      // re-apply hidden state now so persisted toggles reach them too.
+      _applyIndicatorVisibility();
       return;
     }
     if (msg.type === 'error') {
@@ -133,6 +179,7 @@ function _onAllLoaded() {
   dateEnd.textContent = (lastBar?.Date || lastBar?.date || '').slice(0, 10) || '—';
   chart.load(bars, styles);
   chart.fitContent();
+  _applyIndicatorVisibility();
   const target = _restoreDate ? _findBarByDate(_restoreDate) : N - 1;
   _restoreDate = null;
   jump(target);
