@@ -230,14 +230,27 @@ export class ChartManager {
       // candle_colors' entire output (Fill_Color or color) is gated behind
       // _tintEnabled — toggling that indicator off should fall back to plain
       // up/down candles exactly as if candle_colors weren't configured at all.
-      const fillClr = this._tintEnabled ? b.Fill_Color : null;
-      const clr     = this._tintEnabled ? b.color      : null;
+      // 'Fill_Color' in b (not just truthy) detects a Fill_Color-based mode
+      // (RelVolume, aVWAPStDev) even on bars where it's null — outside any
+      // selected anchor's range, e.g. before the aVWAP range starts.
+      const fillTintActive = this._tintEnabled && ('Fill_Color' in b);
+      const fillClr = fillTintActive ? b.Fill_Color : null;
+      const clr     = this._tintEnabled ? b.color    : null;
       if (fillClr) {
         // Body-fill-only tint (RelVolume, aVWAPStDev) — border/wick stay on
         // normal up/down coloring so the tint's signal (volume, stdev zone)
         // never overrides whether the candle itself was bullish/bearish.
         const ud = entry.close >= entry.open;
         entry.color       = fillClr;
+        entry.borderColor = ud ? C_UP : C_DOWN;
+        entry.wickColor   = ud ? C_UP : C_DOWN;
+      } else if (fillTintActive) {
+        // Same mode, but this bar has no tint (outside the anchor's range) —
+        // hollow candle: keep the normal up/down border/wick, empty the
+        // fill, so untinted context reads as background instead of visually
+        // competing with the tinted zone.
+        const ud = entry.close >= entry.open;
+        entry.color       = 'rgba(0,0,0,0)';
         entry.borderColor = ud ? C_UP : C_DOWN;
         entry.wickColor   = ud ? C_UP : C_DOWN;
       } else if (clr && clr !== '#000000') {
@@ -521,14 +534,14 @@ export class ChartManager {
     return this._chart.timeScale().coordinateToLogical(x);
   }
 
-  /** Place/remove a manually-anchored VWAP at the candle under x. Returns true (added) / false (removed) / null (out of range). */
-  toggleManualAnchorAtX(x) {
+  /** Place/remove a manually-anchored VWAP at the candle under x. withStdev also draws +/- k*stdev bands around it. Returns true (added) / false (removed) / null (out of range). */
+  toggleManualAnchorAtX(x, withStdev = false) {
     if (!this._engine || !this._chart || this._curN < 0) return null;
     const logical = this._chart.timeScale().coordinateToLogical(x);
     if (logical == null) return null;
     const barIdx = Math.round(logical);
     if (barIdx < 0 || barIdx > this._curN) return null;
-    return this._engine.toggleManualAnchor(barIdx, this._curN);
+    return this._engine.toggleManualAnchor(barIdx, this._curN, withStdev);
   }
 
   /** Undo the most recently placed manual aVWAP anchor (LIFO). Returns the removed bar index, or null if none. */

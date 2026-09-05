@@ -355,14 +355,17 @@ function _wireControls() {
     if (document.activeElement?.tagName === 'INPUT') return;
     if (!chart || !N) return;
 
-    if ((e.key === '.' && e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
+    // e.code (physical key), not e.key, so Shift+. — which types '>', not
+    // '.' — still detects as the period key; only e.shiftKey decides whether
+    // stdev bands get drawn.
+    if ((e.code === 'Period' && e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       chart.undoManualAnchor();
       return;
     }
-    if (e.key === '.' && !e.altKey) {
+    if (e.code === 'Period' && !e.altKey) {
       if (_lastChartX == null) return;
-      chart.toggleManualAnchorAtX(_lastChartX);
+      chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey);
       return;
     }
     if (e.key === ' ' && e.altKey) {

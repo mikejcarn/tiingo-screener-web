@@ -466,9 +466,11 @@ def _relvolume_colors(df, anchor_type='peak', anchor_periods=100, anchor_max_aVW
     split: this is a volume signal, not a directional one, and a dark red
     "low volume" candle previously read as a strong bearish move, which is
     the opposite of what it meant. Bars outside any selected anchor's range
-    are left untinted (None) so the candle renders exactly as it would with
-    no candle_colors indicator at all — that boundary is the one deliberate
-    cliff, marking where the anchor's range actually starts.
+    are left untinted (None) — chart.js renders those as hollow candles
+    (normal up/down border/wick, empty fill) rather than the fully solid
+    default, so untinted context stays visually quiet and doesn't compete
+    with the tinted zone. That boundary is the one deliberate cliff, marking
+    where the anchor's range actually starts.
 
     Baseline: an EWMA of volume (span=vol_span), not a fixed lookback window
     or a plain expanding mean — old bars fade out gradually rather than
@@ -588,9 +590,11 @@ def _avwap_stdev_colors(df, anchor_type='peak', anchor_periods=100, anchor_max_a
     body-fill-only tint and leaves the candle's border/wick on their normal
     up/down coloring, so the stdev-zone signal never overrides whether the
     candle itself was bullish/bearish — same rendering path as RelVolume.
-    Bars outside any selected anchor's range are left untinted (None) so the
-    candle renders exactly as it would with no candle_colors indicator at
-    all — the one deliberate cliff, marking where the anchor's range starts.
+    Bars outside any selected anchor's range are left untinted (None) — like
+    RelVolume, chart.js renders those as hollow candles (normal up/down
+    border/wick, empty fill) so untinted context stays visually quiet
+    instead of competing with the tinted zone. That boundary is the one
+    deliberate cliff, marking where the anchor's range starts.
     """
     orig_index = df.index
     df = df.reset_index(drop=False)

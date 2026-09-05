@@ -61,12 +61,19 @@ def delete_indicator_data(ind_conf_id: Optional[int] = None,
 @router.get("/indicators/summary")
 def indicator_summary():
     with db._conn() as con:
+        # INDEXED BY forces idx_ind_summary_covering (ind_conf, ticker,
+        # timeframe, date) — SQLite's planner doesn't pick it automatically
+        # (even post-ANALYZE) despite it covering this query entirely, and
+        # falls back to idx_ind_ticker_tf_conf, which lacks `date` and so
+        # forces a full-row fetch (including the multi-KB `data` blob) per
+        # group just to read it. Measured ~145x faster with the hint
+        # (10s -> 0.07s on a 338K-row table) — not a marginal tweak.
         rows = con.execute("""
             SELECT i.ind_conf, i.ticker, i.timeframe,
                    COUNT(*) AS rows,
                    MIN(i.date) AS first_date, MAX(i.date) AS last_date,
                    c.name AS config_name
-            FROM indicators i
+            FROM indicators i INDEXED BY idx_ind_summary_covering
             LEFT JOIN ind_configs c ON i.ind_conf = c.id
             GROUP BY i.ind_conf, i.ticker, i.timeframe
             ORDER BY c.name, i.ticker, i.timeframe

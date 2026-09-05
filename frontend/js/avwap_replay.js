@@ -41,6 +41,14 @@ const ANCHOR_POOL_STYLE = {
 
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
+// Shift+. also draws stdev bands (vwap +/- k*stdev) around a manual anchor —
+// same rgb (amber), dashed, tiered opacity by k using the identical formula
+// col_styles.py uses for aVWAP_pinch's own stdev bands (tightest band most
+// visible, wider bands fade out).
+const C_MANUAL_STDEV_RGB     = '255,193,7';
+const MANUAL_STDEV_MAX_ALPHA = 0.65;
+const MANUAL_STDEV_MIN_ALPHA = 0.45;
+const MANUAL_STDEV_MULTIPLES = [1, 2]; // matches aVWAP_pinch's default stdev_multiples
 
 // Opacity range for multi-config anchor types (currently peaks/valleys). All configs
 // stay solid at the same width — line STYLE is reserved for signifying different data
@@ -174,29 +182,54 @@ export class DynamicVWAPEngine {
       for (const s of [...p.vSeries, ...p.pSeries]) { try { this._chart.removeSeries(s); } catch (_) {} }
     }
     this._pmmPools = [];
-    for (const s of Object.values(this._manualSeries)) { try { this._chart.removeSeries(s); } catch (_) {} }
+    for (const entry of Object.values(this._manualSeries)) this._removeManualEntry(entry);
     this._manualSeries = {};
     this._manualOrder  = [];
   }
 
   // ── Manual (click-placed) anchors ───────────────────────────────────────
 
+  /** Tear down one manual anchor's vwap line + any stdev band series. */
+  _removeManualEntry(entry) {
+    try { this._chart.removeSeries(entry.vwap); } catch (_) {}
+    for (const band of entry.bands) {
+      try { this._chart.removeSeries(band.upper); } catch (_) {}
+      try { this._chart.removeSeries(band.lower); } catch (_) {}
+    }
+  }
+
   /**
-   * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to toIdx.
-   * Returns true if an anchor was added, false if an existing one was removed.
+   * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to
+   * toIdx. withStdev also draws vwap +/- k*stdev bands (Shift+.) around it —
+   * see _vwapStdevBands. Returns true if an anchor was added, false if an
+   * existing one (with or without bands) was removed.
    */
-  toggleManualAnchor(anchorIdx, toIdx) {
+  toggleManualAnchor(anchorIdx, toIdx, withStdev = false) {
     if (anchorIdx == null || anchorIdx < 0 || anchorIdx >= this._bars.length) return null;
     if (this._manualSeries[anchorIdx]) {
-      try { this._chart.removeSeries(this._manualSeries[anchorIdx]); } catch (_) {}
+      this._removeManualEntry(this._manualSeries[anchorIdx]);
       delete this._manualSeries[anchorIdx];
       const i = this._manualOrder.indexOf(anchorIdx);
       if (i !== -1) this._manualOrder.splice(i, 1);
       return false;
     }
-    const s = this._series(C_MANUAL, 2, 0);
-    s.setData(this._vwapLine(anchorIdx, toIdx));
-    this._manualSeries[anchorIdx] = s;
+    const vwap = this._series(C_MANUAL, 2, 0);
+    vwap.setData(this._vwapLine(anchorIdx, toIdx));
+
+    const bands = [];
+    if (withStdev) {
+      const { bands: bandData, kMin, kMax } = this._vwapStdevBands(anchorIdx, toIdx, MANUAL_STDEV_MULTIPLES);
+      for (const { k, upper, lower } of bandData) {
+        const alpha = this._manualStdevAlpha(k, kMin, kMax);
+        const upperSeries = this._series(`rgba(${C_MANUAL_STDEV_RGB},${alpha})`, 1, 2);
+        const lowerSeries = this._series(`rgba(${C_MANUAL_STDEV_RGB},${alpha})`, 1, 2);
+        upperSeries.setData(upper);
+        lowerSeries.setData(lower);
+        bands.push({ k, upper: upperSeries, lower: lowerSeries });
+      }
+    }
+
+    this._manualSeries[anchorIdx] = { vwap, bands };
     this._manualOrder.push(anchorIdx);
     return true;
   }
@@ -208,8 +241,8 @@ export class DynamicVWAPEngine {
   undoManualAnchor() {
     const anchorIdx = this._manualOrder.pop();
     if (anchorIdx === undefined) return null;
-    const s = this._manualSeries[anchorIdx];
-    if (s) { try { this._chart.removeSeries(s); } catch (_) {} }
+    const entry = this._manualSeries[anchorIdx];
+    if (entry) this._removeManualEntry(entry);
     delete this._manualSeries[anchorIdx];
     return anchorIdx;
   }
@@ -338,18 +371,26 @@ export class DynamicVWAPEngine {
 
     // Build O(1) VWAP lookup tables + price arrays for PMM
     const N = bars.length;
-    this._cumPV  = new Float64Array(N);
-    this._cumVol = new Float64Array(N);
-    this._highs  = new Float64Array(N);
-    this._lows   = new Float64Array(N);
+    this._cumPV   = new Float64Array(N);
+    this._cumVol  = new Float64Array(N);
+    this._highs   = new Float64Array(N);
+    this._lows    = new Float64Array(N);
+    // Per-bar (not cumulative) volume + typical price — needed by
+    // _vwapStdevBands, which can't reuse the cumulative arrays the way
+    // _vwapLine does (the running vwap term varies per anchor, so the
+    // squared-deviation sum isn't a fixed prefix sum reusable across anchors).
+    this._volumes = new Float64Array(N);
+    this._typical = new Float64Array(N);
     let pv = 0, vol = 0;
     for (let i = 0; i < N; i++) {
       const b = bars[i];
       const h = b.High ?? b.high, l = b.Low ?? b.low, c = b.Close ?? b.close;
       const v = b.Volume ?? b.volume;
-      this._highs[i] = h;
-      this._lows[i]  = l;
-      pv  += ((h + l + c) / 3) * v;
+      this._highs[i]   = h;
+      this._lows[i]    = l;
+      this._volumes[i] = v;
+      this._typical[i] = (h + l + c) / 3;
+      pv  += this._typical[i] * v;
       vol += v;
       this._cumPV[i]  = pv;
       this._cumVol[i] = vol;
@@ -380,6 +421,50 @@ export class DynamicVWAPEngine {
       }
     }
     return data;
+  }
+
+  /**
+   * Build vwap +/- k*stdev band line-data (one {upper, lower} pair per k in
+   * multiples) for a VWAP anchored at anchorIdx, running through toIdx.
+   * Same formula as the server's calculate_avwap_stdev (aVWAP.py): cumulative
+   * volume-weighted squared deviation of each bar's typical price from the
+   * RUNNING vwap at that same bar (not the final vwap) — so a manually
+   * placed anchor's bands match what aVWAP_pinch's own show_stdev_bands
+   * would draw for the same anchor point.
+   *
+   * Can't reuse the global _cumPV/_cumVol prefix-sum trick _vwapLine uses:
+   * that trick works because plain vwap is a ratio of prefix-sum
+   * differences, but here the per-bar term depends on that bar's own running
+   * vwap, which is different for every possible anchor — so this walks the
+   * range directly, same O(range) cost per call as _vwapLine itself.
+   */
+  _vwapStdevBands(anchorIdx, toIdx, multiples) {
+    const pvBase  = anchorIdx > 0 ? this._cumPV[anchorIdx - 1]  : 0;
+    const volBase = anchorIdx > 0 ? this._cumVol[anchorIdx - 1] : 0;
+    const kMin = Math.min(...multiples), kMax = Math.max(...multiples);
+    const bands = multiples.map(k => ({ k, upper: [], lower: [] }));
+    let cumSqDev = 0;
+    for (let i = anchorIdx; i <= toIdx; i++) {
+      const vol = this._cumVol[i] - volBase;
+      if (vol <= 0) continue;
+      const vwap = (this._cumPV[i] - pvBase) / vol;
+      const dev  = this._typical[i] - vwap;
+      cumSqDev += this._volumes[i] * dev * dev;
+      const stdev = Math.sqrt(cumSqDev / vol);
+      const time  = (this._bars[i].Date || this._bars[i].date || '').slice(0, 10);
+      for (const band of bands) {
+        band.upper.push({ time, value: vwap + band.k * stdev });
+        band.lower.push({ time, value: vwap - band.k * stdev });
+      }
+    }
+    return { bands, kMin, kMax };
+  }
+
+  /** Tightest band (smallest k) most visible, wider bands fade out — same
+   * interpolation col_styles.py uses for aVWAP_pinch's own stdev bands. */
+  _manualStdevAlpha(k, kMin, kMax) {
+    const t = kMax > kMin ? (k - kMin) / (kMax - kMin) : 0;
+    return MANUAL_STDEV_MAX_ALPHA - (MANUAL_STDEV_MAX_ALPHA - MANUAL_STDEV_MIN_ALPHA) * t;
   }
 
   // ── Reveal ────────────────────────────────────────────────────────────────
@@ -462,8 +547,16 @@ export class DynamicVWAPEngine {
     }
 
     // ── Manual (click-placed) anchors ─────────────────────────────────────
-    for (const [anchorIdxStr, s] of Object.entries(this._manualSeries)) {
-      s.setData(this._vwapLine(parseInt(anchorIdxStr, 10), n));
+    for (const [anchorIdxStr, entry] of Object.entries(this._manualSeries)) {
+      const anchorIdx = parseInt(anchorIdxStr, 10);
+      entry.vwap.setData(this._vwapLine(anchorIdx, n));
+      if (entry.bands.length) {
+        const { bands: bandData } = this._vwapStdevBands(anchorIdx, n, entry.bands.map(b => b.k));
+        for (let i = 0; i < entry.bands.length; i++) {
+          entry.bands[i].upper.setData(bandData[i].upper);
+          entry.bands[i].lower.setData(bandData[i].lower);
+        }
+      }
     }
   }
 

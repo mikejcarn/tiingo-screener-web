@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 
 CREATE INDEX IF NOT EXISTS idx_ohlcv_ticker_tf   ON ohlcv      (ticker, timeframe);
 CREATE INDEX IF NOT EXISTS idx_ind_ticker_tf_conf ON indicators (ticker, timeframe, ind_conf);
+-- Covers /api/indicators/summary's GROUP BY (ind_conf, ticker, timeframe) +
+-- MIN/MAX(date) entirely from the index — idx_ind_ticker_tf_conf above has
+-- a different leading column and doesn't include date, so that query still
+-- had to fetch each full row (including its multi-KB indicator `data` blob)
+-- just to read date. This one lets the scan skip the table entirely.
+CREATE INDEX IF NOT EXISTS idx_ind_summary_covering ON indicators (ind_conf, ticker, timeframe, date);
 
 CREATE TABLE IF NOT EXISTS ind_configs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
