@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
 from backend.indicators.indicators import get_indicators
-from backend.indicators.indicators_list.aVWAP import calculate_avwap
+from backend.indicators.indicators_list.aVWAP import (
+    calculate_avwap, calculate_avwap_atr, calculate_avwap_straightening, avwap_curve_color,
+)
 
 
 
@@ -19,6 +21,9 @@ param_labels = {
     'chain_min_valleys': 'Min Anchor -> Chain Valleys',
     'chain_periods':     'Chain Swing Window',
     'chain_max_aVWAPs':  'Chained Anchors per Point',
+    'chain_curve_color': 'Chained Line Coloring',
+    'curve_slope_window':'Curve Slope Smoothing (bars)',
+    'curve_atr_period':  'Curve ATR Period',
 }
 
 param_descriptions = {
@@ -39,8 +44,20 @@ param_descriptions = {
     'chain_max_aVWAPs': "How many chained anchors to keep per min/max anchor, per type (peak and "
                           "valley capped independently). Raise this for a denser fan. Keeps the "
                           "EARLIEST qualifying points after the anchor, not the most recent — rank 1 "
-                          "is the one closest to the anchor. Rank 1 renders boldest and most opaque; "
-                          "later ranks fade and thin.",
+                          "is the one closest to the anchor.",
+    'chain_curve_color': "How to color the CHAINED peak/valley lines only (base min/max anchors are "
+                          "unaffected) by how much each line has curved vs. flattened along its own "
+                          "path, per aVWAP-curve-to-straight.md. 'none' — flat red/teal, no change. "
+                          "'opacity' — keeps the usual red/teal hue, fading the alpha as the line "
+                          "settles from a sharp curve to flat. 'heatmap' — hue itself shifts from hot "
+                          "(still curving) to a cool neutral gray (flattened), independent of "
+                          "peak/valley identity.",
+    'curve_slope_window':"Bars used to measure each chained line's slope at each point (an endpoint "
+                          "delta, not a single-bar difference) — too short and it's noisy, too long "
+                          "and sharp curves get smoothed away. Only used when chain_curve_color is on.",
+    'curve_atr_period':  "Lookback period for the ATR used to normalize slope into a volatility-"
+                          "comparable unit for the chained-line coloring. Only used when "
+                          "chain_curve_color is on.",
 }
 
 
@@ -83,6 +100,9 @@ def calculate_aVWAP_minmax(
     chain_min_valleys=False,
     chain_periods=20,
     chain_max_aVWAPs=3,
+    chain_curve_color='none',
+    curve_slope_window=5,
+    curve_atr_period=14,
 ):
     """
     Anchor aVWAPs at the highest High(s) and lowest Low(s) within a window,
@@ -103,6 +123,10 @@ def calculate_aVWAP_minmax(
     chain_min_valleys  — after each MIN anchor, also anchor at valleys after it
     chain_periods      — swing-detection window for the chained peaks/valleys
     chain_max_aVWAPs   — how many chained anchors to keep per min/max anchor, per type
+    chain_curve_color  — 'none' / 'opacity' / 'heatmap' — see param_descriptions.
+                         Chained lines only; base min/max anchors are unaffected.
+    curve_slope_window — slope-measurement window for the curve coloring
+    curve_atr_period   — ATR period for the curve coloring
 
     Output columns:
         aVWAP_max_{anchor_bar}                                    — base max anchor
@@ -111,6 +135,10 @@ def calculate_aVWAP_minmax(
         aVWAP_minmax_max_{anchor_bar}_valley_r{rank}_{bar}        — chained valley off a max anchor
         aVWAP_minmax_min_{anchor_bar}_peak_r{rank}_{bar}          — chained peak off a min anchor
         aVWAP_minmax_min_{anchor_bar}_valley_r{rank}_{bar}        — chained valley off a min anchor
+        {any of the four above}_curvecolor                       — per-bar rgba(...) companion
+                                 column, only when chain_curve_color != 'none'. chart.js reads
+                                 this to color that line per-point (see calculate_avwap_straightening
+                                 / avwap_curve_color in aVWAP.py) instead of col_styles.py's flat color.
     Deliberately a different column family (aVWAP_minmax_ rather than
     aVWAP_max_/aVWAP_min_) — those two are reserved for the client-side
     DynamicVWAPEngine (see replay_events._AVWAP_MAX_RE/_AVWAP_MIN_RE and
@@ -151,6 +179,17 @@ def calculate_aVWAP_minmax(
         base_cols = [c for c in ['Open', 'High', 'Low', 'Close', 'Volume'] if c in df.columns]
         pv_df = get_indicators(df[base_cols].copy(), ['peaks_valleys'], {'peaks_valleys': {'periods': chain_periods}})
         pv_col = {'peak': 'Peaks', 'valley': 'Valleys'}
+        # peak = red, valley = teal — the same universal convention col_styles.py
+        # uses for these lines' own flat color; 'opacity' curve-coloring keeps
+        # this hue and only fades alpha, so it needs it here too.
+        chain_rgb = {'peak': '239,83,80', 'valley': '38,166,154'}
+        # 'opacity' style's hot extreme — red_dark/aqua, the same escalating-
+        # intensity step banker_RSI/aVWAPStDev already use beyond plain
+        # red/teal — for more contrast at the "still sharply curving" end
+        # than alpha alone gives.
+        chain_hot_rgb = {'peak': '255,0,0', 'valley': '0,255,255'}
+
+        atr = calculate_avwap_atr(df, curve_atr_period) if chain_curve_color != 'none' else None
 
         for anchor_type, anchors in (('max', max_anchors), ('min', min_anchors)):
             for anchor_bar in anchors:
@@ -161,7 +200,14 @@ def calculate_aVWAP_minmax(
                     if col not in pv_df.columns:
                         continue
                     for rank, bar in enumerate(_chained_points(pv_df, col, anchor_bar, chain_max_aVWAPs), start=1):
-                        result[f'aVWAP_minmax_{anchor_type}_{anchor_bar}_{chain_type}_r{rank}_{bar}'] = calculate_avwap(df, bar)
+                        line_col = f'aVWAP_minmax_{anchor_type}_{anchor_bar}_{chain_type}_r{rank}_{bar}'
+                        result[line_col] = calculate_avwap(df, bar)
+                        if chain_curve_color != 'none':
+                            straightening, _, direction = calculate_avwap_straightening(df, bar, atr, curve_slope_window)
+                            result[f'{line_col}_curvecolor'] = avwap_curve_color(
+                                straightening, chain_curve_color, chain_rgb[chain_type], chain_hot_rgb[chain_type],
+                                direction=direction,
+                            )
 
     for col, series in result.items():
         df[col] = series

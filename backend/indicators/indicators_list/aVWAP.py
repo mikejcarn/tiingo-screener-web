@@ -1165,6 +1165,199 @@ def calculate_avwap_stdev(df, anchor_index):
     return np.sqrt(cumulative_sq_dev / cumulative_volume)
 
 
+def calculate_avwap_atr(df, period=14):
+    """
+    Shared ATR helper for aVWAP curve/tension calculations — same True
+    Range + rolling-mean formula aVWAP_curve_fit.py and aVWAP_volume_fit.py
+    each already compute locally; centralized here since any anchored-VWAP
+    indicator can use it (e.g. aVWAP_minmax's curve-to-straight coloring),
+    not just the one that first needed it.
+    """
+    high, low, close = df['High'].values, df['Low'].values, df['Close'].values
+    prev_close = pd.Series(close).shift(1).values
+    tr = np.maximum(high - low, np.maximum(np.abs(high - prev_close), np.abs(low - prev_close)))
+    return pd.Series(tr, index=df.index).rolling(period).mean().values
+
+
+def calculate_avwap_straightening(df, anchor_index, atr, slope_window=5):
+    """
+    Per-bar curve-to-straight state for the aVWAP anchored at anchor_index
+    (see aVWAP-curve-to-straight.md, project root) — the same peak-
+    normalized-slope math aVWAP_curve_fit.py uses to RANK anchors, but kept
+    as a full per-bar series instead of collapsed to one last-bar value, so
+    a caller can drive a per-point color gradient from it instead of just a
+    single score.
+
+    atr must be a full-length array aligned to df's own positional index
+    (e.g. from calculate_avwap_atr(df, period)) — an independent volatility
+    measure, not derived from this anchor's own accumulated variance (a
+    self-referential band would trivially track the anchor's own spread).
+
+    Returns (straightening_score, curve_strength, peak_direction) — all
+    indexed the same (short) way calculate_avwap's own return value is,
+    anchor_index onward only, not padded to df's full length. Assigning any
+    of them into a full-length DataFrame column aligns and pads NaN before
+    the anchor automatically, same as every other aVWAP-family output
+    already does.
+      straightening_score — 0 = still as sharp as this anchor's own peak
+                             slope has ever been (high tension/"curved"),
+                             1 = fully flat relative to its own history
+                             (settled/"straight"). NaN for the first
+                             slope_window bars after the anchor — not
+                             enough history yet to measure a slope.
+      curve_strength       — the running-peak ATR-normalized |slope| itself,
+                             for callers that want the raw magnitude, not
+                             just how far it's decayed from it.
+      peak_direction       — +1/-1, the sign of the slope at whichever bar
+                             set (or tied) the running-peak curve_strength
+                             so far — i.e. "was this anchor's defining,
+                             sharpest move so far upward or downward."
+                             Carried forward once set rather than
+                             recomputed bar-by-bar from the (noisier)
+                             current-bar slope alone, so a line's color
+                             doesn't flicker between bullish/bearish as
+                             local slope wobbles near zero after it's
+                             already flattened. 0 before any slope is
+                             measurable yet (same window as the NaN case
+                             above).
+    """
+    vwap = calculate_avwap(df, anchor_index)
+    avwap = vwap.values
+    seg_len = len(avwap)
+    atr_seg = np.asarray(atr)[anchor_index:anchor_index + seg_len]
+
+    slope_raw = np.full(seg_len, np.nan)
+    if seg_len > slope_window:
+        slope_raw[slope_window:] = (avwap[slope_window:] - avwap[:-slope_window]) / slope_window
+    with np.errstate(divide='ignore', invalid='ignore'):
+        norm_slope = slope_raw / atr_seg
+    abs_slope = np.abs(norm_slope)
+
+    curve_strength = pd.Series(abs_slope).cummax().values
+    with np.errstate(divide='ignore', invalid='ignore'):
+        straightening = np.where(curve_strength > 0, 1.0 - (abs_slope / curve_strength), np.nan)
+
+    peak_direction = np.zeros(seg_len)
+    best = -np.inf
+    sign = 0.0
+    for i in range(seg_len):
+        a = abs_slope[i]
+        if not np.isnan(a) and a >= best:
+            best = a
+            ns = norm_slope[i]
+            if not np.isnan(ns) and ns != 0:
+                sign = 1.0 if ns > 0 else -1.0
+        peak_direction[i] = sign
+
+    return (
+        pd.Series(straightening, index=vwap.index),
+        pd.Series(curve_strength, index=vwap.index),
+        pd.Series(peak_direction, index=vwap.index),
+    )
+
+
+# Curve-to-straight per-point line coloring — shared so any aVWAP-family
+# indicator can offer it as a rendering option, not just the one that first
+# used it. See calculate_avwap_straightening above for the score this maps.
+_CURVE_BULL_RGB          = (0, 255, 255)   # heatmap style — aqua, defining move was upward
+_CURVE_BEAR_RGB          = (255, 0, 0)     # heatmap style — crimson/red_dark, defining move was downward
+_CURVE_SETTLE_RGB        = (45, 45, 52)    # heatmap style — flattened (settled) — dark neutral gray
+_CURVE_OPACITY_MAX_ALPHA = 0.85            # opacity style — still curving
+_CURVE_OPACITY_MIN_ALPHA = 0.30            # opacity style — flattened
+
+
+def avwap_curve_color(straightening, style, base_rgb, hot_rgb=None, direction=None):
+    """
+    Per-bar rgba(...) color string from a straightening_score series (see
+    calculate_avwap_straightening). Meant to be attached as a
+    '{line_col}_curvecolor' companion column next to an aVWAP line column —
+    chart.js reads that companion column to color the line per-point (see
+    frontend/js/chart.js's static-line reveal loop). col_styles.py must
+    exclude '*_curvecolor' columns from its own styling so they don't also
+    become a spurious extra line series.
+
+    style — 'opacity': two-stage gradient using the line's own hue family.
+              First half (still sharply curving): hue shifts from hot_rgb
+              (a more saturated/extreme step of the same family — e.g.
+              red_dark for a red peak line, aqua for a teal valley line,
+              same escalating-intensity idea as banker_RSI's color map and
+              aVWAPStDev's fill tiers) down to base_rgb, fully opaque the
+              whole way. Second half (settling): hue stays at base_rgb,
+              alpha fades from MAX to MIN. Reads as "still hot" -> "normal
+              color, full strength" -> "normal color, fading out" — more
+              contrast than alpha alone can give across the full range.
+            'heatmap': hue shifts from a direction-dependent hot color
+              (still curving) to a dark neutral gray (settled) — aqua if
+              this line's defining/sharpest move so far was upward
+              (direction > 0), crimson/red_dark if it was downward
+              (direction < 0). Direction isn't knowable yet for the first
+              slope_window bars of a line's life (see
+              calculate_avwap_straightening) — for those, and if direction
+              isn't supplied at all, this falls back to base_rgb (the
+              line's own peak=red/valley=teal identity) rather than an
+              unrelated third color, so an unresolved line just reads as
+              its structural type until a real direction emerges.
+            Anything else (e.g. 'none') should be handled by the caller by
+            not calling this at all — there's no flat/uncolored branch here.
+    base_rgb  — 'r,g,b' string, the line's own hue (peak=red/valley=teal).
+                Used directly for 'opacity', and as the "direction not yet
+                known" fallback for 'heatmap'.
+    hot_rgb   — 'r,g,b' string, the same family's more saturated extreme;
+                only used for 'opacity'. Defaults to base_rgb (flat hue,
+                alpha-only fade) if not given.
+    direction — Series of +1/-1/0 aligned with straightening (see
+                calculate_avwap_straightening's peak_direction); only used
+                for 'heatmap'.
+
+    NaN scores (not enough bars since the anchor to measure a slope yet)
+    read as maximum tension (0) — those bars sit right at the anchor, the
+    newest and most active part of the line, so treating "unknown" as "hot"
+    is the safer default than treating it as already settled.
+    """
+    s = straightening.fillna(0.0).clip(lower=0.0, upper=1.0)
+
+    if style == 'heatmap':
+        sr, sg, sb = _CURVE_SETTLE_RGB
+        ur, ug, ub = (int(x) for x in base_rgb.split(','))  # direction not yet known -> this line's own peak/valley hue
+        if direction is not None:
+            d = direction.reindex(s.index).fillna(0.0).values
+            br_, bg_, bb_ = _CURVE_BULL_RGB
+            er, eg, eb = _CURVE_BEAR_RGB
+            hr = np.where(d > 0, br_, np.where(d < 0, er, ur))
+            hg = np.where(d > 0, bg_, np.where(d < 0, eg, ug))
+            hb = np.where(d > 0, bb_, np.where(d < 0, eb, ub))
+        else:
+            hr, hg, hb = ur, ug, ub
+        sv = s.values
+        r = (hr + (sr - hr) * sv).round().astype(int)
+        g = (hg + (sg - hg) * sv).round().astype(int)
+        b = (hb + (sb - hb) * sv).round().astype(int)
+        return pd.Series(
+            [f'rgba({ri},{gi},{bi},0.85)' for ri, gi, bi in zip(r, g, b)],
+            index=straightening.index,
+        )
+
+    hot_rgb = hot_rgb or base_rgb
+    hr, hg, hb = (int(x) for x in hot_rgb.split(','))
+    br, bg, bb = (int(x) for x in base_rgb.split(','))
+
+    # First half of the range (s: 0 -> 0.5): hue only, hot_rgb -> base_rgb,
+    # full opacity. Second half (s: 0.5 -> 1): hue fixed at base_rgb, alpha
+    # only, MAX -> MIN.
+    t_hue   = (s / 0.5).clip(upper=1.0)
+    t_alpha = ((s - 0.5) / 0.5).clip(lower=0.0)
+
+    r = (hr + (br - hr) * t_hue).round().astype(int)
+    g = (hg + (bg - hg) * t_hue).round().astype(int)
+    b = (hb + (bb - hb) * t_hue).round().astype(int)
+    alpha = (_CURVE_OPACITY_MAX_ALPHA - (_CURVE_OPACITY_MAX_ALPHA - _CURVE_OPACITY_MIN_ALPHA) * t_alpha).round(2)
+
+    return pd.Series(
+        [f'rgba({ri},{gi},{bi},{a})' for ri, gi, bi, a in zip(r, g, b, alpha)],
+        index=straightening.index,
+    )
+
+
 def calculate_rolling_aVWAP_avg(df, aVWAP_dict, lookback=None):
     """Calculate average of aVWAP values"""
     if not aVWAP_dict:

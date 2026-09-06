@@ -17,6 +17,7 @@ const PARAM_ENUMS = {
   styling: ['shades', 'highlight_first', 'grayscale'],
   anchor_type: ['peak', 'valley'],
   rank_by: ['volfrac', 'volume'],
+  chain_curve_color: ['none', 'opacity', 'heatmap'],
 };
 
 // Display text for enum option values that shouldn't show their raw
@@ -27,6 +28,9 @@ const PARAM_ENUM_LABELS = {
   aVWAPStDev: 'aVWAP-Range: StDev',
   volfrac: 'Volume Fraction (self-relative)',
   volume: 'Raw Volume (structural)',
+  none: 'None (flat red/teal)',
+  opacity: 'Opacity Fade (red/teal)',
+  heatmap: 'Heatmap (hot -> cool)',
 };
 
 

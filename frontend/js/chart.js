@@ -268,13 +268,20 @@ export class ChartManager {
     });
     this._candles.setData(candles);
 
-    // Static indicator lines
+    // Static indicator lines. A column can opt into per-point color (e.g.
+    // aVWAP_minmax's curve-to-straight coloring) by shipping a same-named
+    // '{col}_curvecolor' companion column — generic hook, not specific to
+    // any one indicator, same mechanism Supertrend below uses directly.
     for (const [col, series] of Object.entries(this._lines)) {
+      const colorCol = col + '_curvecolor';
       const data = [];
       for (const b of slice) {
         const v = b[col];
         if (v != null && !Number.isNaN(v)) {
-          data.push({ time: (b.Date || b.date || '').slice(0, 10), value: v });
+          const point = { time: (b.Date || b.date || '').slice(0, 10), value: v };
+          const c = b[colorCol];
+          if (c) point.color = c;
+          data.push(point);
         }
       }
       series.setData(data);

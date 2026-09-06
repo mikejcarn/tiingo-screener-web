@@ -113,22 +113,12 @@ def col_styles_for_columns(columns: list) -> dict:
         t = (k - _stdev_k_min) / (_stdev_k_max - _stdev_k_min) if _stdev_k_max > _stdev_k_min else 0.0
         return round(_STDEV_BAND_MAX_ALPHA - (_STDEV_BAND_MAX_ALPHA - _STDEV_BAND_MIN_ALPHA) * t, 2)
 
-    # aVWAP-Min/Max chained peaks/valleys — same rank-interpolation scheme as
-    # BFIT/LFIT/CFIT, scoped across both anchor types (max/min) and both chain
-    # types (peak/valley) together, since chain_max_aVWAPs caps rank the same
-    # way regardless of which anchor or type produced it.
-    def _minmax_chain_rank(col):
-        m = _MINMAX_CHAIN_RE.match(col)
-        return int(m.group(4)) if m else 1
-
-    _minmax_chain_ranks = [_minmax_chain_rank(c) for c in columns if _MINMAX_CHAIN_RE.match(c)]
-    _minmax_chain_max_rank = max(_minmax_chain_ranks) if _minmax_chain_ranks else 1
-
-    def _minmax_chain_t(rank):
-        return (rank - 1) / (_minmax_chain_max_rank - 1) if _minmax_chain_max_rank > 1 else 0.0
-
-    def _minmax_chain_alpha(rank): return round(0.9 - (0.9 - 0.4) * _minmax_chain_t(rank), 2)
-    def _minmax_chain_width(rank): return max(1, round(3 - 2 * _minmax_chain_t(rank)))
+    # aVWAP-Min/Max chained peaks/valleys — deliberately NOT rank-tiered like
+    # BFIT/LFIT/CFIT: this fan is meant to be viewed many-lines-at-once to
+    # read broader wave patterns, and fading later ranks would work against
+    # that (the very lines needed to see the pattern would be the faintest).
+    # Flat style instead, same red/teal convention as aVWAP_pinch's own plain
+    # anchor lines (colors['red_trans_3']/['teal_trans_3']).
 
     for col in columns:
         cfg = _cfg_idx(col)
@@ -137,6 +127,11 @@ def col_styles_for_columns(columns: list) -> dict:
         # subplot indicators — neither belongs on the price chart as a line.
         if (col.endswith('_Regular_Bullish') or col.endswith('_Regular_Bearish')
                 or col.endswith('_Hidden_Bullish') or col.endswith('_Hidden_Bearish')):
+            continue
+        # Per-point-color companion columns (e.g. aVWAP_minmax's curve-to-
+        # straight coloring) — data for chart.js to read alongside their
+        # base line column, not a line of their own.
+        if col.endswith('_curvecolor'):
             continue
         if col in ('RSI', 'MACD', 'Signal', 'Histogram', 'OBV', 'OBV_Smoothed',
                    'ATR', 'Fisher', 'Fisher_Signal', 'Fractal_Energy',
@@ -311,12 +306,12 @@ def col_styles_for_columns(columns: list) -> dict:
         # universal convention as everywhere else in this file (aVWAP_pinch,
         # avwap_replay.js's C_PEAK/C_VALLEY) — regardless of whether the
         # chain hangs off a max or min anchor, since a peak/valley's meaning
-        # doesn't depend on which anchor spawned it. Rank (closest to the
-        # anchor = rank 1) drives opacity/width, same scheme as BFIT/LFIT/CFIT.
+        # doesn't depend on which anchor spawned it. Flat style, not rank-
+        # tiered, by design — meant to be viewed many-at-once for broader
+        # wave patterns, where fading later ranks would hide the very lines
+        # needed to see that pattern.
         elif _MINMAX_CHAIN_RE.match(col):
-            _, _, chain_type, rank_str, _ = _MINMAX_CHAIN_RE.match(col).groups()
-            rank = int(rank_str)
-            rgb = '239,83,80' if chain_type == 'peak' else '38,166,154'
-            _add(col, f'rgba({rgb},{_minmax_chain_alpha(rank)})', _minmax_chain_width(rank), 'solid')
+            chain_type = _MINMAX_CHAIN_RE.match(col).group(3)
+            _add(col, colors['red_trans_3'] if chain_type == 'peak' else colors['teal_trans_3'], 1, 'solid')
 
     return styles
