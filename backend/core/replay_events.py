@@ -650,12 +650,21 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     peaks_cfgs   = avwap_p.get('peaks_params',   [])
     valleys_cfgs = avwap_p.get('valleys_params',  [])
 
-    # Multi-config color scheme for the peaks/valleys anchor pools — prefer the
+    # Single unified color scheme for the peaks/valleys anchor pools — prefer the
     # standalone aVWAP_peaks/aVWAP_valleys indicators' own 'styling' param, same
     # fallback pattern as their periods/max_aVWAPs configs in
-    # _extract_dynamic_avwap_anchors above.
-    peaks_style   = ind_params.get('aVWAP_peaks',   {}).get('styling', 'shades')
-    valleys_style = ind_params.get('aVWAP_valleys', {}).get('styling', 'shades')
+    # _extract_dynamic_avwap_anchors above. 'styling' now covers the rank-based
+    # multi-config schemes (shades/highlight_first/grayscale), the two curve-to-
+    # straight schemes (curve_opacity/curve_heatmap, mirroring aVWAP_minmax's
+    # chain_curve_color), and slope_gradient (instantaneous slope, no self-
+    # history) as one mutually-exclusive choice — kept as a single dropdown
+    # deliberately, since styling + curve_color used to be separate params that
+    # silently fought over the same lines' color (curve coloring would override
+    # styling's hue but not its width).
+    peaks_cfg     = ind_params.get('aVWAP_peaks',   {})
+    valleys_cfg   = ind_params.get('aVWAP_valleys', {})
+    peaks_style   = peaks_cfg.get('styling', 'shades')
+    valleys_style = valleys_cfg.get('styling', 'shades')
 
     # Legacy QQEMOD rendering via qqemod_events/_qbPool/_qlPool is disabled —
     # the column-based aVWAP_QQEMOD_* system handles all rendering now.
@@ -691,6 +700,12 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'pmm_configs':   pmm_configs,
         'peaks_style':   peaks_style,
         'valleys_style': valleys_style,
+        'peaks_curve_slope_window': int(peaks_cfg.get('curve_slope_window', 5)),
+        'peaks_curve_atr_period':   int(peaks_cfg.get('curve_atr_period', 14)),
+        'peaks_slope_scale':        float(peaks_cfg.get('slope_scale', 0.15)),
+        'valleys_curve_slope_window': int(valleys_cfg.get('curve_slope_window', 5)),
+        'valleys_curve_atr_period':   int(valleys_cfg.get('curve_atr_period', 14)),
+        'valleys_slope_scale':        float(valleys_cfg.get('slope_scale', 0.15)),
         # Segment indicators — horizontal line events with start/end bar + price
         'fvg': _extract_fvg_segments(df, ind_params.get('FVG',        {})),
         'ob':  _extract_ob_segments(df,  ind_params.get('OB',         {})),

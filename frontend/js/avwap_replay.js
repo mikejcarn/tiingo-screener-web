@@ -39,6 +39,40 @@ const ANCHOR_POOL_STYLE = {
   avwap_min:       ['rgba(0,255,255,0.85)',  3, 0],
 };
 
+// Curve-to-straight per-point coloring for peaks/valleys — JS port of
+// calculate_avwap_straightening / avwap_curve_color (backend/indicators/
+// indicators_list/aVWAP.py), since these lines are built live here rather
+// than from stored columns like aVWAP_minmax's chained lines. See that
+// module's docstrings for the full math rationale; kept numerically
+// identical here (same peak-normalized-slope + cummax formula).
+const CURVE_BULL_RGB          = [0, 255, 255];   // heatmap — defining move was upward
+const CURVE_BEAR_RGB          = [255, 0, 0];     // heatmap — defining move was downward
+const CURVE_SETTLE_RGB        = [45, 45, 52];    // heatmap — flattened (settled)
+const CURVE_OPACITY_MAX_ALPHA = 0.85;
+const CURVE_OPACITY_MIN_ALPHA = 0.30;
+const CURVE_HOT_RGB = {
+  peak:   [255, 0, 0],     // red_dark — same escalating-intensity step as the Python side
+  valley: [0, 255, 255],   // aqua
+};
+const CURVE_BASE_RGB = {
+  peak:   [239, 83, 80],   // matches C_PEAK
+  valley: [38, 166, 154],  // matches C_VALLEY
+};
+
+// 'styling' values that color each point individually at reveal() time instead
+// of tiering the whole line by config rank — see _anchorPoolStyle.
+const _PER_POINT_STYLES = new Set(['curve_opacity', 'curve_heatmap', 'slope_gradient']);
+
+// slope_gradient — colors each point by its own instantaneous ATR-normalized
+// slope alone, no memory of the line's own history (contrast with curve_opacity/
+// curve_heatmap above, which normalize against this line's own sharpest move so
+// far). Reuses the same bull/bear/settle hues as the heatmap style so the two
+// "diverging" modes read as visually related.
+const SLOPE_UP_RGB   = CURVE_BULL_RGB;    // rising
+const SLOPE_DOWN_RGB = CURVE_BEAR_RGB;    // falling
+const SLOPE_FLAT_RGB = CURVE_SETTLE_RGB;  // ~zero slope
+const SLOPE_ALPHA    = 0.85;
+
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
 // Shift+. also draws stdev bands (vwap +/- k*stdev) around a manual anchor —
@@ -124,6 +158,8 @@ export class DynamicVWAPEngine {
     this._bars    = [];
     this._highs   = null;   // Float64Array — bar highs for PMM peak detection
     this._lows    = null;   // Float64Array — bar lows  for PMM valley detection
+    this._closes  = null;   // Float64Array — bar closes, for ATR (curve coloring)
+    this._atrCache = {};    // period -> Float64Array, memoized across reveal() calls
     this._cumPV   = null;   // Float64Array — cumulative (typical_price × volume)
     this._cumVol  = null;   // Float64Array — cumulative volume
     this._peaks   = [];
@@ -306,6 +342,17 @@ export class DynamicVWAPEngine {
     // Dynamic per-config peaks/valleys: peak_c0, peak_c1, valley_c0, valley_c1, ...
     let m = key.match(/^peak_c(\d+)$/);
     if (m) {
+      // Per-point styles (curve_opacity/curve_heatmap/slope_gradient) color every
+      // point individually at reveal() time (see _vwapLineColored/_vwapLineSlope) —
+      // rank-tiering the base series color/width here would be pointless (hue gets
+      // overridden) and misleading (implies configs are still distinguishable by
+      // rank, which these modes intentionally give up). Flat base color instead,
+      // same as C_PEAK's own default — but thinner (1px) than the usual width-2
+      // lines, since these modes are meant to be layered/compared against each
+      // other and a thin line makes overlaps and crossings easier to read.
+      if (_PER_POINT_STYLES.has(this._peaksStyle)) {
+        return [C_PEAK, 1, 0];
+      }
       const info = rankMaps.peak?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
       const colorFn = this._peaksStyle === 'highlight_first' ? _highlightFirstColor
                     : this._peaksStyle === 'grayscale'       ? _grayscaleColor
@@ -314,6 +361,9 @@ export class DynamicVWAPEngine {
     }
     m = key.match(/^valley_c(\d+)$/);
     if (m) {
+      if (_PER_POINT_STYLES.has(this._valleysStyle)) {
+        return [C_VALLEY, 1, 0];
+      }
       const info = rankMaps.valley?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
       const colorFn = this._valleysStyle === 'highlight_first' ? _highlightFirstColor
                      : this._valleysStyle === 'grayscale'      ? _grayscaleColor
@@ -366,8 +416,25 @@ export class DynamicVWAPEngine {
     this._maxQQ       = events.max_qqemod   || 0;
     this._peaksHalf   = 0;
     this._valleysHalf = 0;
+    // Single merged style choice — 'shades'/'highlight_first'/'grayscale' (rank-based,
+    // see _anchorPoolStyle), 'curve_opacity'/'curve_heatmap' (per-point curvature
+    // relative to this line's own history, see _vwapLineColored), or 'slope_gradient'
+    // (per-point instantaneous slope, no history, see _vwapLineSlope) — all consulted
+    // at reveal() time. curve_slope_window/curve_atr_period/slope_scale are separate
+    // tuning knobs, only used when the style is one of the three per-point ones.
     this._peaksStyle   = events.peaks_style   || 'shades';
     this._valleysStyle = events.valleys_style || 'shades';
+    this._peaksCurveParams = {
+      slopeWindow: events.peaks_curve_slope_window  || 5,
+      atrPeriod:   events.peaks_curve_atr_period    || 14,
+      slopeScale:  events.peaks_slope_scale         || 0.15,
+    };
+    this._valleysCurveParams = {
+      slopeWindow: events.valleys_curve_slope_window || 5,
+      atrPeriod:   events.valleys_curve_atr_period    || 14,
+      slopeScale:  events.valleys_slope_scale         || 0.15,
+    };
+    this._atrCache = {};
 
     // Build O(1) VWAP lookup tables + price arrays for PMM
     const N = bars.length;
@@ -381,6 +448,7 @@ export class DynamicVWAPEngine {
     // squared-deviation sum isn't a fixed prefix sum reusable across anchors).
     this._volumes = new Float64Array(N);
     this._typical = new Float64Array(N);
+    this._closes  = new Float64Array(N);
     let pv = 0, vol = 0;
     for (let i = 0; i < N; i++) {
       const b = bars[i];
@@ -388,6 +456,7 @@ export class DynamicVWAPEngine {
       const v = b.Volume ?? b.volume;
       this._highs[i]   = h;
       this._lows[i]    = l;
+      this._closes[i]  = c;
       this._volumes[i] = v;
       this._typical[i] = (h + l + c) / 3;
       pv  += this._typical[i] * v;
@@ -419,6 +488,193 @@ export class DynamicVWAPEngine {
           value: (this._cumPV[i] - pvBase) / vol,
         });
       }
+    }
+    return data;
+  }
+
+  /**
+   * Rolling-mean True Range (ATR) over the whole loaded series, memoized by
+   * period — shared across every curve-colored line regardless of anchor,
+   * same as calculate_avwap_atr (aVWAP.py) being computed once per df.
+   */
+  _getAtr(period) {
+    if (this._atrCache[period]) return this._atrCache[period];
+    const N = this._bars.length;
+    const tr  = new Float64Array(N);
+    const atr = new Float64Array(N).fill(NaN);
+    for (let i = 0; i < N; i++) {
+      const h = this._highs[i], l = this._lows[i];
+      // Bar 0 has no prior close (Python's version leaves it NaN, poisoning
+      // one extra bar's worth of rolling windows near the very start of the
+      // series) — using plain high-low here instead is a deliberate, harmless
+      // simplification: it only affects anchors within the first `period`
+      // bars of the whole loaded series, which swing peaks/valleys never are.
+      if (i === 0) {
+        tr[i] = h - l;
+      } else {
+        const pc = this._closes[i - 1];
+        tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+      }
+    }
+    let sum = 0;
+    for (let i = 0; i < N; i++) {
+      sum += tr[i];
+      if (i >= period) sum -= tr[i - period];
+      if (i >= period - 1) atr[i] = sum / period;
+    }
+    this._atrCache[period] = atr;
+    return atr;
+  }
+
+  /**
+   * Per-bar rgba(...) color from a straightening score — JS port of
+   * avwap_curve_color (aVWAP.py). direction: +1/-1/0 (0 = not yet resolved).
+   */
+  _curveColor(s, style, baseRgb, hotRgb, direction) {
+    const [br, bg, bb] = baseRgb;
+    if (style === 'heatmap') {
+      const [sr, sg, sb] = CURVE_SETTLE_RGB;
+      const hot = direction > 0 ? CURVE_BULL_RGB : direction < 0 ? CURVE_BEAR_RGB : baseRgb;
+      const r = Math.round(hot[0] + (sr - hot[0]) * s);
+      const g = Math.round(hot[1] + (sg - hot[1]) * s);
+      const b = Math.round(hot[2] + (sb - hot[2]) * s);
+      return `rgba(${r},${g},${b},0.85)`;
+    }
+    // 'opacity' style — first half (s: 0->0.5): hue only, hotRgb -> baseRgb,
+    // full opacity. Second half (s: 0.5->1): hue fixed at baseRgb, alpha only.
+    const [hr, hg, hb] = hotRgb || baseRgb;
+    const tHue   = Math.min(s / 0.5, 1);
+    const tAlpha = Math.max((s - 0.5) / 0.5, 0);
+    const r = Math.round(hr + (br - hr) * tHue);
+    const g = Math.round(hg + (bg - hg) * tHue);
+    const b = Math.round(hb + (bb - hb) * tHue);
+    const alpha = (CURVE_OPACITY_MAX_ALPHA - (CURVE_OPACITY_MAX_ALPHA - CURVE_OPACITY_MIN_ALPHA) * tAlpha).toFixed(2);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  /**
+   * Plain identity color (peak red / valley teal, same alpha as C_PEAK/
+   * C_VALLEY) for the stretch right after an anchor where a per-point style
+   * can't measure anything yet — shown as-is instead of running the "unknown"
+   * case through the style's own hot/settle math, so every colored line
+   * visibly starts as a normal peak/valley line before its coloring kicks in.
+   */
+  _identityColor(baseRgb) {
+    return `rgba(${baseRgb[0]},${baseRgb[1]},${baseRgb[2]},0.75)`;
+  }
+
+  /**
+   * Same as _vwapLine, but with a per-point 'color' field driven by the
+   * line's own curve-to-straight state — JS port of
+   * calculate_avwap_straightening (aVWAP.py), walked incrementally over the
+   * rendered (vol > 0) points as they're built rather than a separate pass.
+   * Deterministic regardless of toIdx (each point's color only depends on
+   * bars from anchorIdx up to itself), so recomputing on every reveal() is
+   * safe — same no-look-ahead property _vwapLine already has.
+   */
+  _vwapLineColored(anchorIdx, toIdx, style, baseRgb, hotRgb, slopeWindow, atrPeriod) {
+    const pvBase  = anchorIdx > 0 ? this._cumPV[anchorIdx - 1]  : 0;
+    const volBase = anchorIdx > 0 ? this._cumVol[anchorIdx - 1] : 0;
+    const atr = this._getAtr(atrPeriod);
+    const data = [];
+    let bestAbsSlope = -Infinity;
+    let sign = 0;
+    for (let i = anchorIdx; i <= toIdx; i++) {
+      const vol = this._cumVol[i] - volBase;
+      if (vol <= 0) continue;
+      const value = (this._cumPV[i] - pvBase) / vol;
+      const pointIdx = data.length;
+
+      let straightening = null;
+      let known = false;
+      if (pointIdx >= slopeWindow) {
+        const atrVal = atr[i];
+        if (atrVal > 0) {
+          known = true;
+          const prevValue = data[pointIdx - slopeWindow].value;
+          const normSlope = (value - prevValue) / slopeWindow / atrVal;
+          const absSlope  = Math.abs(normSlope);
+          if (absSlope >= bestAbsSlope) {
+            bestAbsSlope = absSlope;
+            if (normSlope !== 0) sign = normSlope > 0 ? 1 : -1;
+          }
+          if (bestAbsSlope > 0) straightening = 1.0 - absSlope / bestAbsSlope;
+        }
+      }
+
+      let color;
+      if (!known) {
+        color = this._identityColor(baseRgb);
+      } else {
+        const s = straightening == null ? 0.0 : Math.min(Math.max(straightening, 0), 1);
+        color = this._curveColor(s, style, baseRgb, hotRgb, sign);
+      }
+
+      data.push({
+        time:  (this._bars[i].Date || this._bars[i].date || '').slice(0, 10),
+        value,
+        color,
+      });
+    }
+    return data;
+  }
+
+  /**
+   * Per-bar rgba(...) color from a signed ATR-normalized slope alone — no
+   * reference to the line's own history (contrast with _curveColor above,
+   * which normalizes against this line's own running-peak slope). Rising
+   * fades in toward SLOPE_UP_RGB, falling toward SLOPE_DOWN_RGB, near-zero
+   * stays at SLOPE_FLAT_RGB; intensity saturates at |normSlope| = scale.
+   */
+  _slopeColor(normSlope, scale) {
+    const s = scale > 0 ? scale : 1;
+    const t = Math.min(Math.abs(normSlope) / s, 1);
+    const hot = normSlope > 0 ? SLOPE_UP_RGB : normSlope < 0 ? SLOPE_DOWN_RGB : SLOPE_FLAT_RGB;
+    const [nr, ng, nb] = SLOPE_FLAT_RGB;
+    const r = Math.round(nr + (hot[0] - nr) * t);
+    const g = Math.round(ng + (hot[1] - ng) * t);
+    const b = Math.round(nb + (hot[2] - nb) * t);
+    return `rgba(${r},${g},${b},${SLOPE_ALPHA})`;
+  }
+
+  /**
+   * Same as _vwapLine, but with a per-point 'color' field driven purely by
+   * that point's own instantaneous slope — deliberately simpler than
+   * _vwapLineColored: no running-peak tracking, no "how far has this line
+   * settled from its own sharpest move" framing, just the current derivative.
+   * Points before slopeWindow bars (or wherever ATR isn't defined yet) render
+   * as the plain peak/valley identity color instead — there's no slope to
+   * measure yet, so showing an assumed value (even neutral) would be a guess;
+   * the plain color makes clear the algorithm hasn't started yet, same as
+   * _vwapLineColored's own pre-measurement stretch.
+   */
+  _vwapLineSlope(anchorIdx, toIdx, baseRgb, slopeWindow, atrPeriod, slopeScale) {
+    const pvBase  = anchorIdx > 0 ? this._cumPV[anchorIdx - 1]  : 0;
+    const volBase = anchorIdx > 0 ? this._cumVol[anchorIdx - 1] : 0;
+    const atr = this._getAtr(atrPeriod);
+    const data = [];
+    for (let i = anchorIdx; i <= toIdx; i++) {
+      const vol = this._cumVol[i] - volBase;
+      if (vol <= 0) continue;
+      const value = (this._cumPV[i] - pvBase) / vol;
+      const pointIdx = data.length;
+
+      let normSlope = 0;
+      let known = false;
+      if (pointIdx >= slopeWindow) {
+        const atrVal = atr[i];
+        if (atrVal > 0) {
+          known = true;
+          const prevValue = data[pointIdx - slopeWindow].value;
+          normSlope = (value - prevValue) / slopeWindow / atrVal;
+        }
+      }
+
+      data.push({
+        time:  (this._bars[i].Date || this._bars[i].date || '').slice(0, 10),
+        value,
+        color: known ? this._slopeColor(normSlope, slopeScale) : this._identityColor(baseRgb),
+      });
     }
     return data;
   }
@@ -515,7 +771,7 @@ export class DynamicVWAPEngine {
     }
 
     // ── Generic anchor pools (OB / BoS / CHoCH / gap / peaks / valleys) ───
-    for (const pool of Object.values(this._anchorPools)) {
+    for (const [key, pool] of Object.entries(this._anchorPools)) {
       const active = [];
       for (let i = pool.events.length - 1; i >= 0; i--) {
         const ev = pool.events[i];
@@ -524,9 +780,36 @@ export class DynamicVWAPEngine {
         // eb (end_bar): freeze the line at this bar rather than extending to n
         active.push({ ab: ev.anchor_bar, toIdx: ev.eb !== undefined ? Math.min(ev.eb, n) : n });
       }
+      // Per-point coloring — one of the merged 'styling' choices (see CURVE_*/
+      // SLOPE_* constants above and _anchorPoolStyle) — overrides the pool's flat
+      // series color when that's what this config's own styling picked.
+      const isPeak   = /^peak_c\d+$/.test(key);
+      const isValley = /^valley_c\d+$/.test(key);
+      const styleVal   = isPeak ? this._peaksStyle : isValley ? this._valleysStyle : null;
+      const curveStyle = styleVal === 'curve_opacity' ? 'opacity'
+                        : styleVal === 'curve_heatmap' ? 'heatmap'
+                        : 'none';
+      const isSlope    = styleVal === 'slope_gradient';
+      const curveKind  = isPeak ? 'peak' : isValley ? 'valley' : null;
+      const curveParams = isPeak ? this._peaksCurveParams : this._valleysCurveParams;
       for (let i = 0; i < pool.series.length; i++) {
         const item = active[i];
-        pool.series[i].setData(item !== undefined ? this._vwapLine(item.ab, item.toIdx) : []);
+        if (item === undefined) {
+          pool.series[i].setData([]);
+        } else if (isSlope) {
+          pool.series[i].setData(this._vwapLineSlope(
+            item.ab, item.toIdx, CURVE_BASE_RGB[curveKind],
+            curveParams.slopeWindow, curveParams.atrPeriod, curveParams.slopeScale,
+          ));
+        } else if (curveStyle !== 'none') {
+          pool.series[i].setData(this._vwapLineColored(
+            item.ab, item.toIdx, curveStyle,
+            CURVE_BASE_RGB[curveKind], CURVE_HOT_RGB[curveKind],
+            curveParams.slopeWindow, curveParams.atrPeriod,
+          ));
+        } else {
+          pool.series[i].setData(this._vwapLine(item.ab, item.toIdx));
+        }
       }
     }
 

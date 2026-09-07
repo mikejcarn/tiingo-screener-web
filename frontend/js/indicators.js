@@ -14,9 +14,17 @@ const PARAM_ENUMS = {
   indicator_color: ['StDev', 'QQEMOD', 'ZScore', 'RSI', 'WAE', 'supertrend', 'TTM_squeeze', 'banker_RSI', 'RelVolume', 'aVWAPStDev'],
   centreline: ['peaks_valleys_avg', 'gaps_avg', 'OB_avg', 'SMA'],
   mode: ['combined', 'bullish', 'bearish'],
-  styling: ['shades', 'highlight_first', 'grayscale'],
+  // aVWAP_peaks/aVWAP_valleys' own 'styling' — one merged dropdown covering the
+  // rank-based multi-config schemes, the two curve-to-straight schemes
+  // (curve_opacity/curve_heatmap, relative to a line's own history), and
+  // slope_gradient (instantaneous slope, no history) — so none of these can
+  // independently fight over the same lines' color the way separate 'styling'
+  // + 'curve_color' params used to.
+  styling: ['shades', 'highlight_first', 'grayscale', 'curve_opacity', 'curve_heatmap', 'slope_gradient'],
   anchor_type: ['peak', 'valley'],
   rank_by: ['volfrac', 'volume'],
+  // aVWAP_minmax's own chained-line coloring — a separate param on a indicator
+  // that has no rank-based 'styling' dropdown of its own, so no merge needed there.
   chain_curve_color: ['none', 'opacity', 'heatmap'],
 };
 
@@ -31,6 +39,9 @@ const PARAM_ENUM_LABELS = {
   none: 'None (flat red/teal)',
   opacity: 'Opacity Fade (red/teal)',
   heatmap: 'Heatmap (hot -> cool)',
+  curve_opacity: 'Curve-to-Straight: Opacity Fade',
+  curve_heatmap: 'Curve-to-Straight: Heatmap',
+  slope_gradient: 'Slope Gradient (up/down)',
 };
 
 
