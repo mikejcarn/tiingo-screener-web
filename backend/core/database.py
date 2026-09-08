@@ -8,6 +8,10 @@ import pandas as pd
 
 DB_PATH = Path(__file__).parent.parent.parent / "data" / "screener.db"
 
+# Max pages reclaimed per PRAGMA incremental_vacuum call (see delete_indicators)
+# — keeps that call fast and bounded regardless of how many rows were deleted.
+_VACUUM_PAGE_LIMIT = 20000
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ohlcv (
     ticker    TEXT NOT NULL,
@@ -186,9 +190,15 @@ def _conn():
     of them need to change, since they already all use the `with` form.
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH, timeout=30)
+    # 120s, not 30s — delete_indicators' incremental_vacuum pass (see its own
+    # docstring) can legitimately hold the write lock for a while on a
+    # multi-GB table; a short timeout turns that into a spurious "database is
+    # locked" for anything else that touches the db while it's running,
+    # rather than just waiting its turn. Single-user local app, so waiting
+    # longer costs nothing a user would notice; erroring out does.
+    con = sqlite3.connect(DB_PATH, timeout=120)
     con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA busy_timeout=30000")
+    con.execute("PRAGMA busy_timeout=120000")
     try:
         yield con
         con.commit()
@@ -518,11 +528,23 @@ def delete_indicators(ind_conf_id: Optional[int] = None,
         # PRAGMA incremental_vacuum yields one result ROW PER PAGE freed —
         # it only actually frees a page each time the statement is stepped.
         # execute() alone steps it once (reclaiming a single page); fetchall()
-        # is what drains every step and reclaims everything, the same way the
-        # sqlite3 CLI does it automatically. Confirmed by measurement: without
-        # this, a delete of ~330K rows only ever gave back 1 page.
+        # is what drains steps and reclaims pages, the same way the sqlite3
+        # CLI does it automatically.
+        #
+        # Bounded to _VACUUM_PAGE_LIMIT pages per call, not unlimited — an
+        # unbounded fetchall() here was the actual cause of a real "database
+        # is locked" + fully-unresponsive-server incident: sqlite3's PRAGMA
+        # incremental_vacuum doesn't release the GIL between steps, so
+        # draining hundreds of thousands of freed pages (a large delete's
+        # worth) in one fetchall() call blocked the ENTIRE process — not just
+        # this request — for minutes, which is what made a second, unrelated
+        # write (clearing indicator run history, in that incident) time out
+        # waiting for the lock. A capped call finishes in well under a
+        # second; any pages left on the freelist beyond the cap get reclaimed
+        # by the next delete's own call (or a future manual VACUUM) instead —
+        # nothing is lost, just deferred.
         with _conn() as con:
-            con.execute("PRAGMA incremental_vacuum").fetchall()
+            con.execute(f"PRAGMA incremental_vacuum({_VACUUM_PAGE_LIMIT})").fetchall()
     return deleted
 
 
