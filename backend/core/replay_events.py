@@ -703,9 +703,13 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'peaks_curve_slope_window': int(peaks_cfg.get('curve_slope_window', 5)),
         'peaks_curve_atr_period':   int(peaks_cfg.get('curve_atr_period', 14)),
         'peaks_slope_scale':        float(peaks_cfg.get('slope_scale', 0.15)),
+        'peaks_slope_alpha_min':    float(peaks_cfg.get('slope_alpha_min', 0.15)),
+        'peaks_slope_alpha_max':    float(peaks_cfg.get('slope_alpha_max', 0.85)),
         'valleys_curve_slope_window': int(valleys_cfg.get('curve_slope_window', 5)),
         'valleys_curve_atr_period':   int(valleys_cfg.get('curve_atr_period', 14)),
         'valleys_slope_scale':        float(valleys_cfg.get('slope_scale', 0.15)),
+        'valleys_slope_alpha_min':    float(valleys_cfg.get('slope_alpha_min', 0.15)),
+        'valleys_slope_alpha_max':    float(valleys_cfg.get('slope_alpha_max', 0.85)),
         # Segment indicators — horizontal line events with start/end bar + price
         'fvg': _extract_fvg_segments(df, ind_params.get('FVG',        {})),
         'ob':  _extract_ob_segments(df,  ind_params.get('OB',         {})),

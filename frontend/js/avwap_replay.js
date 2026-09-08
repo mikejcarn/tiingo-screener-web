@@ -71,7 +71,14 @@ const _PER_POINT_STYLES = new Set(['curve_opacity', 'curve_heatmap', 'slope_grad
 const SLOPE_UP_RGB   = CURVE_BULL_RGB;    // rising
 const SLOPE_DOWN_RGB = CURVE_BEAR_RGB;    // falling
 const SLOPE_FLAT_RGB = CURVE_SETTLE_RGB;  // ~zero slope
-const SLOPE_ALPHA    = 0.85;
+// Alpha scales with steepness too, not just hue — flat stretches fade toward
+// near-transparent "holes" instead of solid gray blobs, so a glance at the
+// line's opacity alone tells you whether anything is happening there. These
+// are just fallback defaults used in load() when a config doesn't set its own
+// slope_alpha_min/slope_alpha_max — see aVWAP_peaks.py/aVWAP_valleys.py's own
+// param, which is what actually drives it per-config.
+const SLOPE_ALPHA_MAX_DEFAULT = 0.85;
+const SLOPE_ALPHA_MIN_DEFAULT = 0.15;
 
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
@@ -424,15 +431,21 @@ export class DynamicVWAPEngine {
     // tuning knobs, only used when the style is one of the three per-point ones.
     this._peaksStyle   = events.peaks_style   || 'shades';
     this._valleysStyle = events.valleys_style || 'shades';
+    // ?? (not ||) for the alpha bounds — 0 is a meaningful, deliberate choice
+    // (fully transparent "holes" at alphaMin) that || would wrongly discard.
     this._peaksCurveParams = {
       slopeWindow: events.peaks_curve_slope_window  || 5,
       atrPeriod:   events.peaks_curve_atr_period    || 14,
       slopeScale:  events.peaks_slope_scale         || 0.15,
+      alphaMin:    events.peaks_slope_alpha_min     ?? SLOPE_ALPHA_MIN_DEFAULT,
+      alphaMax:    events.peaks_slope_alpha_max     ?? SLOPE_ALPHA_MAX_DEFAULT,
     };
     this._valleysCurveParams = {
       slopeWindow: events.valleys_curve_slope_window || 5,
       atrPeriod:   events.valleys_curve_atr_period    || 14,
       slopeScale:  events.valleys_slope_scale         || 0.15,
+      alphaMin:    events.valleys_slope_alpha_min     ?? SLOPE_ALPHA_MIN_DEFAULT,
+      alphaMax:    events.valleys_slope_alpha_max     ?? SLOPE_ALPHA_MAX_DEFAULT,
     };
     this._atrCache = {};
 
@@ -624,9 +637,11 @@ export class DynamicVWAPEngine {
    * reference to the line's own history (contrast with _curveColor above,
    * which normalizes against this line's own running-peak slope). Rising
    * fades in toward SLOPE_UP_RGB, falling toward SLOPE_DOWN_RGB, near-zero
-   * stays at SLOPE_FLAT_RGB; intensity saturates at |normSlope| = scale.
+   * stays at SLOPE_FLAT_RGB; intensity (both hue and alpha) saturates at
+   * |normSlope| = scale, so flat stretches don't just gray out — they fade
+   * toward near-transparent, leaving visible "holes" where nothing's moving.
    */
-  _slopeColor(normSlope, scale) {
+  _slopeColor(normSlope, scale, alphaMin, alphaMax) {
     const s = scale > 0 ? scale : 1;
     const t = Math.min(Math.abs(normSlope) / s, 1);
     const hot = normSlope > 0 ? SLOPE_UP_RGB : normSlope < 0 ? SLOPE_DOWN_RGB : SLOPE_FLAT_RGB;
@@ -634,7 +649,8 @@ export class DynamicVWAPEngine {
     const r = Math.round(nr + (hot[0] - nr) * t);
     const g = Math.round(ng + (hot[1] - ng) * t);
     const b = Math.round(nb + (hot[2] - nb) * t);
-    return `rgba(${r},${g},${b},${SLOPE_ALPHA})`;
+    const alpha = (alphaMin + (alphaMax - alphaMin) * t).toFixed(2);
+    return `rgba(${r},${g},${b},${alpha})`;
   }
 
   /**
@@ -648,7 +664,7 @@ export class DynamicVWAPEngine {
    * the plain color makes clear the algorithm hasn't started yet, same as
    * _vwapLineColored's own pre-measurement stretch.
    */
-  _vwapLineSlope(anchorIdx, toIdx, baseRgb, slopeWindow, atrPeriod, slopeScale) {
+  _vwapLineSlope(anchorIdx, toIdx, baseRgb, slopeWindow, atrPeriod, slopeScale, alphaMin, alphaMax) {
     const pvBase  = anchorIdx > 0 ? this._cumPV[anchorIdx - 1]  : 0;
     const volBase = anchorIdx > 0 ? this._cumVol[anchorIdx - 1] : 0;
     const atr = this._getAtr(atrPeriod);
@@ -673,7 +689,7 @@ export class DynamicVWAPEngine {
       data.push({
         time:  (this._bars[i].Date || this._bars[i].date || '').slice(0, 10),
         value,
-        color: known ? this._slopeColor(normSlope, slopeScale) : this._identityColor(baseRgb),
+        color: known ? this._slopeColor(normSlope, slopeScale, alphaMin, alphaMax) : this._identityColor(baseRgb),
       });
     }
     return data;
@@ -800,6 +816,7 @@ export class DynamicVWAPEngine {
           pool.series[i].setData(this._vwapLineSlope(
             item.ab, item.toIdx, CURVE_BASE_RGB[curveKind],
             curveParams.slopeWindow, curveParams.atrPeriod, curveParams.slopeScale,
+            curveParams.alphaMin, curveParams.alphaMax,
           ));
         } else if (curveStyle !== 'none') {
           pool.series[i].setData(this._vwapLineColored(

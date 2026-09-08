@@ -12,6 +12,8 @@ param_labels = {
     'curve_slope_window': 'Slope Smoothing (bars)',
     'curve_atr_period':   'Slope ATR Period',
     'slope_scale':        'Slope Saturation Scale (ATR/bar)',
+    'slope_alpha_min':    'Slope Gradient Min Opacity (flat)',
+    'slope_alpha_max':    'Slope Gradient Max Opacity (steep)',
 }
 
 param_descriptions = {
@@ -59,6 +61,13 @@ param_descriptions = {
                     "ATR/bar even at real swing highs/lows — a scale of 1.0 would leave almost "
                     "every line looking flat gray. Raise it if lines look maxed-out too often; "
                     "lower it if they look faint. Only used when styling is 'slope_gradient'.",
+    'slope_alpha_min': "Line opacity at zero slope (perfectly flat) for slope_gradient — "
+                    "lower this to fade flat stretches toward near-transparent 'holes' so only "
+                    "moving sections of the line stand out; raise it (up to slope_alpha_max) to "
+                    "keep flat stretches just as visible as steep ones, same as the other "
+                    "styling modes. Only used when styling is 'slope_gradient'.",
+    'slope_alpha_max': "Line opacity at slope_scale (fully saturated steepness) for "
+                    "slope_gradient. Only used when styling is 'slope_gradient'.",
 }
 
 
@@ -69,6 +78,8 @@ def calculate_aVWAP_peaks(
     curve_slope_window=5,
     curve_atr_period=14,
     slope_scale=0.15,
+    slope_alpha_min=0.15,
+    slope_alpha_max=0.85,
 ):
     """
     Anchor aVWAPs at detected swing peaks.
@@ -89,12 +100,14 @@ def calculate_aVWAP_peaks(
                             gray instead of fading alpha; not rank-tiered
         'slope_gradient'  — colored by instantaneous slope alone (no self-history/decay):
                             aqua when rising, red when falling, neutral gray when flat,
-                            intensity scaled by steepness up to slope_scale; not rank-tiered
+                            intensity (hue AND opacity) scaled by steepness between
+                            slope_alpha_min/slope_alpha_max up to slope_scale; not rank-tiered
 
-    curve_slope_window / curve_atr_period / slope_scale — see param_descriptions. Only
-        meaningful when styling is 'curve_opacity', 'curve_heatmap', or 'slope_gradient'.
+    curve_slope_window / curve_atr_period / slope_scale / slope_alpha_min / slope_alpha_max
+        — see param_descriptions. Only meaningful when styling is 'curve_opacity',
+        'curve_heatmap', or 'slope_gradient' (the alpha params only for 'slope_gradient').
 
-    None of these six params touch this function's DataFrame output — these lines are
+    None of these eight params touch this function's DataFrame output — these lines are
     rendered live by the client-side DynamicVWAPEngine, not from this function's return
     value. They exist only so calculate_indicator accepts them; replay_events.py reads
     the raw values straight from ind_params and forwards them to the JS engine, which
