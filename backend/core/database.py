@@ -171,6 +171,16 @@ CREATE TABLE IF NOT EXISTS flagged_tickers (
     note       TEXT,
     flagged_at TEXT NOT NULL
 );
+
+-- get_scan_run_tickers/delete_scan_run/clear_scan_history all filter scan_results
+-- by run_id with no index backing it — a full table scan on what's likely the
+-- fastest-growing table in the app (one row per ticker per scan run).
+CREATE INDEX IF NOT EXISTS idx_scan_results_run ON scan_results (run_id);
+-- ind_log/scan_log/pipeline_log's own history views all do
+-- ORDER BY ran_at DESC LIMIT n with no index backing the sort.
+CREATE INDEX IF NOT EXISTS idx_ind_log_ran_at      ON ind_log      (ran_at);
+CREATE INDEX IF NOT EXISTS idx_scan_log_ran_at     ON scan_log     (ran_at);
+CREATE INDEX IF NOT EXISTS idx_pipeline_log_ran_at ON pipeline_log (ran_at);
 """
 
 
@@ -199,6 +209,13 @@ def _conn():
     con = sqlite3.connect(DB_PATH, timeout=120)
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=120000")
+    # NORMAL (not the sqlite3 default FULL) — SQLite's own recommended pairing
+    # for WAL mode: WAL already guarantees the database file itself can never
+    # be corrupted by a crash, so FULL's extra fsync-every-commit only buys
+    # protection against losing the last few not-yet-checkpointed commits in
+    # an actual power-loss/OS-crash — a non-issue for a local single-user app,
+    # and a real cost given how many small writes this app does.
+    con.execute("PRAGMA synchronous=NORMAL")
     try:
         yield con
         con.commit()
