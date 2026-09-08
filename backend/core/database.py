@@ -1,3 +1,4 @@
+import contextlib
 import sqlite3
 import json
 from datetime import datetime
@@ -169,12 +170,33 @@ CREATE TABLE IF NOT EXISTS flagged_tickers (
 """
 
 
-def _conn() -> sqlite3.Connection:
+@contextlib.contextmanager
+def _conn():
+    """
+    Every call site uses `with _conn() as con: ...` — but sqlite3.Connection's
+    own context manager protocol only commits/rolls back the transaction on
+    exit, it never closes the connection. With ~90 call sites across the
+    codebase and none of them calling .close(), every single db operation the
+    app ever made was leaking an open connection. In WAL mode that's what let
+    the WAL file grow to 6+GB (bigger than the main db) instead of being
+    checkpointed back down — a pile of never-closed connections holds old
+    snapshots open indefinitely, which blocks WAL checkpointing, which is what
+    was actually behind the "database is locked" errors. Wrapping this as a
+    real generator-based context manager fixes every call site at once — none
+    of them need to change, since they already all use the `with` form.
+    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=30)
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=30000")
-    return con
+    try:
+        yield con
+        con.commit()
+    except BaseException:
+        con.rollback()
+        raise
+    finally:
+        con.close()
 
 
 def init_db() -> None:
