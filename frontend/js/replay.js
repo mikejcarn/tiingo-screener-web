@@ -179,6 +179,7 @@ function _connectWS(ticker, timeframe, indConf) {
       // Dynamic-engine anchor pools (e.g. aVWAP_minmax) only exist after this —
       // re-apply hidden state now so persisted toggles reach them too.
       _applyIndicatorVisibility();
+      chart.fitContentReliably();
       return;
     }
     if (msg.type === 'error') {

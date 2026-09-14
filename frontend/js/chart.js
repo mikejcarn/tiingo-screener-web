@@ -536,6 +536,49 @@ export class ChartManager {
     if (this._chart) this._chart.timeScale().fitContent();
   }
 
+  /**
+   * fitContent(), but self-verifying instead of trusting the library blindly.
+   *
+   * lightweight-charts has a long-standing upstream bug (e.g. tradingview/
+   * lightweight-charts#966, #814, #251): fitContent() called soon after fresh
+   * setData() on a (re)created chart can fit to a range far short of the real
+   * bar count, and how long it takes to self-correct isn't fixed — it varies
+   * with how much work is happening on the main thread (which is exactly why
+   * a flat setTimeout delay lined up for one indicator styling but not a
+   * heavier one). So instead of guessing a delay, check the result against
+   * our own known bar count (this._N) and keep retrying — a real redraw
+   * (reveal) plus fitContent — on a backoff schedule until it actually
+   * matches, or we give up after ~2s (at which point content is at least
+   * approximately right, just not pixel-perfect).
+   */
+  fitContentReliably() {
+    if (!this._chart || this._N === 0 || !this._bars.length) return;
+    const ts = this._chart.timeScale();
+    // Compare against the real first/last dates, not just the logical index
+    // span — lightweight-charts can report a logical range that already
+    // covers every bar while still mapping the low end of it to the wrong
+    // calendar date (a corrupted index, not just a truncated one), which a
+    // span-only check would miss entirely.
+    const wantFrom = (this._bars[0].Date || this._bars[0].date || '').slice(0, 10);
+    const wantTo   = (this._bars[this._bars.length - 1].Date || this._bars[this._bars.length - 1].date || '').slice(0, 10);
+    const delays = [0, 60, 150, 300, 600, 1000];
+    let i = 0;
+    const attempt = () => {
+      // A fast ticker/config switch can destroy() this chart (chart.js's own
+      // this._chart -> null) while an earlier attempt's setTimeout is still
+      // pending — bail out instead of calling into a removed chart.
+      if (!this._chart) return;
+      this.reveal(this._curN);
+      ts.fitContent();
+      const range = ts.getVisibleRange();
+      i++;
+      if ((!range || range.from !== wantFrom || range.to !== wantTo) && i < delays.length) {
+        setTimeout(attempt, delays[i]);
+      }
+    };
+    attempt();
+  }
+
   logicalAtX(x) {
     if (!this._chart) return null;
     return this._chart.timeScale().coordinateToLogical(x);
