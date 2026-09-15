@@ -121,6 +121,14 @@ def _extract_fvg_segments(df: pd.DataFrame, params: dict = None) -> list:
     if params is None:
         params = {}
     n = len(df)
+    fill_opacity = float(params.get('fill_opacity', 0.32))
+    # An unmitigated FVG has no natural end bar, so it used to always extend
+    # to n - 1 — every never-filled gap sprawling to the current bar regardless
+    # of how old it is. max_extend_bars instead caps how far past its own
+    # formation an active zone is drawn, so it stays a marker of where the gap
+    # happened rather than an implied "still relevant all the way to today"
+    # zone. None (blank in the UI) restores the old unlimited behavior.
+    max_extend = params.get('max_extend_bars', 30)
     events = []
     for idx in df[df['FVG'] != 0].index:
         v    = df.at[idx, 'FVG']
@@ -128,17 +136,20 @@ def _extract_fvg_segments(df: pd.DataFrame, params: dict = None) -> list:
         low  = df.at[idx, 'FVG_Low']  if 'FVG_Low'  in df.columns else None
         if high is None or low is None or pd.isna(high) or pd.isna(low):
             continue
-        # Bull FVG: line at Top (= low of bar i+1, upper gap edge) — the first
-        # level price tests when retracing into the gap.
-        # Bear FVG: line at Bottom (= high of bar i+1, lower gap edge).
+        # 'p' keeps the single-edge price a bull/bear FVG is conventionally
+        # watched at (Top for bull, Bottom for bear) as a legacy fallback
+        # value; 'hi'/'lo' are the real gap bounds, used by the frontend's
+        # FVG custom series to draw the actual zone instead of one edge line.
         price = float(high) if v > 0 else float(low)
         mit   = df.at[idx, 'FVG_Mitigated_Index'] if 'FVG_Mitigated_Index' in df.columns else 0
         if pd.isna(mit) or mit == 0:
-            end, is_mit = n - 1, False
+            end = n - 1 if max_extend is None else min(n - 1, int(idx) + int(max_extend))
+            is_mit = False
         else:
             end, is_mit = int(mit), True
         events.append({
             's': int(idx), 'e': end, 'p': price,
+            'hi': float(high), 'lo': float(low), 'fo': fill_opacity,
             'm': is_mit, 'dir': 'bull' if v > 0 else 'bear',
         })
     return _add_displaced_at(
@@ -208,6 +219,7 @@ def _extract_ob_segments(df: pd.DataFrame, params: dict = None) -> list:
     if params is None:
         params = {}
     n = len(df)
+    fill_opacity = float(params.get('fill_opacity', 0.32))
     events = []
     for idx in df[df['OB'] != 0].index:
         v    = df.at[idx, 'OB']
@@ -215,14 +227,22 @@ def _extract_ob_segments(df: pd.DataFrame, params: dict = None) -> list:
         low  = df.at[idx, 'OB_Low']  if 'OB_Low'  in df.columns else None
         if high is None or low is None or pd.isna(high) or pd.isna(low):
             continue
-        price = float((high + low) / 2)
         mit   = df.at[idx, 'OB_Mitigated_Index'] if 'OB_Mitigated_Index' in df.columns else 0
         if pd.isna(mit) or mit == 0:
             end, is_mit = n - 1, False
         else:
             end, is_mit = int(mit), True
         events.append({
-            's': int(idx), 'e': end, 'p': price,
+            # 'hi'/'lo' are the real zone bounds — kept alongside the legacy
+            # midpoint 'p' (still a flat fallback value some older paths may
+            # read) so the frontend's OB custom series can draw the actual
+            # zone height instead of a fixed-pixel-width line standing in
+            # for it. 'fo' (fill_opacity) rides along per-event rather than
+            # as a separate top-level field, same as 'dir'/'m' — simplest
+            # fit for the existing flat-list-of-events shape the frontend
+            # already expects for every segment type.
+            's': int(idx), 'e': end, 'p': float((high + low) / 2),
+            'hi': float(high), 'lo': float(low), 'fo': fill_opacity,
             'm': is_mit, 'dir': 'bull' if v > 0 else 'bear',
         })
     periods = int(params.get('periods', 0))

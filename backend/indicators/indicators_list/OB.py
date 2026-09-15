@@ -2,7 +2,22 @@ import pandas as pd
 
 display_name = "Order Blocks (OB)"
 
-def calculate_ob(df, periods=25, max_mitigated=None, max_unmitigated=None):
+param_labels = {
+    'periods':         'Swing Window (periods)',
+    'max_mitigated':   'Max Mitigated Zones Shown',
+    'max_unmitigated': 'Max Unmitigated Zones Shown',
+    'fill_opacity':    'Zone Fill Opacity',
+}
+
+param_descriptions = {
+    'fill_opacity': "Opacity of an active (unmitigated) order block's filled zone on the "
+                    "chart, 0-1. A mitigated zone is drawn at a fixed fraction of this "
+                    "value, so it stays visually subordinate to still-active zones no "
+                    "matter what this is set to. Display-only — has no effect on OB "
+                    "detection itself.",
+}
+
+def calculate_ob(df, periods=25, max_mitigated=None, max_unmitigated=None, fill_opacity=0.32):
     from smartmoneyconcepts import smc
 
     df = df.rename(columns={

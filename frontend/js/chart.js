@@ -7,12 +7,25 @@
  *   Supertrend — synthetic two-series split: teal when uptrend (lower band),
  *              red when downtrend (upper band). Computed from Supertrend_Direction.
  *   Dynamic  — aVWAP lines (peaks, valleys, QQEMOD) via DynamicVWAPEngine.
- *   Segments — FVG, OB, BoS/CHoCH, Liquidity horizontal line segments.
+ *   Segments — BoS/CHoCH, Liquidity, gap horizontal line segments (genuinely
+ *              single-price-level events, no zone to recover).
  *              One pre-allocated LineSeries per event; dirty-checked per bar.
+ *   Zones    — OB, FVG: real filled zone rectangles via a custom series each
+ *              (real price height, not a fixed-pixel-thickness line) — see
+ *              ob_zone_series.js / fvg_zone_series.js, and ZONE_SERIES below.
  */
 
 import { DynamicVWAPEngine } from './avwap_replay.js';
+import { OBZoneSeries } from './ob_zone_series.js';
+import { FVGZoneSeries } from './fvg_zone_series.js';
 import { cssVar, onThemeChange } from './theme.js';
+
+// Segment types with a real zone (top/bottom bounds) get a custom series that
+// draws the actual filled rectangle instead of the flat-line-at-one-price
+// hack every segment type used to use — see ob_zone_series.js/fvg_zone_series.js
+// docstrings. bos/liq are genuinely single-price-level lines (no second bound
+// to recover), so they stay on the plain LineSeries path below.
+const ZONE_SERIES = { ob: OBZoneSeries, fvg: FVGZoneSeries };
 
 const C_UP   = 'rgba(38,166,154,1)';
 const C_DOWN = 'rgba(239,83,80,1)';
@@ -24,11 +37,10 @@ const DIV_BEAR         = 'rgba(255,50,50,1)';
 const DIV_BEAR_HIDDEN  = 'rgba(255,50,50,0.55)';
 
 // Segment colours
+// fvg/ob no longer appear here — both are zone types (see ZONE_SERIES below),
+// styled from their own event data (dir/mitigated/fillOpacity) inside
+// ob_zone_series.js/fvg_zone_series.js instead of this flat color table.
 const SEG_COLORS = {
-  fvg_bull:   'rgba(38,166,154,0.7)',
-  fvg_bear:   'rgba(239,83,80,0.7)',
-  ob_bull:    'rgba(38,166,154,0.5)',
-  ob_bear:    'rgba(239,83,80,0.5)',
   bos_bull:   'rgba(38,166,154,0.45)',
   bos_bear:   'rgba(239,83,80,0.45)',
   choch_bull: 'rgba(38,166,154,0.9)',
@@ -40,8 +52,8 @@ const SEG_COLORS = {
 };
 
 // Segment line widths and styles (match original app)
-const SEG_WIDTH  = { fvg: 1, ob: 8, bos: 1, liq: 1, gap: 1 };
-const SEG_LSTYLE = { fvg: 2, ob: 0, bos: 0, liq: 0, gap: 0 };  // 0=solid, 2=dashed
+const SEG_WIDTH  = { bos: 1, liq: 1, gap: 1 };
+const SEG_LSTYLE = { bos: 0, liq: 0, gap: 0 };  // 0=solid, 2=dashed
 
 export class ChartManager {
   constructor(container) {
@@ -316,8 +328,6 @@ export class ChartManager {
   // ── Segment helpers ──────────────────────────────────────────────────────
 
   _segColor(type, ev) {
-    if (type === 'fvg')  return ev.dir === 'bull' ? SEG_COLORS.fvg_bull  : SEG_COLORS.fvg_bear;
-    if (type === 'ob')   return ev.dir === 'bull' ? SEG_COLORS.ob_bull   : SEG_COLORS.ob_bear;
     if (type === 'liq')  return ev.dir === 'bull' ? SEG_COLORS.liq_bull  : SEG_COLORS.liq_bear;
     if (type === 'gap')  return ev.dir === 'bull' ? SEG_COLORS.gap_bull  : SEG_COLORS.gap_bear;
     if (type === 'bos')  {
@@ -340,15 +350,23 @@ export class ChartManager {
       this._segSeries[type] = [];
       this._segKeys[type]   = new Array(evts.length).fill(-2);
 
+      const ZoneSeriesClass = ZONE_SERIES[type];
       for (const ev of evts) {
-        this._segSeries[type].push(this._chart.addLineSeries({
-          color:                  this._segColor(type, ev),
-          lineWidth:              SEG_WIDTH[type]  || 1,
-          lineStyle:              SEG_LSTYLE[type] || 0,
-          priceLineVisible:       false,
-          lastValueVisible:       false,
-          crosshairMarkerVisible: false,
-        }));
+        if (ZoneSeriesClass) {
+          this._segSeries[type].push(this._chart.addCustomSeries(new ZoneSeriesClass(), {
+            priceLineVisible: false,
+            lastValueVisible: false,
+          }));
+        } else {
+          this._segSeries[type].push(this._chart.addLineSeries({
+            color:                  this._segColor(type, ev),
+            lineWidth:              SEG_WIDTH[type]  || 1,
+            lineStyle:              SEG_LSTYLE[type] || 0,
+            priceLineVisible:       false,
+            lastValueVisible:       false,
+            crosshairMarkerVisible: false,
+          }));
+        }
       }
     }
   }
@@ -382,10 +400,18 @@ export class ChartManager {
         } else {
           const startTime = (this._bars[ev.s].Date || this._bars[ev.s].date || '').slice(0, 10);
           const endTime   = (this._bars[key].Date  || this._bars[key].date  || '').slice(0, 10);
-          series[i].setData([
-            { time: startTime, value: ev.p },
-            { time: endTime,   value: ev.p },
-          ]);
+          if (ZONE_SERIES[type]) {
+            const fillOpacity = ev.fo ?? 0.32;
+            series[i].setData([
+              { time: startTime, high: ev.hi, low: ev.lo, dir: ev.dir, mitigated: !!ev.m, fillOpacity },
+              { time: endTime,   high: ev.hi, low: ev.lo, dir: ev.dir, mitigated: !!ev.m, fillOpacity },
+            ]);
+          } else {
+            series[i].setData([
+              { time: startTime, value: ev.p },
+              { time: endTime,   value: ev.p },
+            ]);
+          }
         }
       }
     }
