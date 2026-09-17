@@ -7,25 +7,29 @@
  *   Supertrend — synthetic two-series split: teal when uptrend (lower band),
  *              red when downtrend (upper band). Computed from Supertrend_Direction.
  *   Dynamic  — aVWAP lines (peaks, valleys, QQEMOD) via DynamicVWAPEngine.
- *   Segments — BoS/CHoCH, Liquidity, gap horizontal line segments (genuinely
+ *   Segments — BoS/CHoCH, Liquidity horizontal line segments (genuinely
  *              single-price-level events, no zone to recover).
  *              One pre-allocated LineSeries per event; dirty-checked per bar.
- *   Zones    — OB, FVG: real filled zone rectangles via a custom series each
- *              (real price height, not a fixed-pixel-thickness line) — see
- *              ob_zone_series.js / fvg_zone_series.js, and ZONE_SERIES below.
+ *   Zones    — OB, FVG, Gap: real filled zone rectangles via a custom series
+ *              each (real price height, not a fixed-pixel-thickness line),
+ *              each styled distinctly (OB solid, FVG dashed+midline, Gap
+ *              hatched) — see ob_zone_series.js / fvg_zone_series.js /
+ *              gap_zone_series.js, and ZONE_SERIES below.
  */
 
 import { DynamicVWAPEngine } from './avwap_replay.js';
 import { OBZoneSeries } from './ob_zone_series.js';
 import { FVGZoneSeries } from './fvg_zone_series.js';
+import { GapZoneSeries } from './gap_zone_series.js';
 import { cssVar, onThemeChange } from './theme.js';
 
 // Segment types with a real zone (top/bottom bounds) get a custom series that
 // draws the actual filled rectangle instead of the flat-line-at-one-price
-// hack every segment type used to use — see ob_zone_series.js/fvg_zone_series.js
-// docstrings. bos/liq are genuinely single-price-level lines (no second bound
-// to recover), so they stay on the plain LineSeries path below.
-const ZONE_SERIES = { ob: OBZoneSeries, fvg: FVGZoneSeries };
+// hack every segment type used to use — see ob_zone_series.js/fvg_zone_series.js/
+// gap_zone_series.js docstrings. bos/liq are genuinely single-price-level
+// lines (no second bound to recover), so they stay on the plain LineSeries
+// path below.
+const ZONE_SERIES = { ob: OBZoneSeries, fvg: FVGZoneSeries, gap: GapZoneSeries };
 
 const C_UP   = 'rgba(38,166,154,1)';
 const C_DOWN = 'rgba(239,83,80,1)';
@@ -37,9 +41,10 @@ const DIV_BEAR         = 'rgba(255,50,50,1)';
 const DIV_BEAR_HIDDEN  = 'rgba(255,50,50,0.55)';
 
 // Segment colours
-// fvg/ob no longer appear here — both are zone types (see ZONE_SERIES below),
-// styled from their own event data (dir/mitigated/fillOpacity) inside
-// ob_zone_series.js/fvg_zone_series.js instead of this flat color table.
+// fvg/ob/gap no longer appear here — all three are zone types (see
+// ZONE_SERIES below), styled from their own event data (dir/mitigated/
+// fillOpacity) inside their own ob_zone_series.js/fvg_zone_series.js/
+// gap_zone_series.js instead of this flat color table.
 const SEG_COLORS = {
   bos_bull:   'rgba(38,166,154,0.45)',
   bos_bear:   'rgba(239,83,80,0.45)',
@@ -47,13 +52,11 @@ const SEG_COLORS = {
   choch_bear: 'rgba(239,83,80,0.9)',
   liq_bull:   'rgba(255,165,0,0.8)',
   liq_bear:   'rgba(255,165,0,0.8)',
-  gap_bull:   'rgba(38,166,154,0.4)',
-  gap_bear:   'rgba(239,83,80,0.4)',
 };
 
 // Segment line widths and styles (match original app)
-const SEG_WIDTH  = { bos: 1, liq: 1, gap: 1 };
-const SEG_LSTYLE = { bos: 0, liq: 0, gap: 0 };  // 0=solid, 2=dashed
+const SEG_WIDTH  = { bos: 1, liq: 1 };
+const SEG_LSTYLE = { bos: 0, liq: 0 };  // 0=solid, 2=dashed
 
 export class ChartManager {
   constructor(container) {
@@ -329,7 +332,6 @@ export class ChartManager {
 
   _segColor(type, ev) {
     if (type === 'liq')  return ev.dir === 'bull' ? SEG_COLORS.liq_bull  : SEG_COLORS.liq_bear;
-    if (type === 'gap')  return ev.dir === 'bull' ? SEG_COLORS.gap_bull  : SEG_COLORS.gap_bear;
     if (type === 'bos')  {
       const isBos = ev.sig === 'bos' || ev.sig === undefined;
       return ev.dir === 'bull'

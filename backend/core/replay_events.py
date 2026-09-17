@@ -160,11 +160,22 @@ def _extract_fvg_segments(df: pd.DataFrame, params: dict = None) -> list:
 
 
 def _extract_gap_segments(df: pd.DataFrame, params: dict = None) -> list:
+    """
+    Extract price-gap zone events from stored indicator columns — one event
+    per gap, carrying its real high/low bounds so the frontend's Gap custom
+    series can draw the actual zone (a hatched fill, distinct from OB's solid
+    boxes and FVG's dashed-outline-plus-midline treatment) instead of the two
+    separate flat edge lines this used to expand into.
+    """
     if 'Gap_Up' not in df.columns and 'Gap_Down' not in df.columns:
         return []
     if params is None:
         params = {}
     n = len(df)
+    fill_opacity = float(params.get('fill_opacity', 0.32))
+    # See _extract_fvg_segments' identical param — an unmitigated gap has no
+    # natural end bar, so without a cap it sprawls to n - 1 forever.
+    max_extend = params.get('max_extend_bars', 30)
     events = []
 
     for flag_col, high_col, low_col, mit_col, direction in (
@@ -179,33 +190,22 @@ def _extract_gap_segments(df: pd.DataFrame, params: dict = None) -> list:
             if high is None or low is None or pd.isna(high) or pd.isna(low):
                 continue
             mit = df.at[idx, mit_col] if mit_col in df.columns else 0
+            s = int(idx)
             if pd.isna(mit) or mit == 0:
-                end, is_mit = n - 1, False
+                end = n - 1 if max_extend is None else min(n - 1, s + int(max_extend))
+                is_mit = False
             else:
                 end, is_mit = int(mit), True
-            s = int(idx)
-            # One representative event carries both price levels; displacement
-            # applied once per gap, then expanded to upper+lower edge pair.
             events.append({
                 's': s, 'e': end, 'm': is_mit, 'dir': direction,
-                'p': float(high), '_low': float(low),
+                'p': float(high), 'hi': float(high), 'lo': float(low), 'fo': fill_opacity,
             })
 
-    # Apply rolling cap to representative events (one per gap)
-    events = _add_displaced_at(
+    return _add_displaced_at(
         events,
         max_unmitigated=params.get('max_unmitigated'),
         max_mitigated=params.get('max_mitigated'),
     )
-
-    # Expand each gap into two line events (upper and lower edge)
-    final = []
-    for ev in events:
-        low = ev.pop('_low')
-        final.append(ev)
-        lower = {**ev, 'p': low}
-        final.append(lower)
-    return final
 
 
 def _extract_ob_segments(df: pd.DataFrame, params: dict = None) -> list:
@@ -256,14 +256,26 @@ def _extract_ob_segments(df: pd.DataFrame, params: dict = None) -> list:
     )
 
 
-def _extract_bos_choch_segments(df: pd.DataFrame) -> list:
+def _extract_bos_choch_segments(df: pd.DataFrame, params: dict = None) -> list:
     """
     Extract BoS/CHoCH horizontal segment events.
 
     Columns follow the pattern BoS_{sl}, CHoCH_{sl}, BoS_CHoCH_Price_{sl},
     BoS_CHoCH_Break_Index_{sl}.  The segment runs from the structure bar (s)
     to the break bar (e), drawn at the structure price level.
+
+    Unlike FVG/OB/Gap, smc.bos_choch() already discards any signal that never
+    got a confirming break (see its own "remove the ones that aren't broken"
+    step) — so every event here already has a real, finite end bar. There's
+    no unmitigated/mitigated split to make; the only thing worth capping is
+    how many of these (all equally "resolved") lines pile up on screen at
+    once. Reuses _add_displaced_at's rolling-cap mechanism for that, grouping
+    by signal type (bos vs choch) instead of mitigation state — the 'm' field
+    below is repurposed as that grouping key, not a real mitigation flag, but
+    stays harmless: this segment type's own frontend rendering never reads it.
     """
+    if params is None:
+        params = {}
     bos_re   = re.compile(r'^BoS_(\d+)$')
     choch_re = re.compile(r'^CHoCH_(\d+)$')
     swing_lengths = set()
@@ -294,10 +306,14 @@ def _extract_bos_choch_segments(df: pd.DataFrame) -> list:
                 end = min(int(brk), n - 1) if brk > 0 else n - 1
                 events.append({
                     's': int(idx), 'e': end, 'p': float(price),
-                    'm': False, 'dir': 'bull' if v > 0 else 'bear',
+                    'm': sig_type == 'choch', 'dir': 'bull' if v > 0 else 'bear',
                     'sig': sig_type,
                 })
-    return events
+    return _add_displaced_at(
+        events,
+        max_unmitigated=params.get('max_bos_shown'),
+        max_mitigated=params.get('max_choch_shown'),
+    )
 
 
 def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
@@ -750,7 +766,7 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         # Segment indicators — horizontal line events with start/end bar + price
         'fvg': _extract_fvg_segments(df, ind_params.get('FVG',        {})),
         'ob':  _extract_ob_segments(df,  ob_params),
-        'bos': _extract_bos_choch_segments(df),
+        'bos': _extract_bos_choch_segments(df, ind_params.get('BoS_CHoCH', {})),
         'liq': _extract_liquidity_segments(df, ind_params.get('liquidity', {})),
         'gap': _extract_gap_segments(df,  ind_params.get('gaps',       {})),
         'poc': _extract_poc_segments(df),

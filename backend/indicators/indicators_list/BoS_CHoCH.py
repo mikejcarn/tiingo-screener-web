@@ -10,7 +10,8 @@ def _to_list(val):
 
 def calculate_BoS_CHoCH(df, swing_lengths=[25],
                          show_bos=True, show_choch=True,
-                         BoS_swing_lengths=[], CHoCH_swing_lengths=[]):
+                         BoS_swing_lengths=[], CHoCH_swing_lengths=[],
+                         max_bos_shown=None, max_choch_shown=None):
     from smartmoneyconcepts import smc
     BoS_swing_lengths   = _to_list(BoS_swing_lengths)
     CHoCH_swing_lengths = _to_list(CHoCH_swing_lengths)
@@ -66,6 +67,20 @@ def calculate_BoS_CHoCH(df, swing_lengths=[25],
 param_labels = {
     'BoS_swing_lengths':   'BoS_swing_lengths [override]',
     'CHoCH_swing_lengths': 'CHoCH_swing_lengths [override]',
+    'max_bos_shown':       'Max BoS Lines Shown (blank = unlimited)',
+    'max_choch_shown':     'Max CHoCH Lines Shown (blank = unlimited)',
+}
+
+param_descriptions = {
+    'max_bos_shown': "Cap on how many Break of Structure lines are visible on the chart "
+                    "at once, most recent first — older ones are displaced the moment a "
+                    "newer one takes their slot. Unlike FVG/OB/Gap, every BoS/CHoCH line "
+                    "here already has a real, finite end bar (the underlying detector "
+                    "discards any signal that never got a confirming break), so this is "
+                    "purely about how many can pile up on screen, not open-vs-filled. "
+                    "Blank = unlimited (every BoS line ever detected stays visible).",
+    'max_choch_shown': "Same as max_bos_shown, but for Change of Character lines — a "
+                    "separate cap since BoS and CHoCH are tracked independently.",
 }
 
 
