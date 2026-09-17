@@ -5,6 +5,41 @@ from backend.indicators.indicators_list.aVWAP import calculate_avwap
 
 
 display_name = "aVWAP — Order Blocks (OB)"
+
+param_labels = {
+    'periods':           'Swing Window (periods)',
+    'include_bull':      'Include Bullish Anchors',
+    'include_bear':      'Include Bearish Anchors',
+    'include_OB_lines':  'Also Draw OB Zone Boxes',
+    'max_aVWAPs':        'Max Anchors (blank = unlimited)',
+    'max_mitigated':     'Max Mitigated Anchors',
+    'max_unmitigated':   'Max Unmitigated Anchors',
+    'extend_to_end':     'Extend aVWAPs Past Mitigation',
+    'faded':             'Ghost Extension After Mitigation',
+    'fill_opacity':      'OB Zone Box Fill Opacity',
+}
+
+param_descriptions = {
+    'include_OB_lines': "Also emit the same OB/OB_High/OB_Low/OB_Mitigated_Index columns "
+                    "the standalone Order Blocks (OB) indicator produces, so the actual OB "
+                    "zones get drawn as the same filled boxes OB uses on the chart — not "
+                    "just the aVWAP lines anchored from them. If the config also has a "
+                    "standalone OB indicator, that one's own settings (fill_opacity, max "
+                    "mitigated/unmitigated) win for the boxes; otherwise this indicator's "
+                    "own fill_opacity/max_mitigated/max_unmitigated below are used instead, "
+                    "so the boxes stay consistent with whichever OBs actually got a line "
+                    "drawn from them.",
+    'fill_opacity': "Opacity of an active (unmitigated) OB zone box, 0-1. Only takes effect "
+                    "when include_OB_lines is on and there's no separate standalone OB "
+                    "indicator in this config providing its own value. Same meaning as OB's "
+                    "own fill_opacity param.",
+    'max_mitigated':   "Cap on mitigated OB anchors — both which get an aVWAP line drawn "
+                    "and, when include_OB_lines is on (and no standalone OB indicator "
+                    "overrides it), which get a zone box drawn.",
+    'max_unmitigated': "Cap on unmitigated (still-active) OB anchors — same dual effect on "
+                    "lines and, via include_OB_lines, zone boxes as max_mitigated above.",
+}
+
 def calculate_aVWAP_OB(
     df,
     periods=25,
@@ -16,6 +51,7 @@ def calculate_aVWAP_OB(
     max_unmitigated=None,
     extend_to_end=False,
     faded=False,
+    fill_opacity=0.32,
 ):
     """
     Anchor aVWAPs at Order Block bars.
@@ -25,6 +61,9 @@ def calculate_aVWAP_OB(
     include_OB_lines: also output OB horizontal segment columns
     extend_to_end:    if True, aVWAPs run to the last bar (mitigated OBs not truncated)
     faded:            if True, add a ghost extension after the mitigation point
+    fill_opacity:     display-only — see replay_events.extract_events, used for the OB
+                       zone boxes drawn from include_OB_lines when this config has no
+                       separate standalone OB indicator of its own
 
     Output columns:
         aVWAP_OB_bull_c0_{anchor_bar}

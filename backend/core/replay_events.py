@@ -711,6 +711,23 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     # (color is produced by candle_colors with indicator_color='QQEMOD')
     qqemod_events = _extract_qqemod_events(df) if 'color' in df.columns else []
 
+    # OB zone box params — a standalone OB indicator's own settings always win
+    # when present; otherwise, if aVWAP_OB's include_OB_lines put the same
+    # OB/OB_High/OB_Low columns on df, fall back to aVWAP_OB's own
+    # fill_opacity/max_mitigated/max_unmitigated instead of _extract_ob_segments'
+    # hardcoded defaults, so the boxes it draws stay consistent with whichever
+    # OBs actually got an aVWAP line drawn from them.
+    ob_params = ind_params.get('OB', {})
+    if not ob_params:
+        avwap_ob_cfg = ind_params.get('aVWAP_OB', {})
+        if avwap_ob_cfg.get('include_OB_lines'):
+            ob_params = {
+                'periods':         avwap_ob_cfg.get('periods', 25),
+                'fill_opacity':    avwap_ob_cfg.get('fill_opacity', 0.32),
+                'max_mitigated':   avwap_ob_cfg.get('max_mitigated'),
+                'max_unmitigated': avwap_ob_cfg.get('max_unmitigated'),
+            }
+
     return {
         'type':          'replay_events',
         'max_peaks':     0,
@@ -732,7 +749,7 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'valleys_slope_alpha_max':    float(valleys_cfg.get('slope_alpha_max', 0.85)),
         # Segment indicators — horizontal line events with start/end bar + price
         'fvg': _extract_fvg_segments(df, ind_params.get('FVG',        {})),
-        'ob':  _extract_ob_segments(df,  ind_params.get('OB',         {})),
+        'ob':  _extract_ob_segments(df,  ob_params),
         'bos': _extract_bos_choch_segments(df),
         'liq': _extract_liquidity_segments(df, ind_params.get('liquidity', {})),
         'gap': _extract_gap_segments(df,  ind_params.get('gaps',       {})),
