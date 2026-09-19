@@ -85,11 +85,12 @@ export class GapZoneRenderer {
     const rgb = dir === 'bull' ? RGB_BULL : RGB_BEAR;
     const baseOpacity = fillOpacity ?? 0.32;
     const opacity = mitigated ? baseOpacity * MITIGATED_RATIO : baseOpacity;
-    // Hatch alpha needs to read clearly at typical stroke widths — boost it
-    // relative to a flat fill's opacity, since stripes cover less area than
-    // a solid rect at the same alpha would.
+    // No boost here — fill_opacity should mean roughly the same visual
+    // weight across OB/FVG/Gap, and a gap is meant to read as the lightest,
+    // most see-through of the three (it's empty space, not an order-flow
+    // zone), not the heaviest.
     const pixelRatio = Math.max(hr, vr);
-    ctx.fillStyle = this._getHatchPattern(ctx, rgb, Math.min(1, opacity * 1.8), pixelRatio);
+    ctx.fillStyle = this._getHatchPattern(ctx, rgb, opacity, pixelRatio);
     ctx.fillRect(x0, top, x1 - x0, bottom - top);
   }
 }
