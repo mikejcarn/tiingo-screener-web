@@ -320,9 +320,12 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
     """
     Extract Liquidity level segment events from stored indicator columns.
 
-    A liquidity level is only knowable after swing_length more bars have passed
-    since the level formed (the grouped swings need that buffer to be confirmed),
-    so vf = s + swing_length.  max_swept=0 means swept levels are never shown.
+    A single swing point isn't a liquidity level until a second (or third...)
+    swing groups with it — Liquidity_End is the real bar that grouping last
+    extended to, i.e. the actual bar the level is confirmed, so vf = that
+    value when available. Falls back to the old s + swing_length guess only
+    for indicator runs computed before Liquidity_End existed. max_swept=0
+    means swept levels are never shown.
     """
     if 'Liquidity' not in df.columns:
         return []
@@ -331,6 +334,10 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
     swing_length = int(params.get('swing_length', 0))
     max_swept    = params.get('max_swept', None)
     extend_lines = bool(params.get('extend_lines', False))
+    fill_opacity = float(params.get('fill_opacity', 0.8))
+    zone_opacity = float(params.get('zone_opacity', 0.15))
+    has_end      = 'Liquidity_End' in df.columns
+    has_zone     = 'Liquidity_High' in df.columns and 'Liquidity_Low' in df.columns
     n = len(df)
     events = []
     for idx in df[df['Liquidity'] != 0].index:
@@ -346,10 +353,22 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
         if is_swept and max_swept == 0:
             continue
         s = int(idx)
+        grouping_end = df.at[idx, 'Liquidity_End'] if has_end else 0
+        vf = int(grouping_end) if (has_end and not pd.isna(grouping_end) and grouping_end > 0) else s + swing_length
+        # hi/lo: the touch-tolerance band around the level (see liquidity.py)
+        # — falls back to a zero-height band at the flat level for runs
+        # computed before this existed, same defensive pattern as
+        # Liquidity_End above.
+        if has_zone:
+            hi = float(df.at[idx, 'Liquidity_High'])
+            lo = float(df.at[idx, 'Liquidity_Low'])
+        else:
+            hi = lo = float(level)
         events.append({
             's': s, 'e': end, 'p': float(level),
+            'hi': hi, 'lo': lo, 'fo': fill_opacity, 'zo': zone_opacity,
             'm': is_swept, 'dir': 'bull' if v > 0 else 'bear',
-            'vf': s + swing_length,
+            'vf': max(s, vf),
         })
 
     if not extend_lines:
