@@ -4,7 +4,7 @@ per-indicator show/hide toggle panel.
 
 Covers indicators that produce fixed columns computed once and left alone —
 either drawn directly as static lines (col_styles.py), or, for the segment-
-backed ones (FVG/OB/BoS_CHoCH/liquidity/gaps), consumed by replay_events.py
+backed ones (FVG/OB/BoS_CHoCH/liquidity/gaps/volume_profile), consumed by replay_events.py
 to build the segments chart.js renders via its separate _segSeries/
 _buildSegments mechanism instead of this._lines. SEGMENT_TYPE_BY_INDICATOR
 tells the frontend which of those columns-having indicators are actually
@@ -63,6 +63,7 @@ _MATCHERS = {
         'Gap_Up', 'Gap_Down', 'Gap_Up_High', 'Gap_Up_Low',
         'Gap_Down_High', 'Gap_Down_Low', 'Gap_Up_Mitigated', 'Gap_Down_Mitigated',
     ),
+    'volume_profile': lambda col: col in ('VolumeProfile', 'VolumeProfile_Data'),
 }
 
 # {indicator_name: segment type key} — matches the 'type' chart.js's
@@ -74,6 +75,7 @@ SEGMENT_TYPE_BY_INDICATOR = {
     'BoS_CHoCH': 'bos',
     'liquidity': 'liq',
     'gaps':      'gap',
+    'volume_profile': 'vp',
 }
 
 

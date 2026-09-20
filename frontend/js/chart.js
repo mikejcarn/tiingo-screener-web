@@ -17,6 +17,11 @@
  *              faint touch-tolerance band) — see ob_zone_series.js /
  *              fvg_zone_series.js / gap_zone_series.js /
  *              liquidity_zone_series.js, and ZONE_SERIES below.
+ *   Volume   — vp: a real volume-at-price histogram per peak/valley anchor,
+ *   Profile    drawn as horizontal bars via its own custom series (see
+ *              volume_profile_series.js) — handled separately from
+ *              ZONE_SERIES below since its data shape (lo/bs/bins) doesn't
+ *              fit the shared high/low/dir zone payload.
  */
 
 import { DynamicVWAPEngine } from './avwap_replay.js';
@@ -24,6 +29,7 @@ import { OBZoneSeries } from './ob_zone_series.js';
 import { FVGZoneSeries } from './fvg_zone_series.js';
 import { GapZoneSeries } from './gap_zone_series.js';
 import { LiquidityZoneSeries } from './liquidity_zone_series.js';
+import { VolumeProfileSeries } from './volume_profile_series.js';
 import { cssVar, onThemeChange } from './theme.js';
 
 // Segment types with a real zone (top/bottom bounds) get a custom series that
@@ -347,7 +353,7 @@ export class ChartManager {
     this._segEvents = {};
     this._segKeys   = {};
 
-    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap']) {
+    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap', 'vp']) {
       const evts = events[type] || [];
       this._segEvents[type] = evts;
       this._segSeries[type] = [];
@@ -355,7 +361,12 @@ export class ChartManager {
 
       const ZoneSeriesClass = ZONE_SERIES[type];
       for (const ev of evts) {
-        if (ZoneSeriesClass) {
+        if (type === 'vp') {
+          this._segSeries[type].push(this._chart.addCustomSeries(new VolumeProfileSeries(), {
+            priceLineVisible: false,
+            lastValueVisible: false,
+          }));
+        } else if (ZoneSeriesClass) {
           this._segSeries[type].push(this._chart.addCustomSeries(new ZoneSeriesClass(), {
             priceLineVisible: false,
             lastValueVisible: false,
@@ -375,7 +386,7 @@ export class ChartManager {
   }
 
   _revealSegments(n) {
-    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap']) {
+    for (const type of ['fvg', 'ob', 'bos', 'liq', 'gap', 'vp']) {
       const evts   = this._segEvents[type];
       const series = this._segSeries[type];
       const keys   = this._segKeys[type];
@@ -403,7 +414,13 @@ export class ChartManager {
         } else {
           const startTime = (this._bars[ev.s].Date || this._bars[ev.s].date || '').slice(0, 10);
           const endTime   = (this._bars[key].Date  || this._bars[key].date  || '').slice(0, 10);
-          if (ZONE_SERIES[type]) {
+          if (type === 'vp') {
+            const payload = { lo: ev.lo, bs: ev.bs, bins: ev.bins, dir: ev.dir, fillOpacity: ev.fo ?? 0.4 };
+            series[i].setData([
+              { time: startTime, ...payload },
+              { time: endTime,   ...payload },
+            ]);
+          } else if (ZONE_SERIES[type]) {
             const fillOpacity = ev.fo ?? 0.32;
             // level/zoneOpacity only matter to LiquidityZoneSeries (its own
             // precise-line-over-a-band rendering) — harmless extra fields on

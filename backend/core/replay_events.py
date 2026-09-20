@@ -12,6 +12,7 @@ Event types sent:
                        Blocks, BoS/CHoCH structure levels, and Liquidity levels.
                        Each event: {s, e, p, m, dir} + optional {da, vf}.
 """
+import json
 import re
 import pandas as pd
 
@@ -389,6 +390,44 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
                 if not ev['m'] and i + 1 < len(group):
                     ev['e'] = min(ev['e'], group[i + 1]['s'])
 
+    return events
+
+
+def _extract_volume_profile_events(df: pd.DataFrame, params: dict = None) -> list:
+    """
+    Extract Volume Profile events from stored indicator columns.
+
+    Each anchor bar carries its whole histogram pre-computed and JSON-encoded
+    in VolumeProfile_Data (see volume_profile.py) — this just decodes it and
+    reshapes it into the {s, e, dir, ...} event shape every other segment
+    type here uses, no rolling-cap needed since max_profiles already capped
+    how many exist at calculation time.
+
+    vf = s + periods // 2 — a peak/valley anchor from peaks_valleys.py's
+    centered rolling window isn't actually confirmed until periods // 2 bars
+    after it, same confirmation-delay convention aVWAP_peaks/aVWAP_valleys'
+    own dynamic anchors already use for the identical underlying anchors.
+    """
+    if 'VolumeProfile' not in df.columns or 'VolumeProfile_Data' not in df.columns:
+        return []
+    if params is None:
+        params = {}
+    half = int(params.get('periods', 25)) // 2
+    events = []
+    for idx in df[df['VolumeProfile'] != 0].index:
+        raw = df.at[idx, 'VolumeProfile_Data']
+        if not raw:
+            continue
+        try:
+            d = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        v = df.at[idx, 'VolumeProfile']
+        events.append({
+            's': int(idx), 'e': int(d['e']), 'dir': 'bull' if v > 0 else 'bear',
+            'vf': int(idx) + half,
+            'lo': d['lo'], 'bs': d['bs'], 'bins': d['b'], 'fo': d.get('fo', 0.4),
+        })
     return events
 
 
@@ -798,6 +837,7 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'bos': _extract_bos_choch_segments(df, ind_params.get('BoS_CHoCH', {})),
         'liq': _extract_liquidity_segments(df, ind_params.get('liquidity', {})),
         'gap': _extract_gap_segments(df,  ind_params.get('gaps',       {})),
+        'vp':  _extract_volume_profile_events(df, ind_params.get('volume_profile', {})),
         'poc': _extract_poc_segments(df),
         # Dynamic aVWAP anchor pools (OB, BoS/CHoCH, gaps, price_maxima_minima)
         'avwap_anchors': _extract_dynamic_avwap_anchors(df, ind_params),

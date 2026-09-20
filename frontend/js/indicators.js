@@ -26,6 +26,9 @@ const PARAM_ENUMS = {
   // aVWAP_minmax's own chained-line coloring — a separate param on a indicator
   // that has no rank-based 'styling' dropdown of its own, so no merge needed there.
   chain_curve_color: ['none', 'opacity', 'heatmap'],
+  // Volume Profile's anchor-picking rule — 'recent' by bar position vs.
+  // 'extreme' by price (highest peak / lowest valley on the chart).
+  anchor_select: ['recent', 'extreme'],
 };
 
 // Display text for enum option values that shouldn't show their raw
@@ -42,6 +45,8 @@ const PARAM_ENUM_LABELS = {
   curve_opacity: 'Curve-to-Straight: Opacity Fade',
   curve_heatmap: 'Curve-to-Straight: Heatmap',
   slope_gradient: 'Slope Gradient (up/down)',
+  recent: 'Most Recent (by bar)',
+  extreme: 'Most Extreme (by price)',
 };
 
 
