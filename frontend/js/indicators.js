@@ -291,7 +291,15 @@ function _renderIndicatorList() {
   }).join('');
 
   _wireListEvents();
-  if (_focusedIndKey) _setKeyboardFocus(_focusedIndKey);
+  if (_focusedIndKey) {
+    _setKeyboardFocus(_focusedIndKey);
+  } else if (_searchQuery) {
+    // No card is explicitly arrow-focused, but Enter still acts on the
+    // topmost result via _selectFirstFilteredIndicator — a light, distinct
+    // cue (not the bolder kb-focused look reserved for actual arrow
+    // navigation) showing which one that currently is.
+    list.querySelector('.ind-card')?.classList.add('kb-implicit');
+  }
   _updateTabCounts();
 }
 
@@ -689,6 +697,11 @@ function _updateQueueStatus() {
 
 function _setKeyboardFocus(ind) {
   document.querySelector('#ind-list .ind-card.kb-focused')?.classList.remove('kb-focused');
+  // Real arrow-key focus supersedes the implicit "Enter would hit this one"
+  // hint — drop it everywhere so the two cues never show on the same card at
+  // once (kb-implicit is only re-added by the next full _renderIndicatorList
+  // call, which won't fire it while _focusedIndKey is set).
+  document.querySelector('#ind-list .ind-card.kb-implicit')?.classList.remove('kb-implicit');
   _setParamFocus(null); // switching cards always drops any param-level focus
   _focusedIndKey = ind || null;
   if (!_focusedIndKey) return;
@@ -1751,15 +1764,19 @@ function _selectFirstFilteredIndicator() {
   if (!firstCard) return;
   const ind = firstCard.dataset.indicator;
   if (!ind) return;
-  // Enable it if not already on
+  // Toggle it — enable if off, disable if already on. (Previously enable-only,
+  // so hitting Enter on an already-enabled search match silently did nothing;
+  // this now matches _toggleFocusedCard's two-way behavior.)
   const current = _pending[_activeTf] !== undefined
     ? _pending[_activeTf]
     : { ...(_configData?.indicators?.[_activeTf] ?? {}) };
-  if (!(ind in current)) {
+  if (ind in current) {
+    delete current[ind];
+  } else {
     current[ind] = { ...(_defaults?.defaults?.[ind] ?? {}) };
-    _pending[_activeTf] = current;
-    _dirty = true;
   }
+  _pending[_activeTf] = current;
+  _dirty = true;
   const searchEl = document.getElementById('ind-search');
   searchEl.value = '';
   _searchQuery = '';
@@ -1877,7 +1894,8 @@ document.addEventListener('keydown', e => {
     const search = document.getElementById('ind-search');
     search.focus();
     search.value += e.key;
-    _searchQuery = search.value.trim().toLowerCase();
+    _searchQuery   = search.value.trim().toLowerCase();
+    _focusedIndKey = null; // starting a fresh search — don't carry over stale kb-focus
     _renderIndicatorList();
   }
 });

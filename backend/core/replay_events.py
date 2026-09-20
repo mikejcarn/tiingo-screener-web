@@ -334,8 +334,16 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
     swing_length = int(params.get('swing_length', 0))
     max_swept    = params.get('max_swept', None)
     extend_lines = bool(params.get('extend_lines', False))
-    fill_opacity = float(params.get('fill_opacity', 0.8))
-    zone_opacity = float(params.get('zone_opacity', 0.15))
+    fill_opacity = float(params.get('fill_opacity', 0.3))
+    zone_opacity = float(params.get('zone_opacity', 0.05))
+    # Blank (None) means "same as unswept" — resolved here rather than left
+    # to a fixed dimming ratio, so swept/unswept can be made identical (the
+    # default) or independently tuned, instead of one being a fraction of
+    # the other no matter what.
+    swept_fill_opacity = params.get('swept_fill_opacity')
+    swept_fill_opacity = fill_opacity if swept_fill_opacity is None else float(swept_fill_opacity)
+    swept_zone_opacity = params.get('swept_zone_opacity')
+    swept_zone_opacity = zone_opacity if swept_zone_opacity is None else float(swept_zone_opacity)
     has_end      = 'Liquidity_End' in df.columns
     has_zone     = 'Liquidity_High' in df.columns and 'Liquidity_Low' in df.columns
     n = len(df)
@@ -366,7 +374,9 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
             hi = lo = float(level)
         events.append({
             's': s, 'e': end, 'p': float(level),
-            'hi': hi, 'lo': lo, 'fo': fill_opacity, 'zo': zone_opacity,
+            'hi': hi, 'lo': lo,
+            'fo': swept_fill_opacity if is_swept else fill_opacity,
+            'zo': swept_zone_opacity if is_swept else zone_opacity,
             'm': is_swept, 'dir': 'bull' if v > 0 else 'bear',
             'vf': max(s, vf),
         })

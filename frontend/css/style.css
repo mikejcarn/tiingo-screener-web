@@ -1659,6 +1659,14 @@ body.ind-page {
   background: var(--c-ctrl);
   box-shadow: inset 2px 0 0 var(--b6);
 }
+/* Lighter cue than kb-focused — the topmost search result Enter would act on
+   via _selectFirstFilteredIndicator, without any card explicitly arrow-focused
+   yet. A faded accent bar only (no background fill, and the bar's own color
+   is faded rather than the whole head's opacity, so the label/checkbox stay
+   fully legible) — reads as a hint, not a selection. */
+.ind-card.kb-implicit > .ind-card-head {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--b6) 50%, transparent);
+}
 .pipeline-stage-card.kb-focused > .pipeline-stage-head {
   background: var(--c-ctrl);
   box-shadow: inset 2px 0 0 var(--b6);

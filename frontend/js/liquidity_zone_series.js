@@ -10,13 +10,17 @@
  * line stays the dominant, unambiguous signal; the band is background
  * context at a much lower opacity by default.
  *
- * Two data points per level — { time, high, low, level, mitigated,
- * fillOpacity, zoneOpacity } at the level's start and end bar, same
- * start/end convention as the other zone series.
+ * Two data points per level — { time, high, low, level, fillOpacity,
+ * zoneOpacity } at the level's start and end bar, same start/end convention
+ * as the other zone series. fillOpacity/zoneOpacity already reflect swept
+ * vs. unswept (resolved server-side in replay_events.py from
+ * fill_opacity/zone_opacity vs. swept_fill_opacity/swept_zone_opacity) —
+ * no separate mitigated-dimming multiplier here, so swept and unswept can
+ * be made to look identical (the default) or different, entirely via those
+ * params instead of a fixed ratio.
  */
 
 const RGB_LIQUIDITY = '255,165,0';
-const MITIGATED_RATIO = 0.375;
 
 export class LiquidityZoneRenderer {
   constructor() {
@@ -38,7 +42,7 @@ export class LiquidityZoneRenderer {
     const { context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr } = scope;
     const first = data.bars[0];
     const last  = data.bars[data.bars.length - 1];
-    const { high, low, level, mitigated, fillOpacity, zoneOpacity } = first.originalData;
+    const { high, low, level, fillOpacity, zoneOpacity } = first.originalData;
     if (high == null || low == null || level == null) return;
 
     const yHigh  = priceToCoordinate(high);
@@ -50,12 +54,10 @@ export class LiquidityZoneRenderer {
     const x1 = Math.round(last.x  * hr);
     if (x1 <= x0) return;
 
-    const fade = mitigated ? MITIGATED_RATIO : 1;
-
     // Faint touch-tolerance band, behind the line.
     const top    = Math.min(yHigh, yLow) * vr;
     const bottom = Math.max(yHigh, yLow) * vr;
-    const zOpacity = (zoneOpacity ?? 0.15) * fade;
+    const zOpacity = zoneOpacity ?? 0.05;
     if (bottom > top && zOpacity > 0) {
       ctx.fillStyle = `rgba(${RGB_LIQUIDITY},${zOpacity})`;
       ctx.fillRect(x0, top, x1 - x0, bottom - top);
@@ -63,7 +65,7 @@ export class LiquidityZoneRenderer {
 
     // Precise level line, on top — the dominant, unambiguous signal.
     const lineY = yLevel * vr;
-    const lOpacity = (fillOpacity ?? 0.8) * fade;
+    const lOpacity = fillOpacity ?? 0.3;
     ctx.strokeStyle = `rgba(${RGB_LIQUIDITY},${lOpacity})`;
     ctx.lineWidth = Math.max(1, Math.round(hr));
     ctx.beginPath();

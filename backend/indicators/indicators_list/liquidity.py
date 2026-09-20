@@ -3,31 +3,36 @@ import pandas as pd
 display_name = "Liquidity Sweeps"
 
 param_labels = {
-    'max_swept':    'Max Swept Levels Shown',
-    'max_unswept':  'Max Unswept Levels Shown',
-    'extend_lines': 'Extend Through Sweep',
-    'fill_opacity': 'Line Opacity',
-    'zone_opacity': 'Touch-Tolerance Band Opacity',
+    'max_swept':          'Max Swept Levels Shown',
+    'max_unswept':        'Max Unswept Levels Shown',
+    'extend_lines':       'Extend Through Sweep',
+    'fill_opacity':       'Line Opacity (unswept)',
+    'zone_opacity':       'Touch-Tolerance Band Opacity (unswept)',
+    'swept_fill_opacity': 'Line Opacity (swept, blank = same as unswept)',
+    'swept_zone_opacity': 'Touch-Tolerance Band Opacity (swept, blank = same as unswept)',
 }
 
 param_descriptions = {
-    'fill_opacity': "Opacity of an active (unswept) liquidity line, 0-1 — the precise "
-                    "average price of the grouped swing highs/lows. A swept level is drawn "
-                    "at a fixed fraction of this value. Display-only — no effect on "
-                    "liquidity detection itself.",
+    'fill_opacity': "Opacity of an unswept liquidity line, 0-1 — the precise average price "
+                    "of the grouped swing highs/lows. Display-only — no effect on liquidity "
+                    "detection itself.",
     'zone_opacity': "Opacity of the faint band drawn behind the line, 0-1, showing the "
                     "real range_percent tolerance smc.liquidity() used to decide which "
                     "swing highs/lows counted as 'touching' the same level and got grouped "
                     "together — not the group's true spread (which the library never "
-                    "computes), but the actual threshold behind the grouping decision. "
-                    "Kept well below fill_opacity by default so the precise line stays the "
-                    "thing your eye lands on. Set to 0 to hide the band and show only the "
-                    "line.",
+                    "computes), but the actual threshold behind the grouping decision. Set "
+                    "to 0 to hide the band and show only the line.",
+    'swept_fill_opacity': "Line opacity for an already-swept level. Blank (default) uses "
+                    "the same value as fill_opacity, so swept and unswept levels render "
+                    "identically — set this explicitly if you want swept levels to fade "
+                    "instead.",
+    'swept_zone_opacity': "Band opacity for an already-swept level. Blank (default) uses "
+                    "the same value as zone_opacity — set explicitly for a different look.",
 }
 
 def calculate_liquidity(df, swing_length=25, range_percent=0.1, max_swept=None,
-                         max_unswept=None, extend_lines=False, fill_opacity=0.8,
-                         zone_opacity=0.15):
+                         max_unswept=None, extend_lines=False, fill_opacity=0.3,
+                         zone_opacity=0.05, swept_fill_opacity=None, swept_zone_opacity=None):
     from smartmoneyconcepts import smc
 
     df = df.rename(columns={

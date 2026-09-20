@@ -26,6 +26,7 @@ let _compatibility = {};   // { criteria_name: true | false | null }
 let _criteriaDescriptions     = {};  // { name: description }
 let _criteriaParamDescriptions = {}; // { param_key: description }
 let _focusedIdx   = -1;
+let _searchQuery  = '';  // criteria search — same keyboard-search UX as the Indicators page
 
 // ── Run queue ─────────────────────────────────────────────────
 let _runCheckedIds = new Set();
@@ -378,10 +379,32 @@ function _rebuildCards() {
   const noMsg = document.getElementById('scan-no-crit');
   list.innerHTML = '';
   if (!_criteria.length) { noMsg.style.display = 'block'; return; }
+
+  // idx passed to _buildCard must be the position among currently-rendered
+  // cards, not the original _criteria index — _setCritFocus/_syncFocus/
+  // _moveCritFocus all address cards positionally via
+  // document.querySelectorAll('.scan-crit-card'), same convention as the
+  // Indicators page's #ind-list.
+  const visible = _criteria.filter(c => !_searchQuery
+    || c.name.toLowerCase().includes(_searchQuery)
+    || (c.display_name || '').toLowerCase().includes(_searchQuery));
+
+  if (!visible.length) {
+    noMsg.textContent = _searchQuery ? `No criteria match "${_searchQuery}"` : 'No criteria modules found.';
+    noMsg.style.display = 'block';
+    return;
+  }
   noMsg.style.display = 'none';
-  _criteria.forEach((crit, idx) => list.appendChild(_buildCard(crit, idx)));
+  visible.forEach((crit, idx) => list.appendChild(_buildCard(crit, idx)));
   _updateCompatBadges();
   _syncFocus();
+  if (_focusedIdx < 0 && _searchQuery) {
+    // No card explicitly arrow-focused yet, but Enter still acts on the
+    // topmost result via _toggleFirstFilteredCriteria — same implicit-target
+    // hint as the Indicators page, cleared the instant real focus lands
+    // (see _syncFocus).
+    list.querySelector('.scan-crit-card')?.classList.add('kb-implicit');
+  }
 }
 
 function _updateCompatBadges() {
@@ -630,7 +653,11 @@ function _setCritFocus(idx) { _setParamFocus(null); _focusedIdx = idx; _syncFocu
 function _syncFocus() {
   document.querySelectorAll('.scan-crit-card').forEach((card, i) => {
     card.classList.toggle('kb-focused', i === _focusedIdx);
-    if (i === _focusedIdx) card.scrollIntoView({ block: 'nearest' });
+    if (i === _focusedIdx) {
+      // Real focus supersedes the implicit "Enter would hit this one" hint.
+      card.classList.remove('kb-implicit');
+      card.scrollIntoView({ block: 'nearest' });
+    }
   });
 }
 
@@ -746,6 +773,21 @@ function _toggleFocusedCheck() {
   if (!card) return;
   const cbx = card.querySelector('.param-checkbox');
   if (cbx) { cbx.checked = !cbx.checked; cbx.dispatchEvent(new Event('change')); }
+}
+
+// Enter in the search box with nothing arrow-focused yet — toggles the
+// topmost (visually kb-implicit-hinted) filtered result, on or off either
+// way, same two-way behavior as _toggleFocusedCheck (not enable-only).
+function _toggleFirstFilteredCriteria() {
+  const card = document.querySelector('.scan-crit-card');
+  if (!card) return;
+  const cbx = card.querySelector('.param-checkbox');
+  if (cbx) { cbx.checked = !cbx.checked; cbx.dispatchEvent(new Event('change')); }
+  const searchEl = document.getElementById('crit-search');
+  searchEl.value = '';
+  _searchQuery = '';
+  _rebuildCards();
+  searchEl.blur();
 }
 
 // ── Collect ───────────────────────────────────────────────────
@@ -1105,6 +1147,27 @@ function _wireGlobal() {
     e.target.blur();
   });
 
+  const critSearchEl = document.getElementById('crit-search');
+  critSearchEl.addEventListener('input', e => {
+    _searchQuery = e.target.value.trim().toLowerCase();
+    _focusedIdx  = -1;
+    _rebuildCards();
+  });
+  critSearchEl.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      critSearchEl.blur();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault(); _moveCritFocus(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); _moveCritFocus(-1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (_focusedIdx >= 0) _toggleFocusedCheck();
+      else _toggleFirstFilteredCriteria();
+    }
+  });
+
   document.addEventListener('keydown', e => {
     const tag     = document.activeElement?.tagName;
     const ctrl    = e.ctrlKey || e.metaKey;
@@ -1121,6 +1184,11 @@ function _wireGlobal() {
     // shortcuts (nav, N/D/R, etc.) work again without needing a stray click first.
     if (e.key === 'Escape') {
       e.preventDefault();
+      if (_searchQuery) {
+        critSearchEl.value = '';
+        _searchQuery = '';
+        _rebuildCards();
+      }
       _setCritFocus(-1);
       document.activeElement?.blur();
       return;
@@ -1195,6 +1263,23 @@ function _wireGlobal() {
       e.preventDefault();
       if (_focusedIdx >= 0) _toggleFocusedCheck();
       else if (_activeId) _toggleQueued(_activeId);
+    }
+
+    // Any printable lowercase char while nothing interactive is focused →
+    // route to criteria search, same convenience as the Indicators page.
+    // Uppercase is excluded — reserved for the N/D/R/... shortcuts above.
+    if (
+      e.key.length === 1 &&
+      !e.ctrlKey && !e.metaKey && !e.altKey &&
+      e.key === e.key.toLowerCase() &&
+      document.getElementById('scan-editor')?.style.display !== 'none'
+    ) {
+      e.preventDefault();
+      critSearchEl.focus();
+      critSearchEl.value += e.key;
+      _searchQuery = critSearchEl.value.trim().toLowerCase();
+      _focusedIdx  = -1; // fresh search — don't carry over stale kb-focus
+      _rebuildCards();
     }
   });
 }
