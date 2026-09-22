@@ -415,7 +415,10 @@ export class ChartManager {
           const startTime = (this._bars[ev.s].Date || this._bars[ev.s].date || '').slice(0, 10);
           const endTime   = (this._bars[key].Date  || this._bars[key].date  || '').slice(0, 10);
           if (type === 'vp') {
-            const payload = { lo: ev.lo, bs: ev.bs, bins: ev.bins, dir: ev.dir, fillOpacity: ev.fo ?? 0.4 };
+            const payload = {
+              lo: ev.lo, bs: ev.bs, bins: ev.bins, dir: ev.dir, fillOpacity: ev.fo ?? 0.4,
+              poc: ev.poc, vah: ev.vah, val: ev.val,
+            };
             series[i].setData([
               { time: startTime, ...payload },
               { time: endTime,   ...payload },

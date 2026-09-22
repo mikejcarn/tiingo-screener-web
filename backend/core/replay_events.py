@@ -423,11 +423,15 @@ def _extract_volume_profile_events(df: pd.DataFrame, params: dict = None) -> lis
         except (TypeError, ValueError):
             continue
         v = df.at[idx, 'VolumeProfile']
-        events.append({
+        ev = {
             's': int(idx), 'e': int(d['e']), 'dir': 'bull' if v > 0 else 'bear',
             'vf': int(idx) + half,
             'lo': d['lo'], 'bs': d['bs'], 'bins': d['b'], 'fo': d.get('fo', 0.4),
-        })
+        }
+        for key in ('poc', 'vah', 'val'):
+            if key in d:
+                ev[key] = d[key]
+        events.append(ev)
     return events
 
 

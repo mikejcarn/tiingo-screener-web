@@ -6,14 +6,17 @@ from backend.indicators.indicators import get_indicators
 display_name = "Volume Profile"
 
 param_labels = {
-    'periods':         'Pivot Window (periods)',
-    'include_peaks':   'Anchor at Peaks',
-    'include_valleys': 'Anchor at Valleys',
-    'anchor_select':   'Anchor Selection',
-    'max_profiles':    'Max Profiles Shown (per side)',
-    'num_bins':        'Price Bins',
-    'extend_to_end':   'Extend to Now (vs. stop at next swing)',
-    'fill_opacity':    'Bar Opacity',
+    'periods':          'Pivot Window (periods)',
+    'include_peaks':    'Anchor at Peaks',
+    'include_valleys':  'Anchor at Valleys',
+    'anchor_select':    'Anchor Selection',
+    'max_profiles':     'Max Profiles Shown (per side)',
+    'num_bins':         'Price Bins',
+    'extend_to_end':    'Extend to Now (vs. stop at next swing)',
+    'fill_opacity':     'Bar Opacity',
+    'show_poc':         'Show POC Line',
+    'show_value_area':  'Show Value Area (VAH/VAL)',
+    'value_area_pct':   'Value Area %',
 }
 
 param_descriptions = {
@@ -40,6 +43,13 @@ param_descriptions = {
                "aVWAP_OB's own extend_to_end makes for its anchors.",
     'fill_opacity': "Opacity of the volume bars, 0-1. Display-only — has no effect on "
                "the profile's computation.",
+    'show_poc': "Draw the Point of Control — a line at the single highest-volume price "
+               "bin — across the full span of each profile.",
+    'show_value_area': "Draw the Value Area bounds (VAH/VAL) — the band of prices "
+               "holding value_area_pct of the profile's volume, expanded outward from "
+               "the POC bin — across the full span of each profile.",
+    'value_area_pct': "Fraction of a profile's total volume the Value Area (VAH/VAL) "
+               "must contain, 0-1. Standard volume-profile convention default is 0.70.",
 }
 
 
@@ -87,6 +97,37 @@ def _histogram(high, low, volume, num_bins):
     return price_min, bin_size, bins
 
 
+def _poc_value_area(price_min, bin_size, bins, target_pct):
+    """Point of Control (the single highest-volume bin) and Value Area bounds
+    (VAH/VAL) — starting from the POC bin, repeatedly add whichever neighbor
+    (one above or one below the current range) holds more volume, until the
+    accumulated volume reaches target_pct of the profile's total. Standard
+    volume-profile value-area algorithm."""
+    total = float(bins.sum())
+    poc_bin = int(np.argmax(bins))
+    poc_price = price_min + (poc_bin + 0.5) * bin_size
+    if total <= 0:
+        return poc_price, poc_price, poc_price
+
+    target = total * target_pct
+    lo = hi = poc_bin
+    acc = float(bins[poc_bin])
+    n = len(bins)
+    while acc < target and (lo > 0 or hi < n - 1):
+        vol_below = bins[lo - 1] if lo > 0 else -1.0
+        vol_above = bins[hi + 1] if hi < n - 1 else -1.0
+        if vol_above >= vol_below:
+            hi += 1
+            acc += bins[hi]
+        else:
+            lo -= 1
+            acc += bins[lo]
+
+    val_price = price_min + lo * bin_size
+    vah_price = price_min + (hi + 1) * bin_size
+    return poc_price, vah_price, val_price
+
+
 def _select_anchors(anchors, price, max_profiles, anchor_select, want_highest):
     """Which of a side's swing points to keep, up to max_profiles. 'recent' keeps
     the most recent by bar position (existing default); 'extreme' keeps the ones
@@ -101,7 +142,8 @@ def _select_anchors(anchors, price, max_profiles, anchor_select, want_highest):
 
 def calculate_volume_profile(df, periods=25, include_peaks=True, include_valleys=True,
                               anchor_select='recent', max_profiles=3, num_bins=24,
-                              extend_to_end=True, fill_opacity=0.4):
+                              extend_to_end=True, fill_opacity=0.4, show_poc=True,
+                              show_value_area=True, value_area_pct=0.7):
     # Unlike aVWAP_peaks.py/aVWAP_OB.py (which return a DataFrame — the only
     # return type get_indicators realigns positionally against a mismatched
     # index), this returns a plain dict of Series like OB.py/liquidity.py do,
@@ -136,11 +178,20 @@ def calculate_volume_profile(df, periods=25, include_peaks=True, include_valleys
             if hist is None:
                 continue
             price_min, bin_size, bins = hist
-            flag.iloc[idx] = direction
-            data.iloc[idx] = json.dumps({
+            payload = {
                 'e': int(end), 'lo': round(price_min, 6), 'bs': round(bin_size, 6),
                 'b': [round(float(v), 2) for v in bins], 'fo': fill_opacity,
-            })
+            }
+            if show_poc or show_value_area:
+                poc_price, vah_price, val_price = _poc_value_area(
+                    price_min, bin_size, bins, value_area_pct)
+                if show_poc:
+                    payload['poc'] = round(poc_price, 6)
+                if show_value_area:
+                    payload['vah'] = round(vah_price, 6)
+                    payload['val'] = round(val_price, 6)
+            flag.iloc[idx] = direction
+            data.iloc[idx] = json.dumps(payload)
 
     return {
         'VolumeProfile': flag,
