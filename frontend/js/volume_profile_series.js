@@ -5,14 +5,21 @@
  * distinct from every other zone type in this app (which are all filled
  * rectangles/lines spanning a time range, not a sideways bar chart).
  *
- * Two data points per profile — { time, lo, bs, bins, dir, fillOpacity } at
- * the anchor's start and end bar, same start/end convention as the other
- * zone series. lo/bs are the histogram's price origin and bin size (see
- * volume_profile.py); bins is the array of per-bin volume totals.
+ * Two data points per profile — { time, lo, bs, bins, dir, fillOpacity, poc,
+ * vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
+ * heatmapOpacity, heatmapContrast, histogramGrayscale } at the anchor's
+ * start and end bar, same start/end convention as the other zone series.
+ * lo/bs are the histogram's price origin and bin size, bins the per-bin
+ * volume totals, poc/vah/val the Point of Control and Value Area bounds,
+ * hvn/lvn arrays of [lo, hi] High/Low Volume Node price ranges (see
+ * volume_profile.py for how all of these are computed).
  */
 
-const RGB_BULL = '38,166,154';
-const RGB_BEAR = '239,83,80';
+const RGB_BULL    = '38,166,154';
+const RGB_BEAR    = '239,83,80';
+// Default (non-directional) profile color — a profile's own shape, not its
+// anchor's bull/bear direction, is usually the point of looking at it.
+const RGB_DEFAULT = '255,127,0';
 // Bars extend at most this fraction of the anchor-to-end pixel span, so a
 // profile never visually swallows the whole time range it covers — the
 // classic volume-profile convention of a narrow sidebar-style histogram.
@@ -20,6 +27,15 @@ const MAX_WIDTH_FRACTION = 0.3;
 // Bins outside the value area (VAL-VAH) are dimmed to this fraction of the
 // normal bar opacity, so the value area reads as the "core" of the profile.
 const VA_DIM_FACTOR = 0.45;
+// Histogram's neutral fill when histogramGrayscale is on (bars or heatmap
+// style, either one) — width/opacity still encode volume, only the hue is
+// dropped. POC/Value Area lines keep the profile's real color regardless.
+const RGB_GRAYSCALE = '200,200,200';
+// HVN/LVN nodes use fixed, direction-independent colors — they describe the
+// profile's own shape, not its bull/bear anchor — plain fills, no border,
+// distinguished from each other by color alone.
+const RGB_HVN = '255,196,0';
+const RGB_LVN = '140,150,170';
 
 export class VolumeProfileRenderer {
   constructor() {
@@ -41,7 +57,11 @@ export class VolumeProfileRenderer {
     const { context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr } = scope;
     const first = data.bars[0];
     const last  = data.bars[data.bars.length - 1];
-    const { lo, bs, bins, dir, fillOpacity, poc, vah, val } = first.originalData;
+    const {
+      lo, bs, bins, dir, fillOpacity, poc, vah, val, hvn, lvn,
+      showHistogram, directionalColor, barStyle,
+      heatmapOpacity, heatmapContrast, histogramGrayscale,
+    } = first.originalData;
     if (lo == null || bs == null || !bins || !bins.length) return;
 
     const x0 = Math.round(first.x * hr);
@@ -52,23 +72,83 @@ export class VolumeProfileRenderer {
     if (maxBin <= 0) return;
 
     const maxWidth = (x1 - x0) * MAX_WIDTH_FRACTION;
-    const rgb = dir === 'bull' ? RGB_BULL : RGB_BEAR;
+    const rgb = directionalColor ? (dir === 'bull' ? RGB_BULL : RGB_BEAR) : RGB_DEFAULT;
+    // Histogram-only color — POC/Value Area lines below keep using rgb
+    // itself, unaffected by histogramGrayscale.
+    const histRgb = histogramGrayscale ? RGB_GRAYSCALE : rgb;
     const baseOpacity = fillOpacity ?? 0.4;
     const hasValueArea = val != null && vah != null;
 
-    for (let i = 0; i < bins.length; i++) {
-      if (bins[i] <= 0) continue;
-      const priceLo = lo + i * bs;
-      const priceHi = priceLo + bs;
-      const yLo = priceToCoordinate(priceLo);
-      const yHi = priceToCoordinate(priceHi);
-      if (yLo == null || yHi == null) continue;
+    // Shared per-bin geometry — 'bars' and 'heatmap' both need each bin's
+    // vertical pixel span and whether it falls inside the value area, they
+    // just encode the bin's volume differently (width vs. opacity) below.
+    const forEachBin = cb => {
+      for (let i = 0; i < bins.length; i++) {
+        if (bins[i] <= 0) continue;
+        const priceLo = lo + i * bs;
+        const priceHi = priceLo + bs;
+        const yLo = priceToCoordinate(priceLo);
+        const yHi = priceToCoordinate(priceHi);
+        if (yLo == null || yHi == null) continue;
+        const top    = Math.min(yLo, yHi) * vr;
+        const bottom = Math.max(yLo, yHi) * vr;
+        const inVA   = !hasValueArea || (priceHi > val && priceLo < vah);
+        cb(bins[i], top, bottom, inVA);
+      }
+    };
+
+    if (showHistogram ?? true) {
+      if (barStyle === 'heatmap') {
+        // Every bin spans the profile's full width; volume is read from
+        // opacity instead of width — the highest-volume bins read darkest.
+        // heatmapOpacity (its own control, separate from fillOpacity — bars
+        // has width to lean on, heatmap only has opacity) is the ceiling at
+        // the peak bin. heatmapContrast is the curve's exponent: >1 (the
+        // default) suppresses lower-volume bins faster than high ones so
+        // distinct levels stand out against a fainter background; <1 does
+        // the opposite, boosting faint bins at the cost of that distinctness.
+        const heatCeiling = heatmapOpacity ?? 0.85;
+        const heatGamma   = heatmapContrast ?? 2.0;
+        forEachBin((v, top, bottom, inVA) => {
+          const intensity = Math.pow(v / maxBin, heatGamma);
+          const opacity = intensity * heatCeiling * (inVA ? 1 : VA_DIM_FACTOR);
+          ctx.fillStyle = `rgba(${histRgb},${opacity})`;
+          ctx.fillRect(x0, top, x1 - x0, Math.max(bottom - top, vr));
+        });
+      } else {
+        forEachBin((v, top, bottom, inVA) => {
+          const width = (v / maxBin) * maxWidth;
+          ctx.fillStyle = `rgba(${histRgb},${inVA ? baseOpacity : baseOpacity * VA_DIM_FACTOR})`;
+          ctx.fillRect(x0, top, width, Math.max(bottom - top, vr));
+        });
+      }
+    }
+
+    // High/Low Volume Node zones — filled bands across the profile's full
+    // anchor-to-end span (same "zone spans a time range" convention as the
+    // OB/FVG/liquidity zone types elsewhere in the app), each the actual
+    // bin-run width the node covers rather than a single point — so a wide
+    // untraded LVN gap reads as a wide band, not a sliver. Fill only, no
+    // border — the band's own top/bottom edge already marks its price
+    // range, and a stroke's left/right edges would just retrace x0/x1,
+    // which the bars/POC/VA lines already mark. HVN vs LVN read apart by
+    // color alone. Drawn under the POC/value-area lines so those stay
+    // crisp on top.
+    const drawNodeZone = (zLo, zHi, rgb) => {
+      const yLo = priceToCoordinate(zLo);
+      const yHi = priceToCoordinate(zHi);
+      if (yLo == null || yHi == null) return;
       const top    = Math.min(yLo, yHi) * vr;
       const bottom = Math.max(yLo, yHi) * vr;
-      const width  = (bins[i] / maxBin) * maxWidth;
-      const inVA   = !hasValueArea || (priceHi > val && priceLo < vah);
-      ctx.fillStyle = `rgba(${rgb},${inVA ? baseOpacity : baseOpacity * VA_DIM_FACTOR})`;
-      ctx.fillRect(x0, top, width, Math.max(bottom - top, vr));
+      const height = Math.max(bottom - top, vr);
+      ctx.fillStyle = `rgba(${rgb},0.22)`;
+      ctx.fillRect(x0, top, x1 - x0, height);
+    };
+    if (lvn && lvn.length) {
+      for (const [zLo, zHi] of lvn) drawNodeZone(zLo, zHi, RGB_LVN);
+    }
+    if (hvn && hvn.length) {
+      for (const [zLo, zHi] of hvn) drawNodeZone(zLo, zHi, RGB_HVN);
     }
 
     // Value-area bounds (VAL/VAH) — thin dashed lines across the profile's

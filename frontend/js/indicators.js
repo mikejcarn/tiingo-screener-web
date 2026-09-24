@@ -27,8 +27,14 @@ const PARAM_ENUMS = {
   // that has no rank-based 'styling' dropdown of its own, so no merge needed there.
   chain_curve_color: ['none', 'opacity', 'heatmap'],
   // Volume Profile's anchor-picking rule — 'recent' by bar position vs.
-  // 'extreme' by price (highest peak / lowest valley on the chart).
-  anchor_select: ['recent', 'extreme'],
+  // 'extreme' by price (highest peak / lowest valley on the chart) — set
+  // independently per side.
+  anchor_select_peaks: ['recent', 'extreme'],
+  anchor_select_valleys: ['recent', 'extreme'],
+  // Volume Profile's histogram rendering — 'bars' varies each bin's width by
+  // volume (classic sideways histogram); 'heatmap' instead gives every bin
+  // the profile's full width and varies opacity by volume instead.
+  bar_style: ['bars', 'heatmap'],
 };
 
 // Display text for enum option values that shouldn't show their raw

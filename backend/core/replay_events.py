@@ -407,12 +407,19 @@ def _extract_volume_profile_events(df: pd.DataFrame, params: dict = None) -> lis
     centered rolling window isn't actually confirmed until periods // 2 bars
     after it, same confirmation-delay convention aVWAP_peaks/aVWAP_valleys'
     own dynamic anchors already use for the identical underlying anchors.
+    Peaks and Valleys each have their own periods param (periods_peaks /
+    periods_valleys), so the delay is picked per event by its own direction.
+    The one exception is the whole-chart profile (show_full_range), always
+    anchored at bar 0 — it isn't a peaks_valleys.py swing point at all (bar 0
+    can never be one, its centered window has no room on the left), so it
+    gets no confirmation delay: it's visible from the very first bar.
     """
     if 'VolumeProfile' not in df.columns or 'VolumeProfile_Data' not in df.columns:
         return []
     if params is None:
         params = {}
-    half = int(params.get('periods', 25)) // 2
+    half_peaks   = int(params.get('periods_peaks', 25)) // 2
+    half_valleys = int(params.get('periods_valleys', 25)) // 2
     events = []
     for idx in df[df['VolumeProfile'] != 0].index:
         raw = df.at[idx, 'VolumeProfile_Data']
@@ -423,12 +430,16 @@ def _extract_volume_profile_events(df: pd.DataFrame, params: dict = None) -> lis
         except (TypeError, ValueError):
             continue
         v = df.at[idx, 'VolumeProfile']
+        half = 0 if idx == 0 else (half_peaks if v > 0 else half_valleys)
         ev = {
             's': int(idx), 'e': int(d['e']), 'dir': 'bull' if v > 0 else 'bear',
             'vf': int(idx) + half,
             'lo': d['lo'], 'bs': d['bs'], 'bins': d['b'], 'fo': d.get('fo', 0.4),
+            'sh': d.get('sh', True), 'dc': d.get('dc', False),
+            'bst': d.get('bst', 'bars'),
+            'hop': d.get('hop', 0.85), 'hct': d.get('hct', 2.0), 'hgs': d.get('hgs', False),
         }
-        for key in ('poc', 'vah', 'val'):
+        for key in ('poc', 'vah', 'val', 'hvn', 'lvn'):
             if key in d:
                 ev[key] = d[key]
         events.append(ev)

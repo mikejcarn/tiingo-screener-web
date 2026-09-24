@@ -417,7 +417,11 @@ export class ChartManager {
           if (type === 'vp') {
             const payload = {
               lo: ev.lo, bs: ev.bs, bins: ev.bins, dir: ev.dir, fillOpacity: ev.fo ?? 0.4,
-              poc: ev.poc, vah: ev.vah, val: ev.val,
+              poc: ev.poc, vah: ev.vah, val: ev.val, hvn: ev.hvn, lvn: ev.lvn,
+              showHistogram: ev.sh ?? true, directionalColor: ev.dc ?? false,
+              barStyle: ev.bst ?? 'bars',
+              heatmapOpacity: ev.hop ?? 0.85, heatmapContrast: ev.hct ?? 2.0,
+              histogramGrayscale: ev.hgs ?? false,
             };
             series[i].setData([
               { time: startTime, ...payload },
