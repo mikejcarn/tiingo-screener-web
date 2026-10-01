@@ -10,6 +10,8 @@
  * VWAP values use pre-built cumulative sum arrays so each value is O(1).
  */
 
+import { VolumeProfileSeries, RGB_DEFAULT as VP_RGB_DEFAULT } from './volume_profile_series.js';
+
 // Default colours — match col_styles.py palette
 const C_PEAK   = 'rgba(239, 83, 80, 0.75)';   // red   — peaks
 const C_VALLEY = 'rgba(38, 166, 154, 0.75)';   // teal  — valleys
@@ -90,6 +92,18 @@ const C_MANUAL_STDEV_RGB     = '255,193,7';
 const MANUAL_STDEV_MAX_ALPHA = 0.65;
 const MANUAL_STDEV_MIN_ALPHA = 0.45;
 const MANUAL_STDEV_MULTIPLES = [1, 2]; // matches aVWAP_pinch's default stdev_multiples
+
+// Ctrl+. also pairs a Volume Profile with a manual anchor — fixed, sensible
+// defaults rather than exposing the full configurable-indicator param set,
+// since this tool is deliberately parameter-free (press a key, get a
+// result). Reuses VolumeProfileSeries for rendering, so it looks identical
+// to the real indicator's own 'bars' style; same POC/Value Area convention.
+const MANUAL_VP_NUM_BINS       = 80;
+const MANUAL_VP_FILL_OPACITY   = 0.4;
+const MANUAL_VP_VALUE_AREA_PCT = 0.7;
+// When a profile is paired (Ctrl+.), the vwap line matches the profile's
+// own color instead of the usual amber — they're one visual unit then.
+const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
 
 // Opacity range for multi-config anchor types (currently peaks/valleys). All configs
 // stay solid at the same width — line STYLE is reserved for signifying different data
@@ -232,22 +246,93 @@ export class DynamicVWAPEngine {
 
   // ── Manual (click-placed) anchors ───────────────────────────────────────
 
-  /** Tear down one manual anchor's vwap line + any stdev band series. */
+  /** Tear down one manual anchor's vwap line + any stdev band series + any paired profile. */
   _removeManualEntry(entry) {
     try { this._chart.removeSeries(entry.vwap); } catch (_) {}
     for (const band of entry.bands) {
       try { this._chart.removeSeries(band.upper); } catch (_) {}
       try { this._chart.removeSeries(band.lower); } catch (_) {}
     }
+    if (entry.profile) { try { this._chart.removeSeries(entry.profile); } catch (_) {} }
+  }
+
+  /**
+   * Volume-at-price histogram over [anchorIdx, toIdx] — same binning
+   * technique as volume_profile.py's own _histogram (each bar's volume
+   * distributed evenly across its own high-low range, into numBins equal
+   * price buckets over the window's real nonzero-volume extent), ported
+   * here against the already-built _highs/_lows/_volumes Float64Arrays
+   * instead of a fresh numpy slice. Returns null if the range has no real
+   * volume to build a histogram from.
+   */
+  _vpHistogram(anchorIdx, toIdx, numBins) {
+    let priceMin = Infinity, priceMax = -Infinity;
+    for (let i = anchorIdx; i <= toIdx; i++) {
+      if (this._volumes[i] > 0) {
+        if (this._lows[i]  < priceMin) priceMin = this._lows[i];
+        if (this._highs[i] > priceMax) priceMax = this._highs[i];
+      }
+    }
+    if (!Number.isFinite(priceMin) || priceMax <= priceMin) return null;
+
+    const binSize = (priceMax - priceMin) / numBins;
+    const bins = new Float64Array(numBins);
+    for (let i = anchorIdx; i <= toIdx; i++) {
+      const vol = this._volumes[i];
+      if (vol <= 0) continue;
+      const loBin = Math.max(0, Math.min(numBins - 1, Math.floor((this._lows[i]  - priceMin) / binSize)));
+      const hiBin = Math.max(0, Math.min(numBins - 1, Math.floor((this._highs[i] - priceMin) / binSize)));
+      const perBin = vol / (hiBin - loBin + 1);
+      for (let b = loBin; b <= hiBin; b++) bins[b] += perBin;
+    }
+    return { priceMin, binSize, bins };
+  }
+
+  /** Point of Control + Value Area bounds — same expand-from-the-peak-bin
+   * algorithm as volume_profile.py's own _poc_value_area. */
+  _vpPocValueArea(priceMin, binSize, bins, targetPct) {
+    const n = bins.length;
+    let total = 0, pocBin = 0, pocVol = -Infinity;
+    for (let b = 0; b < n; b++) {
+      total += bins[b];
+      if (bins[b] > pocVol) { pocVol = bins[b]; pocBin = b; }
+    }
+    const poc = priceMin + (pocBin + 0.5) * binSize;
+    if (total <= 0) return { poc, vah: poc, val: poc };
+
+    const target = total * targetPct;
+    let lo = pocBin, hi = pocBin, acc = bins[pocBin];
+    while (acc < target && (lo > 0 || hi < n - 1)) {
+      const volBelow = lo > 0     ? bins[lo - 1] : -1;
+      const volAbove = hi < n - 1 ? bins[hi + 1] : -1;
+      if (volAbove >= volBelow) { hi++; acc += bins[hi]; }
+      else                      { lo--; acc += bins[lo]; }
+    }
+    return { poc, val: priceMin + lo * binSize, vah: priceMin + (hi + 1) * binSize };
+  }
+
+  /** Build the {lo, bs, bins, ...} payload VolumeProfileSeries expects, or
+   * null if there's no real volume in [anchorIdx, toIdx] yet to show. */
+  _vpPayload(anchorIdx, toIdx) {
+    const hist = this._vpHistogram(anchorIdx, toIdx, MANUAL_VP_NUM_BINS);
+    if (!hist) return null;
+    const { priceMin, binSize, bins } = hist;
+    const { poc, vah, val } = this._vpPocValueArea(priceMin, binSize, bins, MANUAL_VP_VALUE_AREA_PCT);
+    return {
+      lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
+      showHistogram: true, directionalColor: false, barStyle: 'bars', poc, vah, val,
+    };
   }
 
   /**
    * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to
    * toIdx. withStdev also draws vwap +/- k*stdev bands (Shift+.) around it —
-   * see _vwapStdevBands. Returns true if an anchor was added, false if an
-   * existing one (with or without bands) was removed.
+   * see _vwapStdevBands. withProfile (Ctrl+.) also pairs a Volume Profile
+   * with it, same anchor-to-toIdx span, removed together as one unit.
+   * Returns true if an anchor was added, false if an existing one (with or
+   * without bands/profile) was removed.
    */
-  toggleManualAnchor(anchorIdx, toIdx, withStdev = false) {
+  toggleManualAnchor(anchorIdx, toIdx, withStdev = false, withProfile = false) {
     if (anchorIdx == null || anchorIdx < 0 || anchorIdx >= this._bars.length) return null;
     if (this._manualSeries[anchorIdx]) {
       this._removeManualEntry(this._manualSeries[anchorIdx]);
@@ -256,7 +341,7 @@ export class DynamicVWAPEngine {
       if (i !== -1) this._manualOrder.splice(i, 1);
       return false;
     }
-    const vwap = this._series(C_MANUAL, 2, 0);
+    const vwap = this._series(withProfile ? C_MANUAL_WITH_PROFILE : C_MANUAL, 2, 0);
     vwap.setData(this._vwapLine(anchorIdx, toIdx));
 
     const bands = [];
@@ -272,7 +357,21 @@ export class DynamicVWAPEngine {
       }
     }
 
-    this._manualSeries[anchorIdx] = { vwap, bands };
+    let profile = null;
+    if (withProfile) {
+      const payload = this._vpPayload(anchorIdx, toIdx);
+      if (payload) {
+        profile = this._chart.addCustomSeries(new VolumeProfileSeries(), {
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
+        const endTime   = (this._bars[toIdx].Date     || this._bars[toIdx].date     || '').slice(0, 10);
+        profile.setData([{ time: startTime, ...payload }, { time: endTime, ...payload }]);
+      }
+    }
+
+    this._manualSeries[anchorIdx] = { vwap, bands, profile };
     this._manualOrder.push(anchorIdx);
     return true;
   }
@@ -855,6 +954,16 @@ export class DynamicVWAPEngine {
         for (let i = 0; i < entry.bands.length; i++) {
           entry.bands[i].upper.setData(bandData[i].upper);
           entry.bands[i].lower.setData(bandData[i].lower);
+        }
+      }
+      if (entry.profile) {
+        const payload = this._vpPayload(anchorIdx, n);
+        if (payload) {
+          const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
+          const endTime   = (this._bars[n].Date         || this._bars[n].date         || '').slice(0, 10);
+          entry.profile.setData([{ time: startTime, ...payload }, { time: endTime, ...payload }]);
+        } else {
+          entry.profile.setData([]);
         }
       }
     }

@@ -437,7 +437,10 @@ def _extract_volume_profile_events(df: pd.DataFrame, params: dict = None) -> lis
             'lo': d['lo'], 'bs': d['bs'], 'bins': d['b'], 'fo': d.get('fo', 0.4),
             'sh': d.get('sh', True), 'dc': d.get('dc', False),
             'bst': d.get('bst', 'bars'),
-            'hop': d.get('hop', 0.85), 'hct': d.get('hct', 2.0), 'hgs': d.get('hgs', False),
+            'hem': d.get('hem', 'hvn'),
+            'hop': d.get('hop', 0.85), 'hct': d.get('hct', 2.0),
+            'hloc': d.get('hloc', 0.0), 'nw': d.get('nw', 2),
+            'hgs': d.get('hgs', False),
         }
         for key in ('poc', 'vah', 'val', 'hvn', 'lvn'):
             if key in d:

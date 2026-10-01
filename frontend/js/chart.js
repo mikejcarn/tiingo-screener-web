@@ -420,7 +420,9 @@ export class ChartManager {
               poc: ev.poc, vah: ev.vah, val: ev.val, hvn: ev.hvn, lvn: ev.lvn,
               showHistogram: ev.sh ?? true, directionalColor: ev.dc ?? false,
               barStyle: ev.bst ?? 'bars',
+              heatmapEmphasis: ev.hem ?? 'hvn',
               heatmapOpacity: ev.hop ?? 0.85, heatmapContrast: ev.hct ?? 2.0,
+              heatmapLocality: ev.hloc ?? 0.0, nodeWindow: ev.nw ?? 2,
               histogramGrayscale: ev.hgs ?? false,
             };
             series[i].setData([
@@ -642,14 +644,14 @@ export class ChartManager {
     return this._chart.timeScale().coordinateToLogical(x);
   }
 
-  /** Place/remove a manually-anchored VWAP at the candle under x. withStdev also draws +/- k*stdev bands around it. Returns true (added) / false (removed) / null (out of range). */
-  toggleManualAnchorAtX(x, withStdev = false) {
+  /** Place/remove a manually-anchored VWAP at the candle under x. withStdev also draws +/- k*stdev bands around it; withProfile also pairs a Volume Profile with it (same anchor, removed together). Returns true (added) / false (removed) / null (out of range). */
+  toggleManualAnchorAtX(x, withStdev = false, withProfile = false) {
     if (!this._engine || !this._chart || this._curN < 0) return null;
     const logical = this._chart.timeScale().coordinateToLogical(x);
     if (logical == null) return null;
     const barIdx = Math.round(logical);
     if (barIdx < 0 || barIdx > this._curN) return null;
-    return this._engine.toggleManualAnchor(barIdx, this._curN, withStdev);
+    return this._engine.toggleManualAnchor(barIdx, this._curN, withStdev, withProfile);
   }
 
   /** Undo the most recently placed manual aVWAP anchor (LIFO). Returns the removed bar index, or null if none. */

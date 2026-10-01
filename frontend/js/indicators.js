@@ -8,6 +8,37 @@ const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 // These always render as a checkbox + number input regardless of current value.
 const NULLABLE_NUM_KEYS  = new Set(['max_aVWAPs', 'max_anchors', 'lookback_bars', 'max_mitigated', 'max_unmitigated']);
 const NULLABLE_LIST_KEYS = new Set(['BoS_swing_lengths', 'CHoCH_swing_lengths', 'band_std', 'num_bars']);
+// Numeric params whose default happens to be a whole number (e.g. 2.0) but
+// are genuinely float-ranged — Number.isInteger(2) is true, so without this
+// they'd render as int-only (step=1, no decimals) whenever their current
+// value is a whole number, indistinguishable from a true int param once a
+// float default has round-tripped through JSON.
+const FLOAT_KEYS = new Set([
+  'heatmap_locality', 'heatmap_contrast',
+  'qqe_factor', 'bb_std_dev', 'explosion_multiplier', 'band_k',
+]);
+// Per-param logical step size for the value stepper (←/→ keys and the ▲▼
+// buttons) — overrides the generic float/int fallback in _stepNumInput
+// with the increment that actually matches how the param is normally
+// tuned: a 0-1 fraction/opacity's whole range is only 1.0 wide, so it
+// wants a finer 0.05 step, while an open-ended multiplier/exponent
+// (contrast, ATR multipliers, QQE/BB factors) matches the 0.1 step most
+// charting platforms already use for exactly these inputs.
+const PARAM_STEP = {
+  // 0-1 fractions/opacities/percentages — same reasoning as fill_opacity
+  // above, applies to every indicator sharing these exact param names
+  // (FVG/OB/aVWAP_OB/gaps/liquidity's own fill_opacity already covered by
+  // the entry above; these are the rest of that same family found across
+  // the catalog: liquidity's own zone shading + range tolerance, and
+  // aVWAP_peaks/aVWAP_valleys' slope_gradient opacity/scale trio).
+  heatmap_locality: 0.05, heatmap_opacity: 0.05, fill_opacity: 0.05, value_area_pct: 0.05,
+  zone_opacity: 0.05, range_percent: 0.05,
+  slope_scale: 0.05, slope_alpha_min: 0.05, slope_alpha_max: 0.05,
+  // Open-ended multipliers/exponents (contrast curves, ATR multipliers,
+  // QQE/BB factors) — matches the 0.1 step most charting platforms already
+  // use for exactly these inputs.
+  heatmap_contrast: 0.1, qqe_factor: 0.1, bb_std_dev: 0.1, explosion_multiplier: 0.1, band_k: 0.1,
+};
 
 // Params that should render as a dropdown instead of a text input.
 const PARAM_ENUMS = {
@@ -35,6 +66,10 @@ const PARAM_ENUMS = {
   // volume (classic sideways histogram); 'heatmap' instead gives every bin
   // the profile's full width and varies opacity by volume instead.
   bar_style: ['bars', 'heatmap'],
+  // Which end of the volume distribution the heatmap makes most opaque —
+  // High Volume Nodes (busy levels) or Low Volume Nodes (thin, often
+  // better support/resistance since there's no built-up position history).
+  heatmap_emphasis: ['hvn', 'lvn'],
 };
 
 // Display text for enum option values that shouldn't show their raw
@@ -53,6 +88,8 @@ const PARAM_ENUM_LABELS = {
   slope_gradient: 'Slope Gradient (up/down)',
   recent: 'Most Recent (by bar)',
   extreme: 'Most Extreme (by price)',
+  hvn: 'High Volume Nodes',
+  lvn: 'Low Volume Nodes',
 };
 
 
@@ -462,7 +499,7 @@ function _renderParamValue(key, val) {
   }
   if (typeof val === 'number') {
     if (NULLABLE_NUM_KEYS.has(key)) return _renderNullableNum(key, val);
-    const isInt = Number.isInteger(val);
+    const isInt = Number.isInteger(val) && !FLOAT_KEYS.has(key);
     return `<div class="param-field" data-key="${_esc(key)}" data-type="${isInt ? 'int' : 'float'}">
       <span class="param-key"${_pdesc(key)}>${_esc(label)}</span>
       <span class="param-num-wrap">
@@ -836,7 +873,15 @@ function _activateFocusedParam() {
 // Shared by the spinner ▲/▼ buttons and ArrowLeft/ArrowRight on a focused numeric field.
 function _stepNumInput(input, dir) {
   if (!input || input.disabled) return;
-  const step = parseFloat(input.step) || 1;
+  const key = input.closest('.param-field, .param-nullable')?.dataset.key;
+  const parsedStep = parseFloat(input.step);
+  // PARAM_STEP (the param's own logical increment) wins when set. Otherwise
+  // step="any" (every float-type param) parses to NaN — fall back to a
+  // generic decimal increment instead of the int-type default of 1, so
+  // arrow-key/spinner stepping doesn't blow past a param's entire useful
+  // range (e.g. a 0-1 opacity/locality/pct field) in a single press.
+  const step = PARAM_STEP[key]
+    ?? (Number.isFinite(parsedStep) ? parsedStep : (input.step === 'any' ? 0.1 : 1));
   const min  = input.min !== '' ? parseFloat(input.min) : -Infinity;
   const max  = input.max !== '' ? parseFloat(input.max) : Infinity;
   let cur = parseFloat(input.value);
@@ -1837,6 +1882,27 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && tag === 'INPUT' && document.activeElement.classList.contains('param-input')) {
     e.preventDefault();
     document.activeElement.blur();
+    return;
+  }
+
+  // Arrow keys step a numeric param's value even while it holds real DOM
+  // focus (clicked into directly, cursor placed) — the kb-focused virtual-
+  // focus scheme below only reacts once nothing has real input focus, but
+  // clicking straight into a field to adjust it is the more natural path.
+  // Left/Right otherwise do nothing useful inside a number input (no native
+  // spin buttons here, see .param-num CSS); Up/Down DO still do something —
+  // the browser's own native number-input stepping — but that reads the
+  // input's step="any" attribute (used for float params so typed decimals
+  // aren't rejected) as its own default step of 1, ignoring PARAM_STEP
+  // entirely. Intercepting and preventDefault-ing here routes all four
+  // arrow keys through the one real stepping logic instead.
+  if (tag === 'INPUT' && document.activeElement.classList.contains('param-num')
+      && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+          || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault();
+    const dir = (e.key === 'ArrowRight' || e.key === 'ArrowUp') ? 1 : -1;
+    _stepNumInput(document.activeElement, dir);
+    _dirty = true;
     return;
   }
 

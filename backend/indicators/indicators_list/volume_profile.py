@@ -27,8 +27,10 @@ param_labels = {
     'fill_opacity':           'Bar Opacity',
     'show_histogram':         'Show Histogram Bars',
     'bar_style':              'Histogram Style',
+    'heatmap_emphasis':       'Heatmap Emphasis',
     'heatmap_opacity':        'Heatmap Max Opacity',
     'heatmap_contrast':       'Heatmap Contrast',
+    'heatmap_locality':       'Heatmap Locality',
     'directional_color':      'Color by Bull/Bear Direction',
     'histogram_grayscale':    'Histogram Grayscale',
     'show_poc':               'Show POC Line',
@@ -92,21 +94,51 @@ param_descriptions = {
                "highest-volume bins read darkest/most opaque, the lowest read almost "
                "invisible. Same underlying bins either way, just a different encoding "
                "of the same numbers.",
-    'heatmap_opacity': "Opacity of the highest-volume bin in 'heatmap' style, 0-1 — "
-               "every other bin scales down from this ceiling by its own share of that "
-               "peak volume. Separate from fill_opacity, since 'bars' style already has "
-               "bar width to carry the volume signal and only needs a modest fill, while "
-               "'heatmap' has nothing but opacity to work with. Has no effect in 'bars' "
+    'heatmap_emphasis': "Which end of the volume distribution 'heatmap' style makes "
+               "most opaque. 'hvn' (default) highlights High Volume Nodes — the "
+               "highest-volume bins read darkest, the emptiest read almost invisible, "
+               "same sense as show_hvn. 'lvn' flips that: the emptiest/lowest-volume "
+               "bins (including untraded gaps) read darkest instead, and the "
+               "highest-volume bins fade away — useful because thin, low-volume price "
+               "levels often make better support/resistance than heavily-traded ones, "
+               "with no built-up position history to defend them, and this makes those "
+               "levels visually stand out instead of the busy ones. In 'lvn' emphasis, "
+               "the Value Area dimming that normally fades bins outside VAH/VAL is "
+               "skipped, since VAH/VAL marks the high-volume core — dimming outside it "
+               "would fight the whole point of highlighting low-volume zones, which "
+               "live outside the value area by definition. Has no effect in 'bars' "
                "style.",
-    'heatmap_contrast': "Exponent applied to each bin's own share of the peak volume "
-               "before it's scaled to opacity, in 'heatmap' style. 1.0 = linear (a bin "
-               "at half the peak's volume gets half the opacity). Above 1.0 (default "
-               "2.0) suppresses lower-volume bins faster than it suppresses high ones, "
-               "so only genuinely significant levels stay visible against an emptier "
-               "background — higher values push that further. Below 1.0 does the "
-               "opposite, boosting faint bins so more of the profile's shape shows "
-               "through at the cost of the standout levels being less distinct. Has no "
-               "effect in 'bars' style.",
+    'heatmap_opacity': "Opacity of the bin heatmap_emphasis is highlighting (the "
+               "highest-volume bin under 'hvn' emphasis, the lowest-volume under "
+               "'lvn'), 0-1 — every other bin scales down from this ceiling by its own "
+               "distance from that one. Separate from fill_opacity, since 'bars' style "
+               "already has bar width to carry the volume signal and only needs a "
+               "modest fill, while 'heatmap' has nothing but opacity to work with. Has "
+               "no effect in 'bars' style.",
+    'heatmap_contrast': "Exponent applied to each bin's own distance from the "
+               "emphasized extreme (see heatmap_emphasis) before it's scaled to "
+               "opacity, in 'heatmap' style. 1.0 = linear. Above 1.0 (default 2.0) "
+               "suppresses bins further from that extreme faster than it suppresses "
+               "bins near it, so only the genuinely emphasized levels stay visible "
+               "against an emptier background — higher values push that further. "
+               "Below 1.0 does the opposite, boosting distant bins so more of the "
+               "profile's shape shows through at the cost of the standout levels "
+               "being less distinct. Has no effect in 'bars' style.",
+    'heatmap_locality': "How much each bin's opacity is judged against its own "
+               "neighborhood instead of the profile's single global extreme, in "
+               "'heatmap' style, 0-1. At 0 (default) every bin is scaled purely "
+               "against the profile's one global peak bin — the same reference point "
+               "for the whole profile, which makes 'hvn' emphasis a sparse spike (only "
+               "bins near that one peak stand out) and 'lvn' emphasis a dense, broad "
+               "glow (almost everything is 'far' from a single peak), and hides any "
+               "secondary, locally-significant hump that isn't the global maximum. At "
+               "1, each bin is scaled purely against the min/max of a local window "
+               "around it instead (same window as node_window) — a modest local peak "
+               "gets full intensity in its own neighborhood even if it's unremarkable "
+               "globally, and the sparse/dense asymmetry between 'hvn' and 'lvn' "
+               "emphasis goes away, since local min-to-max is always a fair range on "
+               "both ends. Values between 0 and 1 blend the two. Has no effect in "
+               "'bars' style.",
     'histogram_grayscale': "Fill the histogram bins — bars or heatmap, whichever "
                "bar_style is active — in neutral gray instead of the profile's own "
                "color (orange, or teal/red under directional_color); width/opacity "
@@ -138,7 +170,9 @@ param_descriptions = {
                "volume peak/trough (window size = 2 * node_window + 1, in bins, not "
                "price). A flat run of tied bins — e.g. a stretch of untraded price with "
                "identically zero volume — collapses to a single node at its midpoint "
-               "rather than flagging every bin in the run.",
+               "rather than flagging every bin in the run. This same window also "
+               "defines 'local' for heatmap_locality, so the two stay consistent with "
+               "each other.",
     'max_nodes': "Cap on how many HVN/LVN markers are shown per profile per side. When a "
                "profile has more candidates than this, HVN keeps the highest-volume ones "
                "and LVN keeps the lowest-volume ones.",
@@ -285,9 +319,10 @@ def _hvn_lvn(price_min, bin_size, bins, node_window, max_nodes, want_hvn, want_l
 
 
 def _build_payload(high, low, volume, end, num_bins, fill_opacity, show_histogram,
-                    bar_style, heatmap_opacity, heatmap_contrast, histogram_grayscale,
-                    directional_color, show_poc, show_value_area, value_area_pct,
-                    show_hvn, show_lvn, node_window, max_nodes):
+                    bar_style, heatmap_emphasis, heatmap_opacity, heatmap_contrast,
+                    heatmap_locality, histogram_grayscale, directional_color, show_poc,
+                    show_value_area, value_area_pct, show_hvn, show_lvn, node_window,
+                    max_nodes):
     """Build one anchor's JSON payload from its own high/low/volume slice —
     shared by the Peaks/Valleys swing-anchored profiles and the whole-chart
     profile (show_full_range) below, so neither duplicates the histogram /
@@ -301,7 +336,8 @@ def _build_payload(high, low, volume, end, num_bins, fill_opacity, show_histogra
         'e': int(end), 'lo': round(price_min, 6), 'bs': round(bin_size, 6),
         'b': [round(float(v), 2) for v in bins], 'fo': fill_opacity,
         'sh': show_histogram, 'dc': directional_color, 'bst': bar_style,
-        'hop': heatmap_opacity, 'hct': heatmap_contrast, 'hgs': histogram_grayscale,
+        'hem': heatmap_emphasis, 'hop': heatmap_opacity, 'hct': heatmap_contrast,
+        'hloc': heatmap_locality, 'nw': node_window, 'hgs': histogram_grayscale,
     }
     if show_poc or show_value_area:
         poc_price, vah_price, val_price = _poc_value_area(price_min, bin_size, bins,
@@ -340,8 +376,8 @@ def calculate_volume_profile(df,
                               anchor_select_valleys='recent', max_profiles_valleys=3,
                               show_full_range=False,
                               num_bins=24, extend_to_end=True, fill_opacity=0.4,
-                              show_histogram=True, bar_style='bars',
-                              heatmap_opacity=0.85, heatmap_contrast=2.0,
+                              show_histogram=True, bar_style='bars', heatmap_emphasis='hvn',
+                              heatmap_opacity=0.85, heatmap_contrast=2.0, heatmap_locality=0.0,
                               directional_color=False, histogram_grayscale=False,
                               show_poc=True, show_value_area=True, value_area_pct=0.7,
                               show_hvn=True, show_lvn=True, node_window=2, max_nodes=5):
@@ -381,10 +417,10 @@ def calculate_volume_profile(df,
                 continue
             payload = _build_payload(
                 high[idx:end + 1], low[idx:end + 1], volume[idx:end + 1], end,
-                num_bins, fill_opacity, show_histogram, bar_style,
-                heatmap_opacity, heatmap_contrast, histogram_grayscale, directional_color,
-                show_poc, show_value_area, value_area_pct,
-                show_hvn, show_lvn, node_window, max_nodes)
+                num_bins, fill_opacity, show_histogram, bar_style, heatmap_emphasis,
+                heatmap_opacity, heatmap_contrast, heatmap_locality, histogram_grayscale,
+                directional_color, show_poc, show_value_area,
+                value_area_pct, show_hvn, show_lvn, node_window, max_nodes)
             if payload is None:
                 continue
             flag.iloc[idx] = direction
@@ -399,10 +435,10 @@ def calculate_volume_profile(df,
     if show_full_range and n > 1:
         payload = _build_payload(
             high, low, volume, n - 1,
-            num_bins, fill_opacity, show_histogram, bar_style,
-            heatmap_opacity, heatmap_contrast, histogram_grayscale, directional_color,
-            show_poc, show_value_area, value_area_pct,
-            show_hvn, show_lvn, node_window, max_nodes)
+            num_bins, fill_opacity, show_histogram, bar_style, heatmap_emphasis,
+            heatmap_opacity, heatmap_contrast, heatmap_locality, histogram_grayscale,
+            directional_color, show_poc, show_value_area,
+            value_area_pct, show_hvn, show_lvn, node_window, max_nodes)
         if payload is not None:
             flag.iloc[0] = 1.0
             data.iloc[0] = json.dumps(payload)

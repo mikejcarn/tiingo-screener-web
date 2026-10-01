@@ -365,8 +365,10 @@ function _wireControls() {
     if (!chart || !N) return;
 
     // e.code (physical key), not e.key, so Shift+. — which types '>', not
-    // '.' — still detects as the period key; only e.shiftKey decides whether
-    // stdev bands get drawn.
+    // '.' — still detects as the period key; e.shiftKey decides whether
+    // stdev bands get drawn, e.ctrlKey/e.metaKey whether a Volume Profile
+    // is paired with it (same anchor; toggling '.' again at that bar, or
+    // undoing it, removes the whole pair together — not just the VWAP).
     if ((e.code === 'Period' && e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       chart.undoManualAnchor();
@@ -374,7 +376,7 @@ function _wireControls() {
     }
     if (e.code === 'Period' && !e.altKey) {
       if (_lastChartX == null) return;
-      chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey);
+      chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey, e.ctrlKey || e.metaKey);
       return;
     }
     if (e.key === ' ' && e.altKey) {
