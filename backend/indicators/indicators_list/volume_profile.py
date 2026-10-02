@@ -14,13 +14,16 @@ param_separators = ['include_valleys', 'show_full_range', 'num_bins', 'show_poc'
 
 param_labels = {
     'include_peaks':          'Anchor at Peaks',
-    'periods_peaks':          'Pivot Window — Peaks (periods)',
-    'anchor_select_peaks':    'Anchor Selection — Peaks',
-    'max_profiles_peaks':     'Max Profiles Shown — Peaks',
+    'peaks_params':           'Peaks Config(s)',
     'include_valleys':        'Anchor at Valleys',
-    'periods_valleys':        'Pivot Window — Valleys (periods)',
-    'anchor_select_valleys':  'Anchor Selection — Valleys',
-    'max_profiles_valleys':   'Max Profiles Shown — Valleys',
+    'valleys_params':         'Valleys Config(s)',
+    # Shared flat labels for the fields inside each peaks_params/
+    # valleys_params config — same name either side, disambiguated by
+    # which group they're rendered under (same convention as aVWAP_peaks.py/
+    # aVWAP_valleys.py each defining their own 'periods'/'max_aVWAPs').
+    'periods':                'Pivot Window (periods)',
+    'anchor_select':          'Anchor Selection',
+    'max_profiles':           'Max Profiles (this config)',
     'show_full_range':        'Show Whole-Chart Profile',
     'num_bins':               'Price Bins',
     'extend_to_end':          'Extend to Now (vs. stop at next swing)',
@@ -43,37 +46,38 @@ param_labels = {
 }
 
 param_descriptions = {
-    'periods_peaks': "Pivot-detection window for the Peaks swing points a profile can "
-               "anchor at — same param, same meaning, as aVWAP_peaks' own 'periods'. "
-               "Independent of the Valleys window, so peaks and valleys can use "
-               "different pivot sensitivities.",
-    'periods_valleys': "Pivot-detection window for the Valleys swing points a profile "
-               "can anchor at — same param, same meaning, as aVWAP_valleys' own "
-               "'periods'. Independent of the Peaks window.",
-    'anchor_select_peaks': "Which Peak swing points to keep, up to max_profiles_peaks. "
+    'peaks_params': "A config dict (or list of config dicts) controlling where Peak-"
+               "anchored profiles come from — same 'pass a list for multiple independent "
+               "configs' convention as aVWAP_peaks' own peaks_params. Each config has its "
+               "own 'periods' (pivot-detection window), 'anchor_select' ('recent' or "
+               "'extreme'), and 'max_profiles' (cap for that config). Pass a list — e.g. "
+               "[{'periods': 50, 'max_profiles': 3}, {'periods': 100, 'max_profiles': 3}] "
+               "— to get profiles at multiple different pivot windows at once (and, "
+               "paired with aVWAP_peaks given the identical peaks_params shape, an aVWAP "
+               "line anchored at the exact same swing points). If two different configs' "
+               "anchors ever land on the exact same bar, both profiles are kept — not "
+               "overwritten — stored together at that bar.",
+    'valleys_params': "Same as peaks_params, for Valley-anchored profiles — a config "
+               "dict or list of config dicts, each with its own 'periods', "
+               "'anchor_select', and 'max_profiles'.",
+    'periods': "Pivot-detection window for this config's swing points — same param, "
+               "same meaning, as aVWAP_peaks/aVWAP_valleys' own 'periods'.",
+    'anchor_select': "Which of this config's swing points to keep, up to max_profiles. "
                "'recent' (default) keeps the most recent by bar position — same "
-               "convention as max_aVWAPs elsewhere. 'extreme' instead keeps the highest "
-               "peaks anywhere in the chart, regardless of when they happened. With "
-               "max_profiles_peaks=1, 'extreme' gives you exactly one profile anchored "
-               "at the single highest peak on the chart.",
-    'anchor_select_valleys': "Which Valley swing points to keep, up to "
-               "max_profiles_valleys. 'recent' (default) keeps the most recent by bar "
-               "position. 'extreme' instead keeps the lowest valleys anywhere in the "
-               "chart, regardless of when they happened. With max_profiles_valleys=1, "
-               "'extreme' gives you exactly one profile anchored at the single lowest "
-               "valley on the chart.",
-    'max_profiles_peaks': "Cap on how many Peak-anchored profiles are shown — which "
-               "ones are kept is controlled by anchor_select_peaks. A volume profile is "
-               "real work to compute and to draw (one histogram per anchor), so unlike "
-               "a plain aVWAP line this defaults to a small number rather than "
-               "unlimited.",
-    'max_profiles_valleys': "Cap on how many Valley-anchored profiles are shown — which "
-               "ones are kept is controlled by anchor_select_valleys.",
+               "convention as max_aVWAPs elsewhere. 'extreme' instead keeps the most "
+               "extreme by price (highest for Peaks, lowest for Valleys), regardless of "
+               "when they happened. With max_profiles=1, 'extreme' gives you exactly one "
+               "profile anchored at the single highest peak (or lowest valley) on the "
+               "chart.",
+    'max_profiles': "Cap on how many profiles this config keeps — which ones are kept is "
+               "controlled by this config's own anchor_select. A volume profile is real "
+               "work to compute and to draw (one histogram per anchor), so unlike a "
+               "plain aVWAP line this defaults to a small number rather than unlimited.",
     'show_full_range': "Add one extra profile anchored at the very first bar of the "
                "chart and spanning all the way to the last — a single volume-at-price "
                "picture of the entire loaded history, independent of the Peaks/Valleys "
-               "swing anchoring above (ignores extend_to_end and periods/anchor_select/ "
-               "max_profiles — it always covers the whole chart). Uses the same "
+               "swing anchoring above (ignores extend_to_end and every peaks_params/ "
+               "valleys_params config — it always covers the whole chart). Uses the same "
                "num_bins/style/POC/Value-Area/HVN-LVN settings as every other profile.",
     'num_bins': "How many price levels the volume gets bucketed into per profile. More "
                "bins = finer resolution, more bars to draw.",
@@ -318,22 +322,30 @@ def _hvn_lvn(price_min, bin_size, bins, node_window, max_nodes, want_hvn, want_l
     return hvn_zones, lvn_zones
 
 
-def _build_payload(high, low, volume, end, num_bins, fill_opacity, show_histogram,
-                    bar_style, heatmap_emphasis, heatmap_opacity, heatmap_contrast,
-                    heatmap_locality, histogram_grayscale, directional_color, show_poc,
-                    show_value_area, value_area_pct, show_hvn, show_lvn, node_window,
-                    max_nodes):
+def _build_payload(high, low, volume, end, vf, direction, num_bins, fill_opacity,
+                    show_histogram, bar_style, heatmap_emphasis, heatmap_opacity,
+                    heatmap_contrast, heatmap_locality, histogram_grayscale,
+                    directional_color, show_poc, show_value_area, value_area_pct,
+                    show_hvn, show_lvn, node_window, max_nodes):
     """Build one anchor's JSON payload from its own high/low/volume slice —
     shared by the Peaks/Valleys swing-anchored profiles and the whole-chart
     profile (show_full_range) below, so neither duplicates the histogram /
     POC / Value Area / HVN-LVN assembly. Returns None when the slice has no
-    real (nonzero-volume) range to build a histogram from."""
+    real (nonzero-volume) range to build a histogram from.
+
+    vf (visible_from bar) and direction are embedded directly in the
+    payload — computed once here, where this anchor's own originating
+    config's periods is actually known — rather than re-derived later in
+    replay_events.py from a separate params snapshot. That re-derivation
+    stopped being reliable once peaks_params/valleys_params became lists of
+    independent configs, each potentially using a different periods value."""
     hist = _histogram(high, low, volume, num_bins)
     if hist is None:
         return None
     price_min, bin_size, bins = hist
     payload = {
-        'e': int(end), 'lo': round(price_min, 6), 'bs': round(bin_size, 6),
+        'e': int(end), 'vf': int(vf), 'dir': direction,
+        'lo': round(price_min, 6), 'bs': round(bin_size, 6),
         'b': [round(float(v), 2) for v in bins], 'fo': fill_opacity,
         'sh': show_histogram, 'dc': directional_color, 'bst': bar_style,
         'hem': heatmap_emphasis, 'hop': heatmap_opacity, 'hct': heatmap_contrast,
@@ -369,11 +381,31 @@ def _select_anchors(anchors, price, max_profiles, anchor_select, want_highest):
     return sorted(anchors, reverse=True)[:max_profiles]
 
 
+def _write_payload(data, flag, idx, direction, payload):
+    """Store one anchor's payload at bar idx — merging into a list instead
+    of overwriting when a different config already landed an anchor on
+    this exact same bar (e.g. two peaks_params configs with different
+    periods both flagging the same global high as their anchor). flag only
+    needs to be nonzero for replay_events.py's own bar discovery; direction
+    itself now travels inside each payload ('dir'), so a collision between
+    opposite-direction anchors at the same bar no longer loses one side's
+    label the way overwriting flag's sign alone would."""
+    existing = data.iloc[idx]
+    if existing:
+        prior = json.loads(existing)
+        merged = prior if isinstance(prior, list) else [prior]
+        merged.append(payload)
+        data.iloc[idx] = json.dumps(merged)
+    else:
+        data.iloc[idx] = json.dumps(payload)
+    flag.iloc[idx] = direction
+
+
 def calculate_volume_profile(df,
-                              include_peaks=True, periods_peaks=25,
-                              anchor_select_peaks='recent', max_profiles_peaks=3,
-                              include_valleys=True, periods_valleys=25,
-                              anchor_select_valleys='recent', max_profiles_valleys=3,
+                              include_peaks=True,
+                              peaks_params={'periods': 25, 'anchor_select': 'recent', 'max_profiles': 3},
+                              include_valleys=True,
+                              valleys_params={'periods': 25, 'anchor_select': 'recent', 'max_profiles': 3},
                               show_full_range=False,
                               num_bins=24, extend_to_end=True, fill_opacity=0.4,
                               show_histogram=True, bar_style='bars', heatmap_emphasis='hvn',
@@ -397,34 +429,48 @@ def calculate_volume_profile(df,
     flag   = pd.Series(0.0, index=df.index)
     data   = pd.Series('', index=df.index, dtype=object)
 
+    # peaks_params/valleys_params each accept a single config dict or a
+    # list of them — same "pass a list for multiple independent configs"
+    # convention aVWAP_peaks.py/aVWAP_valleys.py already use for their own
+    # identically-shaped params, so e.g. valleys_params=[{'periods': 50,
+    # 'max_profiles': 3}, {'periods': 100, 'max_profiles': 3}] anchors at
+    # both pivot windows at once (and, paired with an aVWAP indicator given
+    # the same peaks_params/valleys_params shape, at the exact same bars).
     sides = (
-        ('Peaks', 1, include_peaks, periods_peaks, anchor_select_peaks, max_profiles_peaks),
-        ('Valleys', -1, include_valleys, periods_valleys, anchor_select_valleys, max_profiles_valleys),
+        ('Peaks', 1, include_peaks, peaks_params),
+        ('Valleys', -1, include_valleys, valleys_params),
     )
-    for column, direction, want, side_periods, side_anchor_select, side_max_profiles in sides:
+    for column, direction, want, side_params in sides:
         if not want:
             continue
-        anchors = _swing_indices(df, side_periods, column)
-        if not anchors:
-            continue
-        price_for_side = high if direction == 1 else low
-        kept = _select_anchors(anchors, price_for_side, side_max_profiles, side_anchor_select,
-                                want_highest=(direction == 1))
-        bounded_end = _bounded_ends(anchors, n)
-        for idx in kept:
-            end = (n - 1) if extend_to_end else bounded_end[idx]
-            if end <= idx:
+        configs = side_params if isinstance(side_params, list) else [side_params]
+        for config in configs:
+            side_periods       = config.get('periods', 25)
+            side_anchor_select = config.get('anchor_select', 'recent')
+            side_max_profiles  = config.get('max_profiles', 3)
+            half = side_periods // 2
+
+            anchors = _swing_indices(df, side_periods, column)
+            if not anchors:
                 continue
-            payload = _build_payload(
-                high[idx:end + 1], low[idx:end + 1], volume[idx:end + 1], end,
-                num_bins, fill_opacity, show_histogram, bar_style, heatmap_emphasis,
-                heatmap_opacity, heatmap_contrast, heatmap_locality, histogram_grayscale,
-                directional_color, show_poc, show_value_area,
-                value_area_pct, show_hvn, show_lvn, node_window, max_nodes)
-            if payload is None:
-                continue
-            flag.iloc[idx] = direction
-            data.iloc[idx] = json.dumps(payload)
+            price_for_side = high if direction == 1 else low
+            kept = _select_anchors(anchors, price_for_side, side_max_profiles,
+                                    side_anchor_select, want_highest=(direction == 1))
+            bounded_end = _bounded_ends(anchors, n)
+            for idx in kept:
+                end = (n - 1) if extend_to_end else bounded_end[idx]
+                if end <= idx:
+                    continue
+                payload = _build_payload(
+                    high[idx:end + 1], low[idx:end + 1], volume[idx:end + 1], end,
+                    idx + half, 'bull' if direction == 1 else 'bear',
+                    num_bins, fill_opacity, show_histogram, bar_style, heatmap_emphasis,
+                    heatmap_opacity, heatmap_contrast, heatmap_locality, histogram_grayscale,
+                    directional_color, show_poc, show_value_area,
+                    value_area_pct, show_hvn, show_lvn, node_window, max_nodes)
+                if payload is None:
+                    continue
+                _write_payload(data, flag, idx, direction, payload)
 
     # Whole-chart profile — anchored at bar 0 regardless of any Peaks/Valleys
     # swing point, always spanning the full 0..n-1 range (extend_to_end and
@@ -434,14 +480,13 @@ def calculate_volume_profile(df,
     # very first bar — so this can't collide with a swing-anchored profile.
     if show_full_range and n > 1:
         payload = _build_payload(
-            high, low, volume, n - 1,
+            high, low, volume, n - 1, 0, 'bull',
             num_bins, fill_opacity, show_histogram, bar_style, heatmap_emphasis,
             heatmap_opacity, heatmap_contrast, heatmap_locality, histogram_grayscale,
             directional_color, show_poc, show_value_area,
             value_area_pct, show_hvn, show_lvn, node_window, max_nodes)
         if payload is not None:
-            flag.iloc[0] = 1.0
-            data.iloc[0] = json.dumps(payload)
+            _write_payload(data, flag, 0, 1.0, payload)
 
     return {
         'VolumeProfile': flag,

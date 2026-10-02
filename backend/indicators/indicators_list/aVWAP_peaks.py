@@ -14,6 +14,8 @@ param_labels = {
     'slope_scale':        'Slope Saturation Scale (ATR/bar)',
     'slope_alpha_min':    'Slope Gradient Min Opacity (flat)',
     'slope_alpha_max':    'Slope Gradient Max Opacity (steep)',
+    'show_stdev_bands':   'Show StDev Bands',
+    'stdev_multiples':    'StDev Band Multiples',
 }
 
 param_descriptions = {
@@ -26,6 +28,10 @@ param_descriptions = {
     'styling': "How to color this indicator's lines — one mutually-exclusive choice. "
                "'shades' (default) gives every config a shade of this indicator's color, "
                "tiered by opacity from most- to least-recently-added config. "
+               "'shades_orange' is the same tiered-by-opacity treatment, just matching the "
+               "Volume Profile indicator's own default color instead of this "
+               "indicator's usual red/teal — for visually grouping volume-themed "
+               "indicators together regardless of anchor direction. "
                "'highlight_first' keeps the first config at full color and renders every "
                "other config as a shade of grey instead, so the primary config stands out "
                "from the rest. 'grayscale' renders every config as a shade of grey (no hue "
@@ -68,6 +74,17 @@ param_descriptions = {
                     "styling modes. Only used when styling is 'slope_gradient'.",
     'slope_alpha_max': "Line opacity at slope_scale (fully saturated steepness) for "
                     "slope_gradient. Only used when styling is 'slope_gradient'.",
+    'show_stdev_bands': "Draw standard-deviation bands (vwap ± k×stdev, one pair per "
+                    "stdev_multiples entry) around every peak anchor aVWAP — the "
+                    "cumulative volume-weighted dispersion of price around that VWAP "
+                    "since its anchor, same idea as Bollinger Bands but anchored instead "
+                    "of rolling, same math as aVWAP_pinch's own show_stdev_bands. One "
+                    "shared on/off for every config in peaks_params — not independently "
+                    "toggleable per config, same convention as styling.",
+    'stdev_multiples': "Which multiples of each anchor's own stdev to draw band pairs "
+                    "at (e.g. [1, 2] draws a ±1 and a ±2 band, tightest band most "
+                    "visible, wider bands fading out). Only used when show_stdev_bands "
+                    "is on.",
 }
 
 
@@ -80,6 +97,8 @@ def calculate_aVWAP_peaks(
     slope_scale=0.15,
     slope_alpha_min=0.15,
     slope_alpha_max=0.85,
+    show_stdev_bands=False,
+    stdev_multiples=[1, 2],
 ):
     """
     Anchor aVWAPs at detected swing peaks.
@@ -91,6 +110,8 @@ def calculate_aVWAP_peaks(
     styling — how the (possibly multiple) configs' lines are colored on the chart, one
         mutually exclusive choice:
         'shades'          — every config a shade of red, tiered by opacity (default)
+        'shades_orange'   — same tiered-by-opacity treatment, matching Volume Profile's
+                            own default color instead of red
         'highlight_first' — first config full red, every other config a shade of grey
         'grayscale'       — every config a shade of grey, no red at all
         'curve_opacity'   — colored by curvature relative to this line's own sharpest move
@@ -107,13 +128,18 @@ def calculate_aVWAP_peaks(
         — see param_descriptions. Only meaningful when styling is 'curve_opacity',
         'curve_heatmap', or 'slope_gradient' (the alpha params only for 'slope_gradient').
 
-    None of these eight params touch this function's DataFrame output — these lines are
+    show_stdev_bands / stdev_multiples — draw vwap ± k*stdev bands around every peak
+        anchor line, same math as aVWAP_pinch's own show_stdev_bands (and the manual
+        Ctrl+. tool's Shift+. bands) — see param_descriptions.
+
+    None of these ten params touch this function's DataFrame output — these lines are
     rendered live by the client-side DynamicVWAPEngine, not from this function's return
     value. They exist only so calculate_indicator accepts them; replay_events.py reads
     the raw values straight from ind_params and forwards them to the JS engine, which
     ports the same math aVWAP_minmax/aVWAP.py's calculate_avwap_straightening /
     avwap_curve_color use for curve_opacity/curve_heatmap, plus an analogous simpler
-    (memoryless) computation for slope_gradient.
+    (memoryless) computation for slope_gradient, plus aVWAP.py's own
+    calculate_avwap_stdev for show_stdev_bands.
 
     Multiple configs (pass a list) each get their own independent periods/max_aVWAPs
     and are kept in separately-labelled anchor groups:

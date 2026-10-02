@@ -393,7 +393,7 @@ def _extract_liquidity_segments(df: pd.DataFrame, params: dict = None) -> list:
     return events
 
 
-def _extract_volume_profile_events(df: pd.DataFrame, params: dict = None) -> list:
+def _extract_volume_profile_events(df: pd.DataFrame) -> list:
     """
     Extract Volume Profile events from stored indicator columns.
 
@@ -403,49 +403,44 @@ def _extract_volume_profile_events(df: pd.DataFrame, params: dict = None) -> lis
     type here uses, no rolling-cap needed since max_profiles already capped
     how many exist at calculation time.
 
-    vf = s + periods // 2 — a peak/valley anchor from peaks_valleys.py's
-    centered rolling window isn't actually confirmed until periods // 2 bars
-    after it, same confirmation-delay convention aVWAP_peaks/aVWAP_valleys'
-    own dynamic anchors already use for the identical underlying anchors.
-    Peaks and Valleys each have their own periods param (periods_peaks /
-    periods_valleys), so the delay is picked per event by its own direction.
-    The one exception is the whole-chart profile (show_full_range), always
-    anchored at bar 0 — it isn't a peaks_valleys.py swing point at all (bar 0
-    can never be one, its centered window has no room on the left), so it
-    gets no confirmation delay: it's visible from the very first bar.
+    A bar's stored value is normally a single JSON object, but can be a
+    *list* of them — volume_profile.py merges rather than overwrites when
+    two different peaks_params/valleys_params configs (e.g. different
+    periods) both anchor on the exact same bar, so this unpacks either
+    shape into one event per object. vf (visible_from) and dir are read
+    straight from each object — volume_profile.py computes them once at
+    calc time, using whichever config's own periods actually produced that
+    anchor, rather than this function re-deriving a single shared delay
+    per direction (not possible anymore now that peaks_params/
+    valleys_params can hold multiple configs with different periods each).
     """
     if 'VolumeProfile' not in df.columns or 'VolumeProfile_Data' not in df.columns:
         return []
-    if params is None:
-        params = {}
-    half_peaks   = int(params.get('periods_peaks', 25)) // 2
-    half_valleys = int(params.get('periods_valleys', 25)) // 2
     events = []
     for idx in df[df['VolumeProfile'] != 0].index:
         raw = df.at[idx, 'VolumeProfile_Data']
         if not raw:
             continue
         try:
-            d = json.loads(raw)
+            parsed = json.loads(raw)
         except (TypeError, ValueError):
             continue
-        v = df.at[idx, 'VolumeProfile']
-        half = 0 if idx == 0 else (half_peaks if v > 0 else half_valleys)
-        ev = {
-            's': int(idx), 'e': int(d['e']), 'dir': 'bull' if v > 0 else 'bear',
-            'vf': int(idx) + half,
-            'lo': d['lo'], 'bs': d['bs'], 'bins': d['b'], 'fo': d.get('fo', 0.4),
-            'sh': d.get('sh', True), 'dc': d.get('dc', False),
-            'bst': d.get('bst', 'bars'),
-            'hem': d.get('hem', 'hvn'),
-            'hop': d.get('hop', 0.85), 'hct': d.get('hct', 2.0),
-            'hloc': d.get('hloc', 0.0), 'nw': d.get('nw', 2),
-            'hgs': d.get('hgs', False),
-        }
-        for key in ('poc', 'vah', 'val', 'hvn', 'lvn'):
-            if key in d:
-                ev[key] = d[key]
-        events.append(ev)
+        for d in (parsed if isinstance(parsed, list) else [parsed]):
+            ev = {
+                's': int(idx), 'e': int(d['e']), 'dir': d.get('dir', 'bull'),
+                'vf': int(d.get('vf', idx)),
+                'lo': d['lo'], 'bs': d['bs'], 'bins': d['b'], 'fo': d.get('fo', 0.4),
+                'sh': d.get('sh', True), 'dc': d.get('dc', False),
+                'bst': d.get('bst', 'bars'),
+                'hem': d.get('hem', 'hvn'),
+                'hop': d.get('hop', 0.85), 'hct': d.get('hct', 2.0),
+                'hloc': d.get('hloc', 0.0), 'nw': d.get('nw', 2),
+                'hgs': d.get('hgs', False),
+            }
+            for key in ('poc', 'vah', 'val', 'hvn', 'lvn'):
+                if key in d:
+                    ev[key] = d[key]
+            events.append(ev)
     return events
 
 
@@ -787,6 +782,14 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
     valleys_cfg   = ind_params.get('aVWAP_valleys', {})
     peaks_style   = peaks_cfg.get('styling', 'shades')
     valleys_style = valleys_cfg.get('styling', 'shades')
+    # StDev bands (vwap +/- k*stdev) around every peak/valley anchor line — same
+    # math as aVWAP_pinch's own show_stdev_bands, one shared on/off + multiples
+    # per indicator (not per individual config in peaks_params/valleys_params),
+    # same convention as styling above.
+    peaks_show_stdev     = bool(peaks_cfg.get('show_stdev_bands', False))
+    peaks_stdev_mults    = peaks_cfg.get('stdev_multiples', [1, 2])
+    valleys_show_stdev   = bool(valleys_cfg.get('show_stdev_bands', False))
+    valleys_stdev_mults  = valleys_cfg.get('stdev_multiples', [1, 2])
 
     # Legacy QQEMOD rendering via qqemod_events/_qbPool/_qlPool is disabled —
     # the column-based aVWAP_QQEMOD_* system handles all rendering now.
@@ -849,13 +852,17 @@ def extract_events(df: pd.DataFrame, ind_params: dict) -> dict:
         'valleys_slope_scale':        float(valleys_cfg.get('slope_scale', 0.15)),
         'valleys_slope_alpha_min':    float(valleys_cfg.get('slope_alpha_min', 0.15)),
         'valleys_slope_alpha_max':    float(valleys_cfg.get('slope_alpha_max', 0.85)),
+        'peaks_show_stdev':    peaks_show_stdev,
+        'peaks_stdev_mults':   peaks_stdev_mults,
+        'valleys_show_stdev':  valleys_show_stdev,
+        'valleys_stdev_mults': valleys_stdev_mults,
         # Segment indicators — horizontal line events with start/end bar + price
         'fvg': _extract_fvg_segments(df, ind_params.get('FVG',        {})),
         'ob':  _extract_ob_segments(df,  ob_params),
         'bos': _extract_bos_choch_segments(df, ind_params.get('BoS_CHoCH', {})),
         'liq': _extract_liquidity_segments(df, ind_params.get('liquidity', {})),
         'gap': _extract_gap_segments(df,  ind_params.get('gaps',       {})),
-        'vp':  _extract_volume_profile_events(df, ind_params.get('volume_profile', {})),
+        'vp':  _extract_volume_profile_events(df),
         'poc': _extract_poc_segments(df),
         # Dynamic aVWAP anchor pools (OB, BoS/CHoCH, gaps, price_maxima_minima)
         'avwap_anchors': _extract_dynamic_avwap_anchors(df, ind_params),

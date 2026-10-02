@@ -51,17 +51,19 @@ const PARAM_ENUMS = {
   // slope_gradient (instantaneous slope, no history) — so none of these can
   // independently fight over the same lines' color the way separate 'styling'
   // + 'curve_color' params used to.
-  styling: ['shades', 'highlight_first', 'grayscale', 'curve_opacity', 'curve_heatmap', 'slope_gradient'],
+  // 'shades_orange' is the same tiered-by-opacity treatment as 'shades',
+  // just matching Volume Profile's own default color instead of this
+  // indicator's usual red/teal.
+  styling: ['shades', 'shades_orange', 'highlight_first', 'grayscale', 'curve_opacity', 'curve_heatmap', 'slope_gradient'],
   anchor_type: ['peak', 'valley'],
   rank_by: ['volfrac', 'volume'],
   // aVWAP_minmax's own chained-line coloring — a separate param on a indicator
   // that has no rank-based 'styling' dropdown of its own, so no merge needed there.
   chain_curve_color: ['none', 'opacity', 'heatmap'],
-  // Volume Profile's anchor-picking rule — 'recent' by bar position vs.
-  // 'extreme' by price (highest peak / lowest valley on the chart) — set
-  // independently per side.
-  anchor_select_peaks: ['recent', 'extreme'],
-  anchor_select_valleys: ['recent', 'extreme'],
+  // Volume Profile's anchor-picking rule, inside each peaks_params/
+  // valleys_params config — 'recent' by bar position vs. 'extreme' by
+  // price (highest peak / lowest valley on the chart).
+  anchor_select: ['recent', 'extreme'],
   // Volume Profile's histogram rendering — 'bars' varies each bin's width by
   // volume (classic sideways histogram); 'heatmap' instead gives every bin
   // the profile's full width and varies opacity by volume instead.
@@ -88,6 +90,10 @@ const PARAM_ENUM_LABELS = {
   slope_gradient: 'Slope Gradient (up/down)',
   recent: 'Most Recent (by bar)',
   extreme: 'Most Extreme (by price)',
+  shades: 'Shades',
+  shades_orange: 'Shades - Orange',
+  highlight_first: 'Highlight First',
+  grayscale: 'Grayscale',
   hvn: 'High Volume Nodes',
   lvn: 'Low Volume Nodes',
 };

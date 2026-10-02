@@ -15,6 +15,10 @@ import { VolumeProfileSeries, RGB_DEFAULT as VP_RGB_DEFAULT } from './volume_pro
 // Default colours — match col_styles.py palette
 const C_PEAK   = 'rgba(239, 83, 80, 0.75)';   // red   — peaks
 const C_VALLEY = 'rgba(38, 166, 154, 0.75)';   // teal  — valleys
+// aVWAP_peaks/aVWAP_valleys' own 'styling' = 'shades_orange' — same tiered-
+// by-opacity treatment as 'shades', just matching Volume Profile's own
+// default color instead of this indicator's usual red/teal.
+const ORANGE_RGB = VP_RGB_DEFAULT.split(',').map(Number);
 // QQEMOD: bear zone anchor → teal line (bullish support level)
 //         bull zone anchor → red  line (bearish resistance level)
 const C_QQ_BEAR = 'rgba(38, 166, 154, 0.75)';
@@ -203,6 +207,7 @@ export class DynamicVWAPEngine {
     // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
     this._manualSeries = {};
     this._manualOrder  = []; // anchor bar indices in placement order, for undo (LIFO)
+    this._lastN = 0; // last n passed to reveal() — for clamping a hold-and-drag's end point
   }
 
   // ── Setup ──────────────────────────────────────────────────────────────────
@@ -233,6 +238,12 @@ export class DynamicVWAPEngine {
     this._pPool = []; this._vPool = []; this._qbPool = []; this._qlPool = [];
     for (const pool of Object.values(this._anchorPools)) {
       for (const s of pool.series) { try { this._chart.removeSeries(s); } catch (_) {} }
+      for (const slotBands of pool.bands || []) {
+        for (const band of slotBands) {
+          try { this._chart.removeSeries(band.upper); } catch (_) {}
+          try { this._chart.removeSeries(band.lower); } catch (_) {}
+        }
+      }
     }
     this._anchorPools = {};
     for (const p of this._pmmPools) {
@@ -325,6 +336,23 @@ export class DynamicVWAPEngine {
   }
 
   /**
+   * Find an existing manual anchor within `tolerance` bars of barIdx (the
+   * closest one, ties broken toward the lower index) — hovering the exact
+   * same bar you placed an anchor on is brittle at typical zoom (a few px
+   * per bar), so both removal and range-select look up anchors loosely
+   * instead of requiring an exact index match.
+   */
+  _nearestManualAnchor(barIdx, tolerance = 2) {
+    let best = null, bestDist = Infinity;
+    for (const key of Object.keys(this._manualSeries)) {
+      const idx = parseInt(key, 10);
+      const dist = Math.abs(idx - barIdx);
+      if (dist <= tolerance && dist < bestDist) { best = idx; bestDist = dist; }
+    }
+    return best;
+  }
+
+  /**
    * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to
    * toIdx. withStdev also draws vwap +/- k*stdev bands (Shift+.) around it —
    * see _vwapStdevBands. withProfile (Ctrl+.) also pairs a Volume Profile
@@ -334,10 +362,11 @@ export class DynamicVWAPEngine {
    */
   toggleManualAnchor(anchorIdx, toIdx, withStdev = false, withProfile = false) {
     if (anchorIdx == null || anchorIdx < 0 || anchorIdx >= this._bars.length) return null;
-    if (this._manualSeries[anchorIdx]) {
-      this._removeManualEntry(this._manualSeries[anchorIdx]);
-      delete this._manualSeries[anchorIdx];
-      const i = this._manualOrder.indexOf(anchorIdx);
+    const existing = this._nearestManualAnchor(anchorIdx);
+    if (existing != null) {
+      this._removeManualEntry(this._manualSeries[existing]);
+      delete this._manualSeries[existing];
+      const i = this._manualOrder.indexOf(existing);
       if (i !== -1) this._manualOrder.splice(i, 1);
       return false;
     }
@@ -371,8 +400,34 @@ export class DynamicVWAPEngine {
       }
     }
 
-    this._manualSeries[anchorIdx] = { vwap, bands, profile };
+    this._manualSeries[anchorIdx] = { vwap, bands, profile, fixedEnd: null };
     this._manualOrder.push(anchorIdx);
+    return true;
+  }
+
+  /**
+   * Fix the most-recently-placed manual anchor's range to currentIdx
+   * (clamped to [anchorIdx, current reveal position]) — e.g. the candle
+   * under the cursor when '/' is pressed, no click/drag/key-hold needed.
+   * Adds a Volume Profile the first time this is called on a given anchor
+   * (that's the whole point of fixing a range), then keeps it and the
+   * vwap/bands fixed there on future reveals. No-op if there's no manual
+   * anchor yet. Returns true if an anchor was fixed, false otherwise.
+   */
+  fixManualRangeToHover(currentIdx) {
+    if (!this._manualOrder.length) return false;
+    const anchorIdx = this._manualOrder[this._manualOrder.length - 1];
+    const entry = this._manualSeries[anchorIdx];
+    if (!entry) return false;
+    entry.fixedEnd = Math.max(anchorIdx, Math.min(currentIdx, this._lastN));
+    if (!entry.profile) {
+      entry.profile = this._chart.addCustomSeries(new VolumeProfileSeries(), {
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      entry.vwap.applyOptions({ color: C_MANUAL_WITH_PROFILE });
+    }
+    this._renderManualEntry(anchorIdx, entry);
     return true;
   }
 
@@ -460,6 +515,13 @@ export class DynamicVWAPEngine {
         return [C_PEAK, 1, 0];
       }
       const info = rankMaps.peak?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
+      // 'shades_orange' — same tiered-by-opacity treatment as 'shades',
+      // just a different base hue (matches Volume Profile's own default
+      // color), so it's its own mutually-exclusive styling choice rather
+      // than a separate toggle layered on top of the others.
+      if (this._peaksStyle === 'shades_orange') {
+        return _cfgTierColor(...ORANGE_RGB, info.rank, info.total);
+      }
       const colorFn = this._peaksStyle === 'highlight_first' ? _highlightFirstColor
                     : this._peaksStyle === 'grayscale'       ? _grayscaleColor
                     : _cfgTierColor;
@@ -471,6 +533,9 @@ export class DynamicVWAPEngine {
         return [C_VALLEY, 1, 0];
       }
       const info = rankMaps.valley?.get(parseInt(m[1])) ?? { rank: 0, total: 1 };
+      if (this._valleysStyle === 'shades_orange') {
+        return _cfgTierColor(...ORANGE_RGB, info.rank, info.total);
+      }
       const colorFn = this._valleysStyle === 'highlight_first' ? _highlightFirstColor
                      : this._valleysStyle === 'grayscale'      ? _grayscaleColor
                      : _cfgTierColor;
@@ -501,9 +566,30 @@ export class DynamicVWAPEngine {
       if (!style) continue;
       const [color, lineWidth, lineStyle] = style;
       const series = events.map(() => this._series(color, lineWidth, lineStyle));
+      // StDev bands — one reusable {k, upper, lower} series-set per slot,
+      // same "N reusable slots filled by rank" convention as series itself
+      // (all slots in one pool share this pool's own color/multiples
+      // regardless of which specific anchor currently fills them).
+      let bands = null;
+      const isPeakKey   = /^peak_c\d+$/.test(key);
+      const isValleyKey = /^valley_c\d+$/.test(key);
+      const showStdev = isPeakKey ? this._peaksShowStdev : isValleyKey ? this._valleysShowStdev : false;
+      if (showStdev) {
+        const multiples = isPeakKey ? this._peaksStdevMults : this._valleysStdevMults;
+        const kMin = Math.min(...multiples), kMax = Math.max(...multiples);
+        bands = events.map(() => multiples.map(k => {
+          const alpha = this._manualStdevAlpha(k, kMin, kMax);
+          return {
+            k,
+            upper: this._series(`rgba(${color.match(/[\d.]+/g).slice(0, 3).join(',')},${alpha})`, 1, 2),
+            lower: this._series(`rgba(${color.match(/[\d.]+/g).slice(0, 3).join(',')},${alpha})`, 1, 2),
+          };
+        }));
+      }
       this._anchorPools[key] = {
         events: [...events].sort((a, b) => a.anchor_bar - b.anchor_bar),
         series,
+        bands,
       };
     }
   }
@@ -530,6 +616,14 @@ export class DynamicVWAPEngine {
     // tuning knobs, only used when the style is one of the three per-point ones.
     this._peaksStyle   = events.peaks_style   || 'shades';
     this._valleysStyle = events.valleys_style || 'shades';
+    // StDev bands (vwap +/- k*stdev) around every peak/valley anchor line —
+    // one shared on/off + multiples per indicator (see _buildAnchorPools/
+    // reveal(), which draw them via the same _vwapStdevBands the manual
+    // Ctrl+. tool's Shift+. bands already use).
+    this._peaksShowStdev    = !!events.peaks_show_stdev;
+    this._peaksStdevMults   = events.peaks_stdev_mults   || [1, 2];
+    this._valleysShowStdev  = !!events.valleys_show_stdev;
+    this._valleysStdevMults = events.valleys_stdev_mults || [1, 2];
     // ?? (not ||) for the alpha bounds — 0 is a meaningful, deliberate choice
     // (fully transparent "holes" at alphaMin) that || would wrongly discard.
     this._peaksCurveParams = {
@@ -842,6 +936,7 @@ export class DynamicVWAPEngine {
 
   reveal(n) {
     if (!this._cumPV) return;
+    this._lastN = n;
 
     // ── Peaks ────────────────────────────────────────────────────────────
     // A peak at bar P is only visible once bar P + peaksHalf has been reached
@@ -926,6 +1021,18 @@ export class DynamicVWAPEngine {
         } else {
           pool.series[i].setData(this._vwapLine(item.ab, item.toIdx));
         }
+        const slotBands = pool.bands?.[i];
+        if (slotBands) {
+          if (item === undefined) {
+            for (const band of slotBands) { band.upper.setData([]); band.lower.setData([]); }
+          } else {
+            const { bands: bandData } = this._vwapStdevBands(item.ab, item.toIdx, slotBands.map(b => b.k));
+            for (let bi = 0; bi < slotBands.length; bi++) {
+              slotBands[bi].upper.setData(bandData[bi].upper);
+              slotBands[bi].lower.setData(bandData[bi].lower);
+            }
+          }
+        }
       }
     }
 
@@ -947,24 +1054,38 @@ export class DynamicVWAPEngine {
 
     // ── Manual (click-placed) anchors ─────────────────────────────────────
     for (const [anchorIdxStr, entry] of Object.entries(this._manualSeries)) {
-      const anchorIdx = parseInt(anchorIdxStr, 10);
-      entry.vwap.setData(this._vwapLine(anchorIdx, n));
-      if (entry.bands.length) {
-        const { bands: bandData } = this._vwapStdevBands(anchorIdx, n, entry.bands.map(b => b.k));
-        for (let i = 0; i < entry.bands.length; i++) {
-          entry.bands[i].upper.setData(bandData[i].upper);
-          entry.bands[i].lower.setData(bandData[i].lower);
-        }
+      this._renderManualEntry(parseInt(anchorIdxStr, 10), entry);
+    }
+  }
+
+  /**
+   * Recompute and set one manual anchor's vwap/bands/profile data for its
+   * current end point — fixedEnd (set via fixManualRangeToHover) caps how
+   * far it grows: it still tracks this._lastN normally until replay
+   * reaches fixedEnd, then freezes there instead of continuing to extend
+   * to "now" like an unfixed manual anchor does. Called from reveal()'s
+   * main loop, and directly from fixManualRangeToHover for an instant
+   * update the moment the range is fixed.
+   */
+  _renderManualEntry(anchorIdx, entry) {
+    const n = this._lastN;
+    const toIdx = entry.fixedEnd != null ? Math.min(entry.fixedEnd, n) : n;
+    entry.vwap.setData(this._vwapLine(anchorIdx, toIdx));
+    if (entry.bands.length) {
+      const { bands: bandData } = this._vwapStdevBands(anchorIdx, toIdx, entry.bands.map(b => b.k));
+      for (let i = 0; i < entry.bands.length; i++) {
+        entry.bands[i].upper.setData(bandData[i].upper);
+        entry.bands[i].lower.setData(bandData[i].lower);
       }
-      if (entry.profile) {
-        const payload = this._vpPayload(anchorIdx, n);
-        if (payload) {
-          const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
-          const endTime   = (this._bars[n].Date         || this._bars[n].date         || '').slice(0, 10);
-          entry.profile.setData([{ time: startTime, ...payload }, { time: endTime, ...payload }]);
-        } else {
-          entry.profile.setData([]);
-        }
+    }
+    if (entry.profile) {
+      const payload = this._vpPayload(anchorIdx, toIdx);
+      if (payload) {
+        const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
+        const endTime   = (this._bars[toIdx].Date     || this._bars[toIdx].date     || '').slice(0, 10);
+        entry.profile.setData([{ time: startTime, ...payload }, { time: endTime, ...payload }]);
+      } else {
+        entry.profile.setData([]);
       }
     }
   }

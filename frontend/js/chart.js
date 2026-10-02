@@ -644,13 +644,21 @@ export class ChartManager {
     return this._chart.timeScale().coordinateToLogical(x);
   }
 
-  /** Place/remove a manually-anchored VWAP at the candle under x. withStdev also draws +/- k*stdev bands around it; withProfile also pairs a Volume Profile with it (same anchor, removed together). Returns true (added) / false (removed) / null (out of range). */
-  toggleManualAnchorAtX(x, withStdev = false, withProfile = false) {
-    if (!this._engine || !this._chart || this._curN < 0) return null;
+  /** Bar index under pixel x, clamped to the currently-revealed range, or null if out of range/no chart. */
+  barIndexAtX(x) {
+    if (!this._chart || this._curN < 0) return null;
     const logical = this._chart.timeScale().coordinateToLogical(x);
     if (logical == null) return null;
     const barIdx = Math.round(logical);
     if (barIdx < 0 || barIdx > this._curN) return null;
+    return barIdx;
+  }
+
+  /** Place/remove a manually-anchored VWAP at the candle under x. withStdev also draws +/- k*stdev bands around it; withProfile also pairs a Volume Profile with it (same anchor, removed together). Returns true (added) / false (removed) / null (out of range). */
+  toggleManualAnchorAtX(x, withStdev = false, withProfile = false) {
+    if (!this._engine) return null;
+    const barIdx = this.barIndexAtX(x);
+    if (barIdx == null) return null;
     return this._engine.toggleManualAnchor(barIdx, this._curN, withStdev, withProfile);
   }
 
@@ -658,6 +666,14 @@ export class ChartManager {
   undoManualAnchor() {
     if (!this._engine) return null;
     return this._engine.undoManualAnchor();
+  }
+
+  /** Fix the most-recently-placed manual anchor's range to the candle under x, pairing a Volume Profile with it. Returns true if there was an anchor to fix, false if there are no manual anchors yet. */
+  fixManualRangeAtX(x) {
+    if (!this._engine) return false;
+    const barIdx = this.barIndexAtX(x);
+    if (barIdx == null) return false;
+    return this._engine.fixManualRangeToHover(barIdx);
   }
 
   /** Live price/percent-change measurement box from (x0,y0) to (x1,y1), in #chart-local pixel coords. */

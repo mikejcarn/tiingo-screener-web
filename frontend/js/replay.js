@@ -30,6 +30,7 @@ let _lastChartX     = null;  // last known mouse x over the chart, in #chart-loc
 let _lastChartY     = null;  // last known mouse y over the chart, in #chart-local px — for Alt+Space measurement
 let _measureActive  = false; // mid live-measurement (started by Alt+Click or Alt+Space)
 let _measureStart   = null;  // {x, y} in #chart-local pixel coords — the locked start point
+const chartEl = document.getElementById('chart'); // module-scoped — read by both _wireControls() and _wireKeys()
 
 // DOM refs
 const scrubber    = document.getElementById('scrubber');
@@ -331,11 +332,13 @@ function _wireControls() {
   });
 
   // '.' — place/remove a manual anchored VWAP at whichever candle is under the cursor.
-  // Alt+Click or Alt+Space — lock a measurement start point (at the click position,
-  // or wherever the mouse last was over the chart for the keyboard version); move
-  // the mouse freely to explore the $ / % change live; click again, or press
+  // ',' — fix the most-recently-placed manual anchor's range to whichever
+  // candle is under the cursor right now, and pair a Volume Profile with it
+  // (see the keydown handling below). Alt+Click or Alt+Space — lock a
+  // measurement start point (at the click position, or wherever the mouse
+  // last was over the chart for the keyboard version); move the mouse
+  // freely to explore the $ / % change live; click again, or press
   // Alt+Space again, to dismiss it.
-  const chartEl = document.getElementById('chart');
 
   chartEl.addEventListener('mousemove', (e) => {
     const rect = chartEl.getBoundingClientRect();
@@ -379,6 +382,16 @@ function _wireControls() {
       chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey, e.ctrlKey || e.metaKey);
       return;
     }
+    // ',' fixes the most-recently-placed manual anchor's range to whichever
+    // candle the cursor is over right now (no click/drag/key-hold needed —
+    // just hover there after placing the anchor with '.') and pairs a
+    // Volume Profile with it. (Not '/' — that's already bound app-wide to
+    // toggleTheme in browse.js, which would fire on the same keypress.)
+    if (e.code === 'Comma' && !e.altKey) {
+      if (_lastChartX == null) return;
+      chart.fixManualRangeAtX(_lastChartX);
+      return;
+    }
     if (e.key === ' ' && e.altKey) {
       e.preventDefault();
       if (!_measureActive && (_lastChartX == null || _lastChartY == null)) return;
@@ -388,13 +401,14 @@ function _wireControls() {
 
   chartEl.addEventListener('click', (e) => {
     if (!chart || !N) return;
-    const rect = chartEl.getBoundingClientRect();
-
     if (_measureActive) {
       _toggleMeasureAt(); // args unused when clearing
       return;
     }
-    if (e.altKey) _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (e.altKey) {
+      const rect = chartEl.getBoundingClientRect();
+      _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
+    }
   });
 
   window.addEventListener('mousemove', (e) => {
