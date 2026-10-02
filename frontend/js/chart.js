@@ -668,12 +668,12 @@ export class ChartManager {
     return this._engine.undoManualAnchor();
   }
 
-  /** Fix the most-recently-placed manual anchor's range to the candle under x, pairing a Volume Profile with it. Returns true if there was an anchor to fix, false if there are no manual anchors yet. */
-  fixManualRangeAtX(x) {
-    if (!this._engine) return false;
+  /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.'/Shift+./Ctrl+. (see replay.js). */
+  createRangedAnchorAtX(startIdx, x, withStdev = false, withProfile = false) {
+    if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
-    if (barIdx == null) return false;
-    return this._engine.fixManualRangeToHover(barIdx);
+    if (barIdx == null) return null;
+    return this._engine.createRangedManualAnchor(startIdx, barIdx, withStdev, withProfile);
   }
 
   /** Live price/percent-change measurement box from (x0,y0) to (x1,y1), in #chart-local pixel coords. */

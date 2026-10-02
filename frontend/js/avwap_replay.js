@@ -102,7 +102,7 @@ const MANUAL_STDEV_MULTIPLES = [1, 2]; // matches aVWAP_pinch's default stdev_mu
 // since this tool is deliberately parameter-free (press a key, get a
 // result). Reuses VolumeProfileSeries for rendering, so it looks identical
 // to the real indicator's own 'bars' style; same POC/Value Area convention.
-const MANUAL_VP_NUM_BINS       = 80;
+const MANUAL_VP_NUM_BINS       = 200;
 const MANUAL_VP_FILL_OPACITY   = 0.4;
 const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 // When a profile is paired (Ctrl+.), the vwap line matches the profile's
@@ -328,10 +328,14 @@ export class DynamicVWAPEngine {
     const hist = this._vpHistogram(anchorIdx, toIdx, MANUAL_VP_NUM_BINS);
     if (!hist) return null;
     const { priceMin, binSize, bins } = hist;
-    const { poc, vah, val } = this._vpPocValueArea(priceMin, binSize, bins, MANUAL_VP_VALUE_AREA_PCT);
+    // Just POC, no Value Area — the dashed VAH/VAL lines and the dimming
+    // VolumeProfileSeries applies to bars outside the value area both come
+    // from passing vah/val, so omitting them (poc is a plain solid line,
+    // unaffected) gives every bar the same flat fillOpacity with no dashes.
+    const { poc } = this._vpPocValueArea(priceMin, binSize, bins, MANUAL_VP_VALUE_AREA_PCT);
     return {
       lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
-      showHistogram: true, directionalColor: false, barStyle: 'bars', poc, vah, val,
+      showHistogram: true, directionalColor: false, barStyle: 'bars', poc,
     };
   }
 
@@ -370,6 +374,33 @@ export class DynamicVWAPEngine {
       if (i !== -1) this._manualOrder.splice(i, 1);
       return false;
     }
+    this._createManualAnchor(anchorIdx, toIdx, withStdev, withProfile, null);
+    return true;
+  }
+
+  /**
+   * Create a manual anchor spanning the fixed range [anchorIdx, toIdx] —
+   * used when ',' marked anchorIdx as a range-start and '.'/Shift+./Ctrl+.
+   * then finalizes it at toIdx (see replay.js's ',' and '.' keydown
+   * handling). Unlike toggleManualAnchor, this always creates — it never
+   * toggles off an existing nearby anchor, since ',' then '.' is a
+   * distinct enough gesture from a plain tap that silently removing
+   * something would be surprising.
+   */
+  createRangedManualAnchor(anchorIdx, toIdx, withStdev = false, withProfile = false) {
+    if (anchorIdx == null || anchorIdx < 0 || anchorIdx >= this._bars.length) return null;
+    if (toIdx == null || toIdx < 0 || toIdx >= this._bars.length) return null;
+    const lo = Math.min(anchorIdx, toIdx), hi = Math.max(anchorIdx, toIdx);
+    this._createManualAnchor(lo, hi, withStdev, withProfile, hi);
+    return true;
+  }
+
+  /**
+   * Shared creation body for toggleManualAnchor and createRangedManualAnchor
+   * — a plain tap passes fixedEnd=null (grows to "now" on every reveal); a
+   * ranged creation passes fixedEnd=toIdx (stays put at that range forever).
+   */
+  _createManualAnchor(anchorIdx, toIdx, withStdev, withProfile, fixedEnd) {
     const vwap = this._series(withProfile ? C_MANUAL_WITH_PROFILE : C_MANUAL, 2, 0);
     vwap.setData(this._vwapLine(anchorIdx, toIdx));
 
@@ -400,35 +431,8 @@ export class DynamicVWAPEngine {
       }
     }
 
-    this._manualSeries[anchorIdx] = { vwap, bands, profile, fixedEnd: null };
+    this._manualSeries[anchorIdx] = { vwap, bands, profile, fixedEnd };
     this._manualOrder.push(anchorIdx);
-    return true;
-  }
-
-  /**
-   * Fix the most-recently-placed manual anchor's range to currentIdx
-   * (clamped to [anchorIdx, current reveal position]) — e.g. the candle
-   * under the cursor when '/' is pressed, no click/drag/key-hold needed.
-   * Adds a Volume Profile the first time this is called on a given anchor
-   * (that's the whole point of fixing a range), then keeps it and the
-   * vwap/bands fixed there on future reveals. No-op if there's no manual
-   * anchor yet. Returns true if an anchor was fixed, false otherwise.
-   */
-  fixManualRangeToHover(currentIdx) {
-    if (!this._manualOrder.length) return false;
-    const anchorIdx = this._manualOrder[this._manualOrder.length - 1];
-    const entry = this._manualSeries[anchorIdx];
-    if (!entry) return false;
-    entry.fixedEnd = Math.max(anchorIdx, Math.min(currentIdx, this._lastN));
-    if (!entry.profile) {
-      entry.profile = this._chart.addCustomSeries(new VolumeProfileSeries(), {
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      entry.vwap.applyOptions({ color: C_MANUAL_WITH_PROFILE });
-    }
-    this._renderManualEntry(anchorIdx, entry);
-    return true;
   }
 
   /**
@@ -1060,12 +1064,11 @@ export class DynamicVWAPEngine {
 
   /**
    * Recompute and set one manual anchor's vwap/bands/profile data for its
-   * current end point — fixedEnd (set via fixManualRangeToHover) caps how
-   * far it grows: it still tracks this._lastN normally until replay
-   * reaches fixedEnd, then freezes there instead of continuing to extend
-   * to "now" like an unfixed manual anchor does. Called from reveal()'s
-   * main loop, and directly from fixManualRangeToHover for an instant
-   * update the moment the range is fixed.
+   * current end point — fixedEnd (set at creation time for a ranged
+   * anchor, see createRangedManualAnchor) caps how far it grows: it still
+   * tracks this._lastN normally until replay reaches fixedEnd, then
+   * freezes there instead of continuing to extend to "now" like a plain
+   * (unranged) manual anchor does. Called from reveal()'s main loop.
    */
   _renderManualEntry(anchorIdx, entry) {
     const n = this._lastN;

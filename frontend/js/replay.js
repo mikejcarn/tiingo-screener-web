@@ -30,6 +30,7 @@ let _lastChartX     = null;  // last known mouse x over the chart, in #chart-loc
 let _lastChartY     = null;  // last known mouse y over the chart, in #chart-local px — for Alt+Space measurement
 let _measureActive  = false; // mid live-measurement (started by Alt+Click or Alt+Space)
 let _measureStart   = null;  // {x, y} in #chart-local pixel coords — the locked start point
+let _rangeStartIdx  = null;  // bar index marked by ',' — the next '.' finalizes a ranged aVWAP there (see the keydown handling)
 const chartEl = document.getElementById('chart'); // module-scoped — read by both _wireControls() and _wireKeys()
 
 // DOM refs
@@ -331,14 +332,21 @@ function _wireControls() {
     jump(Math.round(logical));
   });
 
-  // '.' — place/remove a manual anchored VWAP at whichever candle is under the cursor.
-  // ',' — fix the most-recently-placed manual anchor's range to whichever
-  // candle is under the cursor right now, and pair a Volume Profile with it
-  // (see the keydown handling below). Alt+Click or Alt+Space — lock a
-  // measurement start point (at the click position, or wherever the mouse
-  // last was over the chart for the keyboard version); move the mouse
-  // freely to explore the $ / % change live; click again, or press
-  // Alt+Space again, to dismiss it.
+  // '.' — place/remove a manual anchored VWAP at whichever candle is under
+  // the cursor. ',' — mark the candle under the cursor as a range start;
+  // the next '.' finalizes it as a ranged aVWAP between the two points —
+  // same modifiers, same meaning, as a normal tap: '.' alone is plain,
+  // Shift+. also draws stdev bands, Ctrl+. also pairs a Volume Profile. A
+  // second ',' on the same candle is instead the same as a plain Ctrl+.
+  // tap (anchor + Volume Profile, growing to "now" — start and end are
+  // effectively the same point); a second ',' on a different candle is a
+  // shortcut straight to a ranged aVWAP + Volume Profile, same as ',' then
+  // Ctrl+. (see the keydown handling below; Escape still cancels a
+  // pending ',' outright). Alt+Click or Alt+Space — lock a measurement
+  // start point (at the click position, or wherever the mouse last was
+  // over the chart for the keyboard version); move the mouse freely to
+  // explore the $ / % change live; click again, or press Alt+Space again,
+  // to dismiss it.
 
   chartEl.addEventListener('mousemove', (e) => {
     const rect = chartEl.getBoundingClientRect();
@@ -377,19 +385,48 @@ function _wireControls() {
       chart.undoManualAnchor();
       return;
     }
-    if (e.code === 'Period' && !e.altKey) {
-      if (_lastChartX == null) return;
-      chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey, e.ctrlKey || e.metaKey);
-      return;
-    }
-    // ',' fixes the most-recently-placed manual anchor's range to whichever
-    // candle the cursor is over right now (no click/drag/key-hold needed —
-    // just hover there after placing the anchor with '.') and pairs a
-    // Volume Profile with it. (Not '/' — that's already bound app-wide to
-    // toggleTheme in browse.js, which would fire on the same keypress.)
+    // ',' marks whichever candle is under the cursor as a pending range
+    // start — no click/drag/key-hold needed, just hover there. The next
+    // '.' (anywhere else) finalizes it: a plain '.' draws a ranged aVWAP
+    // between the two points, Ctrl+. also pairs a Volume Profile, Shift+.
+    // also draws stdev bands — same modifiers, same meaning, as a normal
+    // tap. (Not '/' — that's already bound app-wide to toggleTheme in
+    // browse.js, which would fire on the same keypress.)
     if (e.code === 'Comma' && !e.altKey) {
       if (_lastChartX == null) return;
-      chart.fixManualRangeAtX(_lastChartX);
+      const barIdx = chart.barIndexAtX(_lastChartX);
+      if (barIdx == null) return;
+      if (_rangeStartIdx != null) {
+        if (Math.abs(barIdx - _rangeStartIdx) <= 2) {
+          // ',' again on (near enough) the same candle — same as a plain
+          // Ctrl+. tap: a normal (non-ranged) anchor + Volume Profile that
+          // grows to "now", since start and end are effectively the same point.
+          chart.toggleManualAnchorAtX(_lastChartX, false, true);
+        } else {
+          // ',' on a different candle — shortcut straight to the most
+          // common combo (equivalent to ',' then Ctrl+.) without holding Ctrl.
+          chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, true);
+        }
+        _rangeStartIdx = null;
+        chartEl.style.cursor = '';
+        return;
+      }
+      _rangeStartIdx = barIdx;
+      chartEl.style.cursor = 'crosshair';
+      return;
+    }
+    if (e.code === 'Period' && !e.altKey) {
+      if (_lastChartX == null) return;
+      if (_rangeStartIdx != null) {
+        // Same modifiers, same meaning, as a plain tap: '.' alone is a
+        // plain ranged aVWAP, Shift+. also draws stdev bands, Ctrl+. also
+        // pairs a Volume Profile.
+        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, e.shiftKey, e.ctrlKey || e.metaKey);
+        _rangeStartIdx = null;
+        chartEl.style.cursor = '';
+      } else {
+        chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey, e.ctrlKey || e.metaKey);
+      }
       return;
     }
     if (e.key === ' ' && e.altKey) {
@@ -422,6 +459,8 @@ function _wireControls() {
     _measureActive = false;
     _measureStart  = null;
     if (chart) chart.clearMeasure();
+    _rangeStartIdx = null;
+    chartEl.style.cursor = '';
   });
 
   fpsInput.addEventListener('change', () => {
@@ -469,6 +508,10 @@ function _wireKeys() {
         if (chart) chart.clearMeasure();
         _measureActive = false;
         _measureStart  = null;
+      }
+      if (_rangeStartIdx != null) {
+        _rangeStartIdx = null;
+        chartEl.style.cursor = '';
       }
       document.activeElement?.blur();
       return;
