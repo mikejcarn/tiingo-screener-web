@@ -109,6 +109,13 @@ const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 // own color instead of the usual amber — they're one visual unit then.
 const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
 
+// When a profile is paired, a second aVWAP is also anchored at whichever
+// extremum of the range is the "other side" relative to the primary
+// anchor (see _otherSideExtremum) — same orange as the profile/primary
+// line, dotted instead of solid so it still reads as distinct without
+// introducing a third unrelated color.
+const C_OTHERSIDE = `rgba(${VP_RGB_DEFAULT},0.85)`;
+
 // Opacity range for multi-config anchor types (currently peaks/valleys). All configs
 // stay solid at the same width — line STYLE is reserved for signifying different data
 // types elsewhere in the app (dashed = gaps, dotted = QQEMOD, etc.) — so within one
@@ -257,7 +264,7 @@ export class DynamicVWAPEngine {
 
   // ── Manual (click-placed) anchors ───────────────────────────────────────
 
-  /** Tear down one manual anchor's vwap line + any stdev band series + any paired profile. */
+  /** Tear down one manual anchor's vwap line + any stdev band series + any paired profile + its other-side aVWAP. */
   _removeManualEntry(entry) {
     try { this._chart.removeSeries(entry.vwap); } catch (_) {}
     for (const band of entry.bands) {
@@ -265,6 +272,7 @@ export class DynamicVWAPEngine {
       try { this._chart.removeSeries(band.lower); } catch (_) {}
     }
     if (entry.profile) { try { this._chart.removeSeries(entry.profile); } catch (_) {} }
+    if (entry.otherSide?.line) { try { this._chart.removeSeries(entry.otherSide.line); } catch (_) {} }
   }
 
   /**
@@ -431,8 +439,19 @@ export class DynamicVWAPEngine {
       }
     }
 
-    this._manualSeries[anchorIdx] = { vwap, bands, profile, fixedEnd };
+    // otherSide: {} means "wanted, not yet created" (its line is created
+    // lazily on the first render, once we know whether it's a high or low
+    // and can pick its color) — see _renderManualEntry.
+    this._manualSeries[anchorIdx] = {
+      vwap, bands, profile, fixedEnd, histogramHidden: false,
+      otherSide: withProfile ? {} : null,
+    };
     this._manualOrder.push(anchorIdx);
+    // Populate _profileBounds (for toggleHistogramAt's click hit-test)
+    // immediately — otherwise it stays unset until the next reveal(), so a
+    // click right after creating the profile (before replay steps at all)
+    // would silently miss every hit-test.
+    this._renderManualEntry(anchorIdx, this._manualSeries[anchorIdx]);
   }
 
   /**
@@ -473,6 +492,31 @@ export class DynamicVWAPEngine {
       for (let j = lo; j < hi; j++) mask[j] = 0;
     }
     return selected.sort((a, b) => a - b);
+  }
+
+  /**
+   * Find the "other side" extremum bar within [anchorIdx, toIdx] to pair a
+   * second aVWAP with a manual anchor's Volume Profile — the swing-high
+   * aVWAP complementing a swing-low anchor, or vice versa, so the profile
+   * reads with both channel boundaries drawn in, not just the one the user
+   * happened to anchor on. Whichever of the range's highest high / lowest
+   * low sits FARTHER from anchorIdx is treated as "the other side" (the
+   * nearer one is assumed to be close to what the user already anchored
+   * on). Returns { idx, isHigh } or null if the range is too short or flat
+   * (high and low bar coincide, so there's nothing distinct to anchor).
+   */
+  _otherSideExtremum(anchorIdx, toIdx) {
+    if (toIdx <= anchorIdx) return null;
+    let idxLow = anchorIdx, idxHigh = anchorIdx;
+    let lowVal = this._lows[anchorIdx], highVal = this._highs[anchorIdx];
+    for (let i = anchorIdx + 1; i <= toIdx; i++) {
+      if (this._lows[i]  < lowVal)  { lowVal  = this._lows[i];  idxLow  = i; }
+      if (this._highs[i] > highVal) { highVal = this._highs[i]; idxHigh = i; }
+    }
+    if (idxLow === idxHigh) return null;
+    const distLow  = Math.abs(anchorIdx - idxLow);
+    const distHigh = Math.abs(anchorIdx - idxHigh);
+    return distHigh >= distLow ? { idx: idxHigh, isHigh: true } : { idx: idxLow, isHigh: false };
   }
 
   _buildPmmPools(configs) {
@@ -1084,13 +1128,65 @@ export class DynamicVWAPEngine {
     if (entry.profile) {
       const payload = this._vpPayload(anchorIdx, toIdx);
       if (payload) {
+        payload.showHistogram = !entry.histogramHidden;
+        // Bounding box for toggleHistogramAt's click hit-test — bars span
+        // this price range regardless of histogramHidden (aVWAP/POC stay
+        // clickable there even while the bars themselves are hidden).
+        entry._profileBounds = {
+          loBar: anchorIdx, hiBar: toIdx,
+          priceLo: payload.lo, priceHi: payload.lo + payload.bins.length * payload.bs,
+        };
         const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
         const endTime   = (this._bars[toIdx].Date     || this._bars[toIdx].date     || '').slice(0, 10);
         entry.profile.setData([{ time: startTime, ...payload }, { time: endTime, ...payload }]);
       } else {
         entry.profile.setData([]);
+        entry._profileBounds = null;
       }
     }
+    if (entry.otherSide) {
+      const ext = this._otherSideExtremum(anchorIdx, toIdx);
+      if (ext) {
+        if (!entry.otherSide.line) {
+          entry.otherSide.line = this._series(C_OTHERSIDE, 2, 1); // lineStyle 1 = dotted
+        }
+        entry.otherSide.line.setData(this._vwapLine(ext.idx, toIdx));
+      } else if (entry.otherSide.line) {
+        entry.otherSide.line.setData([]);
+      }
+    }
+  }
+
+  /**
+   * Toggle a manual anchor's Volume Profile histogram bars on/off — used
+   * when the user clicks directly on a profile's histogram (the aVWAP
+   * line and POC stay visible either way; this only hides/shows the bars
+   * themselves). Hit-tests barIdx/price against each profile's last-drawn
+   * bounding box (see _renderManualEntry — populated immediately at
+   * creation too, via _createManualAnchor, so this works even before the
+   * next reveal()).
+   *
+   * Walks this._manualOrder back-to-front (most-recently-placed first),
+   * NOT Object.entries(this._manualSeries) — that object is keyed by bar
+   * index, and plain-object key iteration always sorts integer-like keys
+   * in ascending numeric order regardless of insertion order, so it would
+   * always resolve an overlap in favor of the earliest-anchored profile
+   * instead of whichever one is actually on top. Returns true if a
+   * histogram was toggled, false if the click didn't land on any profile.
+   */
+  toggleHistogramAt(barIdx, price) {
+    for (let i = this._manualOrder.length - 1; i >= 0; i--) {
+      const anchorIdx = this._manualOrder[i];
+      const entry = this._manualSeries[anchorIdx];
+      if (!entry || !entry.profile || !entry._profileBounds) continue;
+      const b = entry._profileBounds;
+      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) {
+        entry.histogramHidden = !entry.histogramHidden;
+        this._renderManualEntry(anchorIdx, entry);
+        return true;
+      }
+    }
+    return false;
   }
 
   // ── Show/hide a generic anchor-pool kind (e.g. 'avwap_max', 'avwap_min') ──

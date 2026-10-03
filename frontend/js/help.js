@@ -62,6 +62,7 @@ const _PAGES = [
       <tr><td><kbd>Enter</kbd></td><td>Toggle focused indicator on / off — or, if a parameter is focused, activate it (toggle checkbox, cycle dropdown, focus text field, expand/collapse a group)</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step the focused numeric parameter by its increment</td></tr>
       <tr><td><kbd>Space</kbd> / <kbd>\\</kbd></td><td>Add / remove open config from the run queue</td></tr>
+      <tr><td>Any lowercase letter</td><td>Focus the indicator search box and start typing (uppercase is reserved for the N/D/R/... shortcuts above)</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
     <div class="help-summary">The indicators page configures and computes technical overlays. Each config pairs a set of indicators with one or more timeframes. Computed results are stored alongside OHLCV data and can be overlaid on the chart page.</div>`,
@@ -90,6 +91,7 @@ const _PAGES = [
       <tr><td><kbd>Enter</kbd> (param focused)</td><td>Activate the focused parameter (toggle checkbox, cycle dropdown, focus text/number field)</td></tr>
       <tr><td><kbd>Space</kbd> (card focused)</td><td>Select / deselect the focused criteria card — works whether or not a param is also focused</td></tr>
       <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Step the focused numeric parameter by its increment</td></tr>
+      <tr><td>Any lowercase letter</td><td>Focus the criteria search box and start typing (uppercase is reserved for the N/D/R/... shortcuts above)</td></tr>
       ${_GLOBAL_ROWS}
     </tbody></table>
     <div class="help-summary">The scanner page tests your ticker database against configurable criteria. Each scan config is linked to an indicator config, so criteria can reference both OHLCV data and computed indicators. Results can be opened directly in the chart page for bar-by-bar review.</div>`,
@@ -131,11 +133,25 @@ const _PAGES = [
       <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles in view)</td></tr>
       <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
 
-      <tr class="help-section"><td colspan="2">Annotations</td></tr>
-      <tr><td><kbd>.</kbd></td><td>Place / remove a manually-anchored VWAP at the hovered candle (amber line, ephemeral)</td></tr>
+      <tr class="help-section"><td colspan="2">Annotations — growing-to-"now"</td></tr>
+      <tr><td><kbd>.</kbd></td><td>Place / remove a manually-anchored VWAP at the hovered candle (amber line, grows to "now", ephemeral)</td></tr>
       <tr><td>Shift+<kbd>.</kbd></td><td>Same, but also draws +/-1 and +/-2 stdev bands around that anchor (dashed, tightest band most visible)</td></tr>
-      <tr><td>Alt+<kbd>.</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Undo the most recently placed manual aVWAP anchor, bands included (repeat to keep undoing, in order)</td></tr>
+      <tr><td>Ctrl+<kbd>.</kbd></td><td>Same, but also pairs a Volume Profile histogram with it (line recolors to match the profile)</td></tr>
+      <tr><td>Ctrl+Shift+<kbd>.</kbd></td><td>Both of the above together — stdev bands and a paired Volume Profile</td></tr>
+      <tr><td>Alt+<kbd>.</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Undo the most recently placed manual aVWAP anchor, bands/profile included (repeat to keep undoing, in order)</td></tr>
+
+      <tr class="help-section"><td colspan="2">Annotations — fixed range (two candles)</td></tr>
+      <tr><td><kbd>,</kbd></td><td>Mark the hovered candle as a range start (cursor turns into a crosshair); hover the far end, then use one of the rows below to finish it — Escape cancels instead</td></tr>
+      <tr><td><kbd>,</kbd> then <kbd>.</kbd></td><td>Fixed-range aVWAP between the two marked candles, nothing extra</td></tr>
+      <tr><td><kbd>,</kbd> then Shift+<kbd>.</kbd></td><td>Same, plus stdev bands</td></tr>
+      <tr><td><kbd>,</kbd> then Ctrl+<kbd>.</kbd></td><td>Same, plus a paired Volume Profile</td></tr>
+      <tr><td><kbd>,</kbd> then Ctrl+Shift+<kbd>.</kbd></td><td>Same, plus both stdev bands and a paired Volume Profile</td></tr>
+      <tr><td><kbd>,</kbd> then <kbd>,</kbd>, same candle</td><td>Shortcut for a plain Ctrl+<kbd>.</kbd> tap instead — anchor + Volume Profile, growing to "now" (start and end are the same point, so there's no range to fix)</td></tr>
+      <tr><td><kbd>,</kbd> then <kbd>,</kbd>, different candle</td><td>Shortcut straight to a fixed-range aVWAP + Volume Profile, without holding Ctrl</td></tr>
+
+      <tr class="help-section"><td colspan="2">Measurement</td></tr>
       <tr><td>Alt+Click &nbsp;or&nbsp; Alt+Space</td><td>Lock a measurement start point (Alt+Space uses the last mouse position over the chart); move the cursor to explore $ / % change live; repeat either, or press Escape, to dismiss</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Cancel a pending <kbd>,</kbd> range-start mark, or dismiss an active measurement</td></tr>
 
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
       <tr><td>Shift+<kbd>L</kbd> &nbsp;or&nbsp; &#9734; button</td><td>Flag / unflag the current ticker; &#9873; button opens the flagged-ticker panel (click a row to jump, &#10005; to unflag)</td></tr>
@@ -153,8 +169,8 @@ const _PAGES = [
       <tr><td>Bar # / Date input</td><td>Type value then Enter to jump</td></tr>
 
       <tr class="help-section"><td colspan="2">Load Position</td></tr>
-      <tr><td><kbd>\\</kbd></td><td>Cycle mode: start → end → bar → date</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Focus value field (bar / date mode)</td></tr>
+      <tr><td><kbd>\\</kbd></td><td>Cycle the rule for where a ticker opens when loaded: start (first bar) → end (last bar) → bar (a specific bar #) → date (a specific date) → range (a start through an end bar/date) → recent (a number of bars back from the end)</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Focus the value field (bar / date / range / recent modes)</td></tr>
 
       <tr class="help-section"><td colspan="2">View</td></tr>
       <tr><td><kbd>F</kbd></td><td>Toggle fullscreen</td></tr>

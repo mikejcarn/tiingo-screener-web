@@ -676,6 +676,15 @@ export class ChartManager {
     return this._engine.createRangedManualAnchor(startIdx, barIdx, withStdev, withProfile);
   }
 
+  /** Click at (x, y) toggles a manual anchor's Volume Profile histogram bars on/off if the click landed inside them (the aVWAP line and POC stay visible either way). Returns true if a histogram was toggled. */
+  toggleHistogramAtXY(x, y) {
+    if (!this._engine || !this._candles) return false;
+    const barIdx = this.barIndexAtX(x);
+    const price  = this._candles.coordinateToPrice(y);
+    if (barIdx == null || price == null) return false;
+    return this._engine.toggleHistogramAt(barIdx, price);
+  }
+
   /** Live price/percent-change measurement box from (x0,y0) to (x1,y1), in #chart-local pixel coords. */
   updateMeasure(x0, y0, x1, y1) {
     if (!this._candles) return;

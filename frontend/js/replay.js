@@ -442,10 +442,14 @@ function _wireControls() {
       _toggleMeasureAt(); // args unused when clearing
       return;
     }
+    const rect = chartEl.getBoundingClientRect();
     if (e.altKey) {
-      const rect = chartEl.getBoundingClientRect();
       _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
+      return;
     }
+    // A plain click elsewhere (no measurement, no Alt) tries toggling a
+    // Volume Profile histogram's bars on/off, if it landed inside one.
+    chart.toggleHistogramAtXY(e.clientX - rect.left, e.clientY - rect.top);
   });
 
   window.addEventListener('mousemove', (e) => {
