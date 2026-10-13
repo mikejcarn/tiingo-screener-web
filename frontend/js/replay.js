@@ -380,7 +380,9 @@ function _wireControls() {
     // stdev bands get drawn, e.ctrlKey/e.metaKey whether a Volume Profile
     // is paired with it (same anchor; toggling '.' again at that bar, or
     // undoing it, removes the whole pair together — not just the VWAP).
-    if ((e.code === 'Period' && e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
+    // Undo: Shift+X (capital X — lowercase letters start a ticker search in
+    // browse.js, capitals are this app's single-key commands) or Ctrl+Z.
+    if ((e.key === 'X' && !e.ctrlKey && !e.metaKey && !e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       chart.undoManualAnchor();
       return;
@@ -447,14 +449,9 @@ function _wireControls() {
       _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
       return;
     }
-    // Shift+click flips a manual Volume Profile between HVN and LVN
-    // emphasis; a plain click (no measurement, no Alt) toggles its
-    // histogram's bars on/off — either only if it landed inside one.
-    if (e.shiftKey) {
-      chart.toggleEmphasisAtXY(e.clientX - rect.left, e.clientY - rect.top);
-      return;
-    }
-    chart.toggleHistogramAtXY(e.clientX - rect.left, e.clientY - rect.top);
+    // A plain click elsewhere (no measurement, no Alt) cycles a manual
+    // Volume Profile's display mode, if it landed inside one.
+    chart.cycleProfileModeAtXY(e.clientX - rect.left, e.clientY - rect.top);
   });
 
   window.addEventListener('mousemove', (e) => {

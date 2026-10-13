@@ -6,12 +6,13 @@
  * rectangles/lines spanning a time range, not a sideways bar chart).
  *
  * Two data points per profile — { time, lo, bs, bins, dir, fillOpacity, poc,
- * vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
+ * lvnPoc, vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
  * heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality,
  * nodeWindow, histogramGrayscale } at the anchor's start and end bar, same
  * start/end convention as the other zone series.
  * lo/bs are the histogram's price origin and bin size, bins the per-bin
  * volume totals, poc/vah/val the Point of Control and Value Area bounds,
+ * lvnPoc an optional second, LVN-colored POC drawn alongside poc,
  * hvn/lvn arrays of [lo, hi] High/Low Volume Node price ranges (see
  * volume_profile.py for how all of these are computed).
  */
@@ -96,7 +97,7 @@ export class VolumeProfileRenderer {
     const first = data.bars[0];
     const last  = data.bars[data.bars.length - 1];
     const {
-      lo, bs, bins, dir, fillOpacity, poc, vah, val, hvn, lvn,
+      lo, bs, bins, dir, fillOpacity, poc, lvnPoc, vah, val, hvn, lvn,
       showHistogram, directionalColor, barStyle,
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
       histogramGrayscale,
@@ -252,20 +253,23 @@ export class VolumeProfileRenderer {
 
     // POC — the single highest-volume bin — drawn as a solid line across the
     // profile's full span so it reads as a level, not just the fattest bar.
-    if (poc != null) {
-      const y = priceToCoordinate(poc);
-      if (y != null) {
-        const yPix = Math.round(y * vr);
-        ctx.save();
-        ctx.strokeStyle = `rgba(${rgb},0.95)`;
-        ctx.lineWidth = Math.max(2, Math.round(2 * vr));
-        ctx.beginPath();
-        ctx.moveTo(x0, yPix);
-        ctx.lineTo(x1, yPix);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
+    // lvnPoc (the in-chart profile's "both POCs" mode) adds the deepest-LVN
+    // line beside it in the LVN hue, so the two read apart by color alone.
+    const drawPocLine = (price, lineRgb) => {
+      const y = priceToCoordinate(price);
+      if (y == null) return;
+      const yPix = Math.round(y * vr);
+      ctx.save();
+      ctx.strokeStyle = `rgba(${lineRgb},0.95)`;
+      ctx.lineWidth = Math.max(2, Math.round(2 * vr));
+      ctx.beginPath();
+      ctx.moveTo(x0, yPix);
+      ctx.lineTo(x1, yPix);
+      ctx.stroke();
+      ctx.restore();
+    };
+    if (poc != null) drawPocLine(poc, rgb);
+    if (lvnPoc != null) drawPocLine(lvnPoc, RGB_LVN_DEFAULT);
   }
 }
 

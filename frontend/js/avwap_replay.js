@@ -105,15 +105,27 @@ const MANUAL_STDEV_MULTIPLES = [1, 2]; // matches aVWAP_pinch's default stdev_mu
 const MANUAL_VP_NUM_BINS       = 200;
 const MANUAL_VP_FILL_OPACITY   = 0.4;
 const MANUAL_VP_VALUE_AREA_PCT = 0.7;
-// Shift+click on a paired profile flips it to LVN emphasis (and back) —
-// bars widest at the thinnest levels, POC moved to the deepest LVN, profile
-// + lines recolored indigo; see volume_profile.py's heatmap_emphasis docs.
-// Inverted widths against the single global peak make nearly every bar
-// long, so LVN mode judges each bin against its own neighborhood instead
-// (locality 1). Node window scales with the bin count: 16 of 200 bins is
-// the same ~8%-per-side reach as the indicator's own 2-of-24 default.
-const MANUAL_VP_LVN_LOCALITY = 1.0;
+// Clicking a paired profile cycles its display mode (see VP_MODE_*). LVN
+// mode: bars widest at the thinnest levels, POC moved to the deepest LVN,
+// profile + lines recolored indigo; see volume_profile.py's
+// heatmap_emphasis docs.
+// Locality 0 = an exact mirror of the HVN widths (full width minus the
+// normal bar), so bar length stays true to each level's real volume.
+// Locality 1 (judge each bin against its own neighborhood) gave cleaner
+// troughs but turned small local dips into full-width bars, burying the
+// POC. Even so, the profile's thin top/bottom tails are usually its widest
+// bars here — the LVN POC deliberately skips them (see _vpLvnPoc), so it
+// marks the deepest real trough, not necessarily the widest bar. Node window (used by the LVN
+// POC's trough detection) scales with the bin count: 16 of 200 bins is the
+// same ~8%-per-side reach as the indicator's own 2-of-24 default.
+const MANUAL_VP_LVN_LOCALITY = 0;
 const MANUAL_VP_NODE_WINDOW  = 16;
+// Click-cycle order: normal → LVN → bars hidden with both POCs (orange
+// busiest level + indigo deepest LVN) → back to normal.
+const VP_MODE_NORMAL = 0;
+const VP_MODE_LVN    = 1;
+const VP_MODE_POCS   = 2;
+const VP_MODE_COUNT  = 3;
 // When a profile is paired (Ctrl+.), the vwap line matches the profile's
 // own color instead of the usual amber — they're one visual unit then.
 const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
@@ -488,11 +500,11 @@ export class DynamicVWAPEngine {
     // lazily on the first render, once we know whether it's a high or low
     // and can pick its color) — see _renderManualEntry.
     this._manualSeries[anchorIdx] = {
-      vwap, bands, profile, fixedEnd, histogramHidden: false, lvn: false,
+      vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL,
       otherSide: withProfile ? {} : null,
     };
     this._manualOrder.push(anchorIdx);
-    // Populate _profileBounds (for toggleHistogramAt's click hit-test)
+    // Populate _profileBounds (for cycleProfileModeAt's click hit-test)
     // immediately — otherwise it stays unset until the next reveal(), so a
     // click right after creating the profile (before replay steps at all)
     // would silently miss every hit-test.
@@ -1171,11 +1183,14 @@ export class DynamicVWAPEngine {
       }
     }
     if (entry.profile) {
-      const payload = this._vpPayload(anchorIdx, toIdx, entry.lvn);
+      const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN);
       if (payload) {
-        payload.showHistogram = !entry.histogramHidden;
-        // Bounding box for toggleHistogramAt's click hit-test — bars span
-        // this price range regardless of histogramHidden (aVWAP/POC stay
+        if (entry.vpMode === VP_MODE_POCS) {
+          payload.showHistogram = false;
+          payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
+        }
+        // Bounding box for cycleProfileModeAt's click hit-test — bars span
+        // this price range even while hidden in VP_MODE_POCS (aVWAP/POC stay
         // clickable there even while the bars themselves are hidden).
         entry._profileBounds = {
           loBar: anchorIdx, hiBar: toIdx,
@@ -1193,7 +1208,7 @@ export class DynamicVWAPEngine {
       const ext = this._otherSideExtremum(anchorIdx, toIdx);
       if (ext) {
         if (!entry.otherSide.line) {
-          entry.otherSide.line = this._series(entry.lvn ? C_OTHERSIDE_LVN : C_OTHERSIDE, 2, 1); // lineStyle 1 = dotted
+          entry.otherSide.line = this._series(entry.vpMode === VP_MODE_LVN ? C_OTHERSIDE_LVN : C_OTHERSIDE, 2, 1); // lineStyle 1 = dotted
         }
         entry.otherSide.line.setData(this._vwapLine(ext.idx, toIdx));
       } else if (entry.otherSide.line) {
@@ -1203,51 +1218,37 @@ export class DynamicVWAPEngine {
   }
 
   /**
-   * Toggle a manual anchor's Volume Profile histogram bars on/off — used
-   * when the user clicks directly on a profile's histogram (the aVWAP
-   * line and POC stay visible either way; this only hides/shows the bars
-   * themselves). Hit-tests barIdx/price against each profile's last-drawn
-   * bounding box (see _renderManualEntry — populated immediately at
-   * creation too, via _createManualAnchor, so this works even before the
-   * next reveal()).
+   * Advance a manual anchor's Volume Profile to its next display mode
+   * (normal → LVN → both POCs with bars hidden → normal) — used when the
+   * user clicks directly on a profile. Recolors the paired aVWAP and
+   * other-side lines to match (indigo only in LVN mode, where the bars are
+   * indigo too; orange otherwise), since profile + lines read as one unit.
+   * Hit-tests barIdx/price against each profile's last-drawn bounding box
+   * (see _profileAnchorAt). Returns true if a profile was cycled, false if
+   * the click didn't land on any profile.
+   */
+  cycleProfileModeAt(barIdx, price) {
+    const anchorIdx = this._profileAnchorAt(barIdx, price);
+    if (anchorIdx == null) return false;
+    const entry = this._manualSeries[anchorIdx];
+    entry.vpMode = (entry.vpMode + 1) % VP_MODE_COUNT;
+    const lvn = entry.vpMode === VP_MODE_LVN;
+    entry.vwap.applyOptions({ color: lvn ? C_MANUAL_WITH_PROFILE_LVN : C_MANUAL_WITH_PROFILE });
+    entry.otherSide?.line?.applyOptions({ color: lvn ? C_OTHERSIDE_LVN : C_OTHERSIDE });
+    this._renderManualEntry(anchorIdx, entry);
+    return true;
+  }
+
+  /** Topmost manual profile whose last-drawn bounds contain (barIdx, price),
+   * as its anchor index, or null — bounds are populated at creation too
+   * (via _createManualAnchor), so this works even before the next reveal().
    *
    * Walks this._manualOrder back-to-front (most-recently-placed first),
    * NOT Object.entries(this._manualSeries) — that object is keyed by bar
    * index, and plain-object key iteration always sorts integer-like keys
    * in ascending numeric order regardless of insertion order, so it would
    * always resolve an overlap in favor of the earliest-anchored profile
-   * instead of whichever one is actually on top. Returns true if a
-   * histogram was toggled, false if the click didn't land on any profile.
-   */
-  toggleHistogramAt(barIdx, price) {
-    const anchorIdx = this._profileAnchorAt(barIdx, price);
-    if (anchorIdx == null) return false;
-    const entry = this._manualSeries[anchorIdx];
-    entry.histogramHidden = !entry.histogramHidden;
-    this._renderManualEntry(anchorIdx, entry);
-    return true;
-  }
-
-  /**
-   * Flip a manual anchor's Volume Profile between HVN and LVN emphasis
-   * (Shift+click) — same hit-test as toggleHistogramAt. Recolors the paired
-   * aVWAP and other-side lines to match, since profile + lines read as one
-   * unit. Returns true if a profile was flipped.
-   */
-  toggleEmphasisAt(barIdx, price) {
-    const anchorIdx = this._profileAnchorAt(barIdx, price);
-    if (anchorIdx == null) return false;
-    const entry = this._manualSeries[anchorIdx];
-    entry.lvn = !entry.lvn;
-    entry.vwap.applyOptions({ color: entry.lvn ? C_MANUAL_WITH_PROFILE_LVN : C_MANUAL_WITH_PROFILE });
-    entry.otherSide?.line?.applyOptions({ color: entry.lvn ? C_OTHERSIDE_LVN : C_OTHERSIDE });
-    this._renderManualEntry(anchorIdx, entry);
-    return true;
-  }
-
-  /** Topmost manual profile whose last-drawn bounds contain (barIdx, price),
-   * as its anchor index, or null. Walks _manualOrder back-to-front for the
-   * reason toggleHistogramAt's docs give. */
+   * instead of whichever one is actually on top. */
   _profileAnchorAt(barIdx, price) {
     for (let i = this._manualOrder.length - 1; i >= 0; i--) {
       const anchorIdx = this._manualOrder[i];
