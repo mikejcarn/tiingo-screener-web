@@ -447,8 +447,13 @@ function _wireControls() {
       _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
       return;
     }
-    // A plain click elsewhere (no measurement, no Alt) tries toggling a
-    // Volume Profile histogram's bars on/off, if it landed inside one.
+    // Shift+click flips a manual Volume Profile between HVN and LVN
+    // emphasis; a plain click (no measurement, no Alt) toggles its
+    // histogram's bars on/off — either only if it landed inside one.
+    if (e.shiftKey) {
+      chart.toggleEmphasisAtXY(e.clientX - rect.left, e.clientY - rect.top);
+      return;
+    }
     chart.toggleHistogramAtXY(e.clientX - rect.left, e.clientY - rect.top);
   });
 

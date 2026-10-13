@@ -10,7 +10,7 @@
  * VWAP values use pre-built cumulative sum arrays so each value is O(1).
  */
 
-import { VolumeProfileSeries, RGB_DEFAULT as VP_RGB_DEFAULT } from './volume_profile_series.js';
+import { VolumeProfileSeries, RGB_DEFAULT as VP_RGB_DEFAULT, RGB_LVN_DEFAULT as VP_RGB_LVN } from './volume_profile_series.js';
 
 // Default colours — match col_styles.py palette
 const C_PEAK   = 'rgba(239, 83, 80, 0.75)';   // red   — peaks
@@ -105,9 +105,19 @@ const MANUAL_STDEV_MULTIPLES = [1, 2]; // matches aVWAP_pinch's default stdev_mu
 const MANUAL_VP_NUM_BINS       = 200;
 const MANUAL_VP_FILL_OPACITY   = 0.4;
 const MANUAL_VP_VALUE_AREA_PCT = 0.7;
+// Shift+click on a paired profile flips it to LVN emphasis (and back) —
+// bars widest at the thinnest levels, POC moved to the deepest LVN, profile
+// + lines recolored indigo; see volume_profile.py's heatmap_emphasis docs.
+// Inverted widths against the single global peak make nearly every bar
+// long, so LVN mode judges each bin against its own neighborhood instead
+// (locality 1). Node window scales with the bin count: 16 of 200 bins is
+// the same ~8%-per-side reach as the indicator's own 2-of-24 default.
+const MANUAL_VP_LVN_LOCALITY = 1.0;
+const MANUAL_VP_NODE_WINDOW  = 16;
 // When a profile is paired (Ctrl+.), the vwap line matches the profile's
 // own color instead of the usual amber — they're one visual unit then.
 const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
+const C_MANUAL_WITH_PROFILE_LVN = `rgba(${VP_RGB_LVN},0.95)`;
 
 // When a profile is paired, a second aVWAP is also anchored at whichever
 // extremum of the range is the "other side" relative to the primary
@@ -115,6 +125,7 @@ const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
 // line, dotted instead of solid so it still reads as distinct without
 // introducing a third unrelated color.
 const C_OTHERSIDE = `rgba(${VP_RGB_DEFAULT},0.85)`;
+const C_OTHERSIDE_LVN = `rgba(${VP_RGB_LVN},0.85)`;
 
 // Opacity range for multi-config anchor types (currently peaks/valleys). All configs
 // stay solid at the same width — line STYLE is reserved for signifying different data
@@ -330,9 +341,37 @@ export class DynamicVWAPEngine {
     return { poc, val: priceMin + lo * binSize, vah: priceMin + (hi + 1) * binSize };
   }
 
+  /** LVN-emphasis POC — same rule as volume_profile.py's _lvn_poc: midpoint
+   * of the deepest local trough (bins equal to their own full centered
+   * window's min, tied runs collapsed), widest run on ties; edge bins never
+   * get a full window, so the line can't pin to the profile's thin top or
+   * bottom. Falls back to the thinnest interior bin. */
+  _vpLvnPoc(priceMin, binSize, bins, nodeWindow) {
+    const n = bins.length;
+    const isLvn = new Array(n).fill(false);
+    for (let i = nodeWindow; i < n - nodeWindow; i++) {
+      let mn = Infinity;
+      for (let j = i - nodeWindow; j <= i + nodeWindow; j++) if (bins[j] < mn) mn = bins[j];
+      isLvn[i] = bins[i] === mn;
+    }
+    let best = null;
+    for (let i = 0; i < n; i++) {
+      if (!isLvn[i]) continue;
+      let j = i;
+      while (j + 1 < n && isLvn[j + 1]) j++;
+      if (!best || bins[i] < bins[best[0]] || (bins[i] === bins[best[0]] && j - i > best[1] - best[0])) best = [i, j];
+      i = j;
+    }
+    if (best) return priceMin + (best[0] + best[1] + 1) / 2 * binSize;
+    let minBin = n > 2 ? 1 : 0;
+    for (let b = minBin; b < (n > 2 ? n - 1 : n); b++) if (bins[b] < bins[minBin]) minBin = b;
+    return priceMin + (minBin + 0.5) * binSize;
+  }
+
   /** Build the {lo, bs, bins, ...} payload VolumeProfileSeries expects, or
-   * null if there's no real volume in [anchorIdx, toIdx] yet to show. */
-  _vpPayload(anchorIdx, toIdx) {
+   * null if there's no real volume in [anchorIdx, toIdx] yet to show. lvn
+   * switches it to LVN emphasis (see MANUAL_VP_LVN_LOCALITY). */
+  _vpPayload(anchorIdx, toIdx, lvn = false) {
     const hist = this._vpHistogram(anchorIdx, toIdx, MANUAL_VP_NUM_BINS);
     if (!hist) return null;
     const { priceMin, binSize, bins } = hist;
@@ -340,10 +379,16 @@ export class DynamicVWAPEngine {
     // VolumeProfileSeries applies to bars outside the value area both come
     // from passing vah/val, so omitting them (poc is a plain solid line,
     // unaffected) gives every bar the same flat fillOpacity with no dashes.
-    const { poc } = this._vpPocValueArea(priceMin, binSize, bins, MANUAL_VP_VALUE_AREA_PCT);
+    const poc = lvn
+      ? this._vpLvnPoc(priceMin, binSize, bins, MANUAL_VP_NODE_WINDOW)
+      : this._vpPocValueArea(priceMin, binSize, bins, MANUAL_VP_VALUE_AREA_PCT).poc;
+    // heatmapContrast 1 = plain proportional widths — the renderer's own
+    // default (2.0) is tuned for the indicator's heatmap, not this tool.
     return {
       lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
       showHistogram: true, directionalColor: false, barStyle: 'bars', poc,
+      heatmapContrast: 1, heatmapEmphasis: lvn ? 'lvn' : 'hvn',
+      heatmapLocality: lvn ? MANUAL_VP_LVN_LOCALITY : 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
     };
   }
 
@@ -443,7 +488,7 @@ export class DynamicVWAPEngine {
     // lazily on the first render, once we know whether it's a high or low
     // and can pick its color) — see _renderManualEntry.
     this._manualSeries[anchorIdx] = {
-      vwap, bands, profile, fixedEnd, histogramHidden: false,
+      vwap, bands, profile, fixedEnd, histogramHidden: false, lvn: false,
       otherSide: withProfile ? {} : null,
     };
     this._manualOrder.push(anchorIdx);
@@ -1126,7 +1171,7 @@ export class DynamicVWAPEngine {
       }
     }
     if (entry.profile) {
-      const payload = this._vpPayload(anchorIdx, toIdx);
+      const payload = this._vpPayload(anchorIdx, toIdx, entry.lvn);
       if (payload) {
         payload.showHistogram = !entry.histogramHidden;
         // Bounding box for toggleHistogramAt's click hit-test — bars span
@@ -1148,7 +1193,7 @@ export class DynamicVWAPEngine {
       const ext = this._otherSideExtremum(anchorIdx, toIdx);
       if (ext) {
         if (!entry.otherSide.line) {
-          entry.otherSide.line = this._series(C_OTHERSIDE, 2, 1); // lineStyle 1 = dotted
+          entry.otherSide.line = this._series(entry.lvn ? C_OTHERSIDE_LVN : C_OTHERSIDE, 2, 1); // lineStyle 1 = dotted
         }
         entry.otherSide.line.setData(this._vwapLine(ext.idx, toIdx));
       } else if (entry.otherSide.line) {
@@ -1175,18 +1220,43 @@ export class DynamicVWAPEngine {
    * histogram was toggled, false if the click didn't land on any profile.
    */
   toggleHistogramAt(barIdx, price) {
+    const anchorIdx = this._profileAnchorAt(barIdx, price);
+    if (anchorIdx == null) return false;
+    const entry = this._manualSeries[anchorIdx];
+    entry.histogramHidden = !entry.histogramHidden;
+    this._renderManualEntry(anchorIdx, entry);
+    return true;
+  }
+
+  /**
+   * Flip a manual anchor's Volume Profile between HVN and LVN emphasis
+   * (Shift+click) — same hit-test as toggleHistogramAt. Recolors the paired
+   * aVWAP and other-side lines to match, since profile + lines read as one
+   * unit. Returns true if a profile was flipped.
+   */
+  toggleEmphasisAt(barIdx, price) {
+    const anchorIdx = this._profileAnchorAt(barIdx, price);
+    if (anchorIdx == null) return false;
+    const entry = this._manualSeries[anchorIdx];
+    entry.lvn = !entry.lvn;
+    entry.vwap.applyOptions({ color: entry.lvn ? C_MANUAL_WITH_PROFILE_LVN : C_MANUAL_WITH_PROFILE });
+    entry.otherSide?.line?.applyOptions({ color: entry.lvn ? C_OTHERSIDE_LVN : C_OTHERSIDE });
+    this._renderManualEntry(anchorIdx, entry);
+    return true;
+  }
+
+  /** Topmost manual profile whose last-drawn bounds contain (barIdx, price),
+   * as its anchor index, or null. Walks _manualOrder back-to-front for the
+   * reason toggleHistogramAt's docs give. */
+  _profileAnchorAt(barIdx, price) {
     for (let i = this._manualOrder.length - 1; i >= 0; i--) {
       const anchorIdx = this._manualOrder[i];
       const entry = this._manualSeries[anchorIdx];
       if (!entry || !entry.profile || !entry._profileBounds) continue;
       const b = entry._profileBounds;
-      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) {
-        entry.histogramHidden = !entry.histogramHidden;
-        this._renderManualEntry(anchorIdx, entry);
-        return true;
-      }
+      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) return anchorIdx;
     }
-    return false;
+    return null;
   }
 
   // ── Show/hide a generic anchor-pool kind (e.g. 'avwap_max', 'avwap_min') ──

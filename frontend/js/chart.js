@@ -685,6 +685,15 @@ export class ChartManager {
     return this._engine.toggleHistogramAt(barIdx, price);
   }
 
+  /** Shift+click at (x, y) flips a manual anchor's Volume Profile between HVN and LVN emphasis if the click landed inside it. Returns true if a profile was flipped. */
+  toggleEmphasisAtXY(x, y) {
+    if (!this._engine || !this._candles) return false;
+    const barIdx = this.barIndexAtX(x);
+    const price  = this._candles.coordinateToPrice(y);
+    if (barIdx == null || price == null) return false;
+    return this._engine.toggleEmphasisAt(barIdx, price);
+  }
+
   /** Live price/percent-change measurement box from (x0,y0) to (x1,y1), in #chart-local pixel coords. */
   updateMeasure(x0, y0, x1, y1) {
     if (!this._candles) return;

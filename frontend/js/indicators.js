@@ -68,7 +68,8 @@ const PARAM_ENUMS = {
   // volume (classic sideways histogram); 'heatmap' instead gives every bin
   // the profile's full width and varies opacity by volume instead.
   bar_style: ['bars', 'heatmap'],
-  // Which end of the volume distribution the heatmap makes most opaque —
+  // Which end of the volume distribution the histogram emphasizes (most
+  // opaque in heatmap style, widest in bars style) —
   // High Volume Nodes (busy levels) or Low Volume Nodes (thin, often
   // better support/resistance since there's no built-up position history).
   heatmap_emphasis: ['hvn', 'lvn'],

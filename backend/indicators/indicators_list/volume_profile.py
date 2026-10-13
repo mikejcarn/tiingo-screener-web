@@ -30,10 +30,10 @@ param_labels = {
     'fill_opacity':           'Bar Opacity',
     'show_histogram':         'Show Histogram Bars',
     'bar_style':              'Histogram Style',
-    'heatmap_emphasis':       'Heatmap Emphasis',
+    'heatmap_emphasis':       'Histogram Emphasis',
     'heatmap_opacity':        'Heatmap Max Opacity',
-    'heatmap_contrast':       'Heatmap Contrast',
-    'heatmap_locality':       'Heatmap Locality',
+    'heatmap_contrast':       'Histogram Contrast',
+    'heatmap_locality':       'Histogram Locality',
     'directional_color':      'Color by Bull/Bear Direction',
     'histogram_grayscale':    'Histogram Grayscale',
     'show_poc':               'Show POC Line',
@@ -98,20 +98,23 @@ param_descriptions = {
                "highest-volume bins read darkest/most opaque, the lowest read almost "
                "invisible. Same underlying bins either way, just a different encoding "
                "of the same numbers.",
-    'heatmap_emphasis': "Which end of the volume distribution 'heatmap' style makes "
-               "most opaque. 'hvn' (default) highlights High Volume Nodes — the "
-               "highest-volume bins read darkest, the emptiest read almost invisible, "
-               "same sense as show_hvn. 'lvn' flips that: the emptiest/lowest-volume "
-               "bins (including untraded gaps) read darkest instead, and the "
-               "highest-volume bins fade away — useful because thin, low-volume price "
+    'heatmap_emphasis': "Which end of the volume distribution the histogram makes "
+               "most prominent — most opaque in 'heatmap' style, widest in 'bars' "
+               "style. 'hvn' (default) highlights High Volume Nodes — the "
+               "highest-volume bins read darkest/widest, the emptiest almost "
+               "invisible, same sense as show_hvn. 'lvn' flips that: the "
+               "emptiest/lowest-volume bins (including untraded gaps) read "
+               "darkest/widest instead, and the highest-volume bins fade away — useful because thin, low-volume price "
                "levels often make better support/resistance than heavily-traded ones, "
                "with no built-up position history to defend them, and this makes those "
                "levels visually stand out instead of the busy ones. In 'lvn' emphasis, "
                "the Value Area dimming that normally fades bins outside VAH/VAL is "
                "skipped, since VAH/VAL marks the high-volume core — dimming outside it "
                "would fight the whole point of highlighting low-volume zones, which "
-               "live outside the value area by definition. Has no effect in 'bars' "
-               "style.",
+               "live outside the value area by definition. In 'bars' style with "
+               "'lvn', heatmap_locality is usually worth raising — against the single "
+               "global peak almost every bin is 'empty', so nearly every bar comes out "
+               "long.",
     'heatmap_opacity': "Opacity of the bin heatmap_emphasis is highlighting (the "
                "highest-volume bin under 'hvn' emphasis, the lowest-volume under "
                "'lvn'), 0-1 — every other bin scales down from this ceiling by its own "
@@ -121,16 +124,17 @@ param_descriptions = {
                "no effect in 'bars' style.",
     'heatmap_contrast': "Exponent applied to each bin's own distance from the "
                "emphasized extreme (see heatmap_emphasis) before it's scaled to "
-               "opacity, in 'heatmap' style. 1.0 = linear. Above 1.0 (default 2.0) "
+               "opacity ('heatmap' style) or bar width ('bars' style). 1.0 = linear "
+               "(the classic proportional-width histogram in 'bars' style). Above 1.0 (default 2.0) "
                "suppresses bins further from that extreme faster than it suppresses "
                "bins near it, so only the genuinely emphasized levels stay visible "
                "against an emptier background — higher values push that further. "
                "Below 1.0 does the opposite, boosting distant bins so more of the "
                "profile's shape shows through at the cost of the standout levels "
-               "being less distinct. Has no effect in 'bars' style.",
-    'heatmap_locality': "How much each bin's opacity is judged against its own "
-               "neighborhood instead of the profile's single global extreme, in "
-               "'heatmap' style, 0-1. At 0 (default) every bin is scaled purely "
+               "being less distinct.",
+    'heatmap_locality': "How much each bin's opacity ('heatmap' style) or bar "
+               "width ('bars' style) is judged against its own neighborhood instead of "
+               "the profile's single global extreme, 0-1. At 0 (default) every bin is scaled purely "
                "against the profile's one global peak bin — the same reference point "
                "for the whole profile, which makes 'hvn' emphasis a sparse spike (only "
                "bins near that one peak stand out) and 'lvn' emphasis a dense, broad "
@@ -141,11 +145,11 @@ param_descriptions = {
                "gets full intensity in its own neighborhood even if it's unremarkable "
                "globally, and the sparse/dense asymmetry between 'hvn' and 'lvn' "
                "emphasis goes away, since local min-to-max is always a fair range on "
-               "both ends. Values between 0 and 1 blend the two. Has no effect in "
-               "'bars' style.",
+               "both ends. Values between 0 and 1 blend the two.",
     'histogram_grayscale': "Fill the histogram bins — bars or heatmap, whichever "
                "bar_style is active — in neutral gray instead of the profile's own "
-               "color (orange, or teal/red under directional_color); width/opacity "
+               "color (orange, indigo under 'lvn' emphasis, or teal/red under "
+               "directional_color); width/opacity "
                "still encode volume the same way either style. POC/Value Area/HVN/LVN "
                "keep their own colors regardless — this only affects the histogram "
                "fill itself.",
@@ -154,9 +158,17 @@ param_descriptions = {
                "coloring as the rest of the chart's bull/bear elements. Off (default) "
                "uses a single neutral orange for every profile regardless of anchor "
                "direction, since a profile's own shape (not its anchor's direction) is "
-               "usually the point of looking at it.",
+               "usually the point of looking at it — or indigo under heatmap_emphasis "
+               "'lvn', so low-volume profiles (histogram, POC, Value Area lines) read "
+               "apart from high-volume ones at a glance. LVN zones are indigo and HVN "
+               "zones amber on every profile, matching the same high/low split.",
     'show_poc': "Draw the Point of Control — a line at the single highest-volume price "
-               "bin — across the full span of each profile.",
+               "bin — across the full span of each profile. Under heatmap_emphasis "
+               "'lvn' the line instead marks the deepest Low Volume Node (the "
+               "lowest-volume local trough, widest one on ties — same detection as "
+               "show_lvn, so profile edges never qualify), matching what the "
+               "histogram highlights. The Value Area is still built outward from "
+               "the real highest-volume bin either way.",
     'show_value_area': "Draw the Value Area bounds (VAH/VAL) — the band of prices "
                "holding value_area_pct of the profile's volume, expanded outward from "
                "the POC bin — across the full span of each profile.",
@@ -314,12 +326,36 @@ def _hvn_lvn(price_min, bin_size, bins, node_window, max_nodes, want_hvn, want_l
 
     lvn_zones = []
     if want_lvn:
-        roll_min = s.rolling(window, center=True).min().to_numpy()
-        is_lvn = (bins == roll_min)
-        lvn_runs = sorted(_dedupe_runs(is_lvn), key=lambda r: bins[r[0]])
+        lvn_runs = sorted(_lvn_runs(bins, node_window), key=lambda r: bins[r[0]])
         lvn_zones = [to_zone(r) for r in lvn_runs[:max_nodes]]
 
     return hvn_zones, lvn_zones
+
+
+def _lvn_runs(bins, node_window):
+    """Unsorted LVN runs (inclusive bin-index bounds) — local troughs, same
+    centered-window detection _hvn_lvn describes. Split out so the LVN-
+    emphasis POC below reuses the exact same troughs the LVN zones mark."""
+    roll_min = pd.Series(bins).rolling(2 * node_window + 1, center=True).min().to_numpy()
+    return _dedupe_runs(bins == roll_min)
+
+
+def _lvn_poc(price_min, bin_size, bins, node_window):
+    """LVN-emphasis counterpart to the POC — the midpoint of the deepest LVN
+    (lowest-volume local trough), ties broken by the widest run, so among
+    several untraded gaps the broadest one wins. Uses the LVN detector
+    rather than a plain argmin because the histogram's own edge bins are
+    almost always its thinnest (the window's extreme highs/lows barely
+    traded), which would pin the line to the profile's top or bottom
+    instead of a real trough. Falls back to the thinnest interior bin when
+    node_window is too wide for any trough to get a full window."""
+    runs = _lvn_runs(bins, node_window)
+    if runs:
+        s_bin, e_bin = min(runs, key=lambda r: (bins[r[0]], -(r[1] - r[0])))
+        return price_min + (s_bin + e_bin + 1) / 2 * bin_size
+    interior = bins[1:-1] if len(bins) > 2 else bins
+    offset = 1 if len(bins) > 2 else 0
+    return price_min + (int(np.argmin(interior)) + offset + 0.5) * bin_size
 
 
 def _build_payload(high, low, volume, end, vf, direction, num_bins, fill_opacity,
@@ -355,6 +391,11 @@ def _build_payload(high, low, volume, end, vf, direction, num_bins, fill_opacity
         poc_price, vah_price, val_price = _poc_value_area(price_min, bin_size, bins,
                                                             value_area_pct)
         if show_poc:
+            # Under 'lvn' emphasis the line follows what the histogram is
+            # highlighting — the deepest LVN instead of the highest-volume
+            # bin. Value Area stays volume-based either way (see show_poc).
+            if heatmap_emphasis == 'lvn':
+                poc_price = _lvn_poc(price_min, bin_size, bins, node_window)
             payload['poc'] = round(poc_price, 6)
         if show_value_area:
             payload['vah'] = round(vah_price, 6)

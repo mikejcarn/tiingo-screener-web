@@ -138,6 +138,8 @@ const _PAGES = [
       <tr><td>Shift+<kbd>.</kbd></td><td>Same, but also draws +/-1 and +/-2 stdev bands around that anchor (dashed, tightest band most visible)</td></tr>
       <tr><td>Ctrl+<kbd>.</kbd></td><td>Same, but also pairs a Volume Profile histogram with it (line recolors to match the profile)</td></tr>
       <tr><td>Ctrl+Shift+<kbd>.</kbd></td><td>Both of the above together — stdev bands and a paired Volume Profile</td></tr>
+      <tr><td>Click a profile</td><td>Hide / show that Volume Profile's histogram bars (aVWAP and POC stay visible)</td></tr>
+      <tr><td>Shift+Click a profile</td><td>Flip that Volume Profile between HVN and LVN emphasis — LVN makes the bars widest at the thinnest price levels, moves the POC to the deepest LVN, and turns the profile and its lines indigo</td></tr>
       <tr><td>Alt+<kbd>.</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Undo the most recently placed manual aVWAP anchor, bands/profile included (repeat to keep undoing, in order)</td></tr>
 
       <tr class="help-section"><td colspan="2">Annotations — fixed range (two candles)</td></tr>
