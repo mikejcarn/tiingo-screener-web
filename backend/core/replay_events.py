@@ -691,12 +691,14 @@ def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> dict:
     show_candles = bool(params.get('show_candles', False))
     show_pivots  = bool(params.get('show_pivots',  False))
 
-    # Re-derive price pivot indices so we can identify prev_b for each signal
+    # Re-derive price pivot indices so we can identify prev_b for each signal —
+    # same High/Low pivots _divergence_core compares, so each line joins the
+    # exact two prices a divergence was detected between.
     high_pivot_bars = low_pivot_bars = high_vals = low_vals = None
-    if show_pivots and 'Close' in df.columns:
+    if show_pivots and 'High' in df.columns and 'Low' in df.columns:
         try:
             from backend.indicators.indicators_list._divergence_core import find_price_pivots
-            high_arr, low_arr = find_price_pivots(df['Close'], left, right)
+            high_arr, low_arr = find_price_pivots(df['High'], df['Low'], left, right)
             high_pivot_bars = _np.where(high_arr)[0]
             low_pivot_bars  = _np.where(low_arr)[0]
             high_vals       = df['High'].values

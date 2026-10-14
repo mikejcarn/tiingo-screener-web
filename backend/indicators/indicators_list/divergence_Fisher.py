@@ -14,7 +14,7 @@ def calculate_fisher_divergence(df: pd.DataFrame, period: int = 10,
     signal = fisher.ewm(span=3, adjust=False).mean()
 
     reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['Close'], fisher, left, right)
+        df['High'], df['Low'], fisher, left, right)
     return {
         'Fisher':                  fisher,
         'Fisher_Signal':           signal,

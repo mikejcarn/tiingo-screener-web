@@ -18,7 +18,7 @@ def calculate_mfi_divergence(df: pd.DataFrame, period: int = 14,
     vol_conf = df['Volume'] > vol_ema * volume_threshold
 
     reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['Close'], mfi, left, right)
+        df['High'], df['Low'], mfi, left, right)
 
     # Keep the oversold/overbought zone filters — they reduce noise meaningfully
     return {

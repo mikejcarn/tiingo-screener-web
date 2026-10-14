@@ -1,11 +1,14 @@
+import re
 import pandas as pd
 from typing import List, Optional
 
 display_name = "Divergences"
-required_columns = ['OBV_Regular_Bullish']
+# Any divergence column at all — which oscillators exist depends on what the
+# divergence indicator config turned on, so no single column is required.
+required_columns = ['*_Regular_*']
 param_schema = {
     'mode':                {'label': 'Direction',     'type': 'select',   'options': ['bearish', 'bullish'], 'default': 'bearish'},
-    'divergence_types':    {'label': 'Types (comma)', 'type': 'list_str', 'default': ['OBV', 'VI', 'Fisher', 'Vol']},
+    'divergence_types':    {'label': 'Types (comma, blank = all enabled)', 'type': 'list_str', 'default': []},
     'max_bars_back':       {'label': 'Lookback bars', 'type': 'int',      'default': 20, 'min': 1},
     'require_confirmation':{'label': 'Require price confirmation', 'type': 'bool', 'default': True},
 }
@@ -18,8 +21,10 @@ def divergences(df: pd.DataFrame,
                 require_confirmation: bool = True) -> pd.DataFrame:
     if len(df) < 2:
         return pd.DataFrame()
-    if divergence_types is None:
-        divergence_types = ['OBV', 'VI', 'Fisher', 'Vol']
+    if not divergence_types:
+        # Every oscillator the indicator actually produced columns for.
+        pattern = re.compile(r'^(.+?)_(Regular|Hidden)_(Bullish|Bearish)$')
+        divergence_types = sorted({m.group(1) for c in df.columns if (m := pattern.match(c))})
     mode = mode.lower()
     opposite = 'bullish' if mode == 'bearish' else 'bearish'
 

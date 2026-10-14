@@ -23,7 +23,7 @@ def calculate_fractal_divergence(df: pd.DataFrame, period: int = 12,
         vol_confirmed = pd.Series(True, index=df.index)
 
     reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['Close'], energy, left, right)
+        df['High'], df['Low'], energy, left, right)
 
     return {
         'Fractal_Energy':          energy,

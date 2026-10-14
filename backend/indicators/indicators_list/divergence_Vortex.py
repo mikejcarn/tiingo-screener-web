@@ -1,5 +1,5 @@
 import pandas as pd
-from backend.indicators.indicators_list._divergence_core import detect_divergences, find_price_pivots
+from backend.indicators.indicators_list._divergence_core import detect_divergences
 import numpy as np
 
 
@@ -14,11 +14,11 @@ def calculate_vortex_divergence(df: pd.DataFrame, period: int = 14,
     vi_plus  = vm_plus.rolling(period).sum()  / tr_sum
     vi_minus = vm_minus.rolling(period).sum() / tr_sum
 
-    # Bullish: price lows (Low series) vs VI+ — lower price low + higher VI+ = bullish
-    # Bearish: price highs (High series) vs VI- — higher price high + lower VI- = bearish
-    # We call detect_divergences twice with the appropriate series pairs.
-    rb_bull, _, hb_bull, _ = detect_divergences(df['Low'],  vi_plus,  left, right)
-    _, rb_bear, _, hb_bear = detect_divergences(df['High'], vi_minus, left, right)
+    # Bullish: price lows vs VI+ — lower price low + higher VI+ = bullish
+    # Bearish: price highs vs VI- — higher price high + lower VI- = bearish
+    # Two passes, one per VI line, keeping only that line's side.
+    rb_bull, _, hb_bull, _ = detect_divergences(df['High'], df['Low'], vi_plus,  left, right)
+    _, rb_bear, _, hb_bear = detect_divergences(df['High'], df['Low'], vi_minus, left, right)
 
     return {
         'VI_plus':             vi_plus,

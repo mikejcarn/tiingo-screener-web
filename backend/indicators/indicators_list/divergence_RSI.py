@@ -15,7 +15,7 @@ def calculate_rsi_divergence(df: pd.DataFrame, period: int = 14,
     avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
     rsi = 100 - (100 / (1 + avg_gain / avg_loss))
 
-    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(close, rsi, left, right)
+    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(df['High'], df['Low'], rsi, left, right)
     return {
         'RSI':                  rsi,
         'RSI_Regular_Bullish':  reg_bull,

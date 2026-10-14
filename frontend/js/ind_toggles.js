@@ -19,6 +19,7 @@ let _displayNames = {}; // {indicatorName: display_name} — best-effort, falls 
 
 function _label(name) {
   if (name === '__candles__') return 'Candles';
+  if (name === '__volume__')  return 'Volume';
   return _displayNames[name] || name;
 }
 

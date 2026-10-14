@@ -10,7 +10,7 @@ def calculate_macd_divergence(df: pd.DataFrame, fast_period: int = 12,
              close.ewm(span=slow_period, adjust=False).mean()
     signal = macd.ewm(span=signal_period, adjust=False).mean()
 
-    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(close, macd, left, right)
+    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(df['High'], df['Low'], macd, left, right)
     return {
         'MACD':                  macd,
         'Signal':                signal,

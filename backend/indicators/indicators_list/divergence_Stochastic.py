@@ -11,7 +11,7 @@ def calculate_stochastic_divergence(df: pd.DataFrame, k_period: int = 14,
     stoch_d  = stoch_k.rolling(d_period).mean()
 
     reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['Close'], stoch_k, left, right)
+        df['High'], df['Low'], stoch_k, left, right)
     return {
         'Stoch_%K':                    stoch_k,
         'Stoch_%D':                    stoch_d,

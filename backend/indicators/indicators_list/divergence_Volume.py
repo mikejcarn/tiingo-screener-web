@@ -7,7 +7,7 @@ def calculate_volume_divergence(df: pd.DataFrame, period: int = 14,
     vol_ma = df['Volume'].ewm(span=period, adjust=False).mean()
 
     reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['Close'], vol_ma, left, right)
+        df['High'], df['Low'], vol_ma, left, right)
     return {
         'Volume_MA':            vol_ma,
         'Vol_Regular_Bullish':  reg_bull,

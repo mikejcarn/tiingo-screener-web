@@ -131,6 +131,7 @@ const _PAGES = [
       <tr><td><kbd>Home</kbd> <kbd>End</kbd> &nbsp;or&nbsp; <kbd>Ctrl+←</kbd> <kbd>Ctrl+→</kbd></td><td>First bar / last bar</td></tr>
       <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Increase / decrease playback FPS</td></tr>
       <tr><td><kbd>Backspace</kbd></td><td>Toggle auto-fit (fits all candles in view)</td></tr>
+      <tr><td>Shift+<kbd>V</kbd></td><td>Show / hide the volume histogram along the bottom of the chart (same as the Volume row in the show/hide indicators panel)</td></tr>
       <tr><td>Double-click chart</td><td>Jump to that bar</td></tr>
 
       <tr class="help-section"><td colspan="2">Annotations — growing-to-"now"</td></tr>

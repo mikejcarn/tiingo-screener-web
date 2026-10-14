@@ -57,7 +57,9 @@ function _hiddenIndicatorsKey(indConf) {
 function _loadHiddenIndicators(indConf) {
   try {
     const raw = localStorage.getItem(_hiddenIndicatorsKey(indConf));
-    return new Set(raw ? JSON.parse(raw) : []);
+    const set = new Set(raw ? JSON.parse(raw) : []);
+    set.delete('__volume__'); // briefly stored per-config before going global
+    return set;
   } catch { return new Set(); }
 }
 
@@ -72,10 +74,16 @@ function _saveHiddenIndicators() {
 // indicator/config, so it lives outside indicatorColumns but shares the same
 // hidden-set/persistence/toggle mechanics as everything else in the panel.
 const CANDLES_KEY = '__candles__';
+// Same idea for the volume histogram along the chart's bottom edge — but
+// global rather than per-ind_conf (volume isn't part of any config), so its
+// hidden state lives in its own localStorage key, not hiddenIndicators.
+const VOLUME_KEY  = '__volume__';
+let volumeHidden  = localStorage.getItem('replay_volume_hidden') === 'true';
 
 function _applyIndicatorVisibility() {
   if (!chart) return;
   chart.setCandlesVisible(!hiddenIndicators.has(CANDLES_KEY));
+  chart.setVolumeVisible(!volumeHidden);
   for (const [name, cols] of Object.entries(indicatorColumns)) {
     const visible = !hiddenIndicators.has(name);
     const segType = segmentIndicators[name];
@@ -87,11 +95,18 @@ function _applyIndicatorVisibility() {
 /** [{name, visible}] for whichever indicators (+ candles) the current chart can toggle. */
 export function getIndicatorState() {
   const candles = { name: CANDLES_KEY, visible: !hiddenIndicators.has(CANDLES_KEY) };
+  const volume  = { name: VOLUME_KEY,  visible: !volumeHidden };
   const indicators = Object.keys(indicatorColumns).map(name => ({ name, visible: !hiddenIndicators.has(name) }));
-  return [candles, ...indicators];
+  return [candles, volume, ...indicators];
 }
 
 export function toggleIndicatorVisible(name, visible) {
+  if (name === VOLUME_KEY) {
+    volumeHidden = !visible;
+    try { localStorage.setItem('replay_volume_hidden', volumeHidden); } catch {}
+    chart?.setVolumeVisible(visible);
+    return;
+  }
   if (visible) hiddenIndicators.delete(name); else hiddenIndicators.add(name);
   _saveHiddenIndicators();
   if (!chart) return;
@@ -534,6 +549,11 @@ function _wireKeys() {
     if (e.key === 'ArrowUp'   && !e.shiftKey) { e.preventDefault(); fps = Math.min(60, fps + 1); fpsInput.value = fps; }
     if (e.key === 'ArrowDown' && !e.shiftKey) { e.preventDefault(); fps = Math.max(1, fps - 1);  fpsInput.value = fps; }
     if (e.key === 'Backspace') { e.preventDefault(); _setAutoFit(!autoFit); }
+    // Shift+V — same toggle as the Volume row in the show/hide panel.
+    if (e.key === 'V' && !ctrl && !e.altKey) {
+      e.preventDefault();
+      toggleIndicatorVisible(VOLUME_KEY, volumeHidden);
+    }
     if (/^[0-9]$/.test(e.key)) { e.preventDefault(); barInput.focus(); barInput.value = e.key; }
   });
 }

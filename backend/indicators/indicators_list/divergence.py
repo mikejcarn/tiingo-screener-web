@@ -12,7 +12,9 @@ from backend.indicators.indicators_list.divergence_Vortex     import calculate_v
 
 display_name = "Divergences"
 
-param_separators = ['RSI']  # visual divider before the type toggles
+# Visual dividers: before the type toggles, then before the pivot settings,
+# then before the per-oscillator settings.
+param_separators = ['RSI', 'left', 'rsi_period']
 
 param_labels = {
     'show_regular':     'Show Regular',
@@ -33,7 +35,16 @@ param_labels = {
     'Stochastic':       'Stochastic',
     'Volume':           'Volume',
     'Vortex':           'Vortex',
-    'period':           'Period',
+    'rsi_period':       'RSI Period',
+    'obv_period':       'OBV Smoothing Period',
+    'atr_period':       'ATR Period',
+    'fisher_period':    'Fisher Period',
+    'fractal_period':   'Fractal Energy Period',
+    'mfi_period':       'MFI Period',
+    'momentum_period':  'Momentum Period',
+    'stoch_k':          'Stoch %K Period',
+    'volume_period':    'Volume MA Period',
+    'vortex_period':    'Vortex Period',
     'left':             'Pivot Left Bars',
     'right':            'Pivot Right Bars',
     'macd_fast':        'MACD Fast',
@@ -45,6 +56,23 @@ param_labels = {
     'vol_filter':       'Fractal Volume Filter',
 }
 
+# Each oscillator has its own lookback (its own conventional default), rather
+# than one shared 'period' — a single value can't suit RSI, Fisher, OBV
+# smoothing and Momentum all at once. param_descriptions is merged into one
+# app-wide dict keyed by param name, so rsi_period/atr_period (already
+# described for QQEMOD/anchor scoring) are left out here to avoid
+# overwriting those indicators' descriptions.
+param_descriptions = {
+    'obv_period':      "EMA span used to smooth OBV before comparing it at swing points. Default 21.",
+    'fisher_period':   "Fisher Transform lookback (high/low normalization window). Default 10.",
+    'fractal_period':  "Fractal Energy lookback (net close move vs. average range). Default 12.",
+    'mfi_period':      "Money Flow Index lookback. Standard default 14.",
+    'momentum_period': "Momentum lookback (close minus close N bars ago). Default 10.",
+    'stoch_k':         "Stochastic %K lookback. Standard default 14 (%D smoothing is stoch_d).",
+    'volume_period':   "EMA span of the volume average compared at swing points. Default 14.",
+    'vortex_period':   "Vortex Indicator lookback. Standard default 14.",
+}
+
 
 def calculate_divergence(df,
     show_regular=True, show_hidden=True,
@@ -52,39 +80,41 @@ def calculate_divergence(df,
     RSI=True, MACD=False, OBV=False, ATR=False, Fisher=False,
     Fractal=False, MFI=False, Momentum=False, Stochastic=False,
     Volume=False, Vortex=False,
-    period=14, left=5, right=5,
-    macd_fast=12, macd_slow=26, macd_signal=9,
-    stoch_d=3, smooth_period=3, volume_threshold=1.2, vol_filter=True,
+    left=5, right=5,
+    rsi_period=14, macd_fast=12, macd_slow=26, macd_signal=9, obv_period=21,
+    atr_period=14, fisher_period=10, fractal_period=12, mfi_period=14,
+    momentum_period=10, smooth_period=3, stoch_k=14, stoch_d=3,
+    volume_period=14, vortex_period=14, volume_threshold=1.2, vol_filter=True,
     **_
 ):
     result = {}
     if RSI:
-        result.update(calculate_rsi_divergence(df, period=period, left=left, right=right))
+        result.update(calculate_rsi_divergence(df, period=rsi_period, left=left, right=right))
     if MACD:
         result.update(calculate_macd_divergence(df, fast_period=macd_fast, slow_period=macd_slow,
                                                 signal_period=macd_signal, left=left, right=right))
     if OBV:
-        result.update(calculate_obv_divergence(df, period=period, left=left, right=right))
+        result.update(calculate_obv_divergence(df, period=obv_period, left=left, right=right))
     if ATR:
-        result.update(calculate_atr_divergence(df, period=period, left=left, right=right))
+        result.update(calculate_atr_divergence(df, period=atr_period, left=left, right=right))
     if Fisher:
-        result.update(calculate_fisher_divergence(df, period=period, left=left, right=right))
+        result.update(calculate_fisher_divergence(df, period=fisher_period, left=left, right=right))
     if Fractal:
-        result.update(calculate_fractal_divergence(df, period=period, vol_filter=vol_filter,
+        result.update(calculate_fractal_divergence(df, period=fractal_period, vol_filter=vol_filter,
                                                    left=left, right=right))
     if MFI:
-        result.update(calculate_mfi_divergence(df, period=period, volume_threshold=volume_threshold,
+        result.update(calculate_mfi_divergence(df, period=mfi_period, volume_threshold=volume_threshold,
                                                left=left, right=right))
     if Momentum:
-        result.update(calculate_momentum_divergence(df, period=period, smooth_period=smooth_period,
+        result.update(calculate_momentum_divergence(df, period=momentum_period, smooth_period=smooth_period,
                                                     left=left, right=right))
     if Stochastic:
-        result.update(calculate_stochastic_divergence(df, k_period=period, d_period=stoch_d,
+        result.update(calculate_stochastic_divergence(df, k_period=stoch_k, d_period=stoch_d,
                                                       left=left, right=right))
     if Volume:
-        result.update(calculate_volume_divergence(df, period=period, left=left, right=right))
+        result.update(calculate_volume_divergence(df, period=volume_period, left=left, right=right))
     if Vortex:
-        result.update(calculate_vortex_divergence(df, period=period, left=left, right=right))
+        result.update(calculate_vortex_divergence(df, period=vortex_period, left=left, right=right))
 
     if not show_regular:
         result = {k: v for k, v in result.items() if '_Regular_' not in k}

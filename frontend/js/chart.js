@@ -29,7 +29,7 @@ import { OBZoneSeries } from './ob_zone_series.js';
 import { FVGZoneSeries } from './fvg_zone_series.js';
 import { GapZoneSeries } from './gap_zone_series.js';
 import { LiquidityZoneSeries } from './liquidity_zone_series.js';
-import { VolumeProfileSeries } from './volume_profile_series.js';
+import { VolumeProfileSeries, RGB_DEFAULT as RGB_VOLUME } from './volume_profile_series.js';
 import { cssVar, onThemeChange } from './theme.js';
 
 // Segment types with a real zone (top/bottom bounds) get a custom series that
@@ -42,6 +42,15 @@ const ZONE_SERIES = { ob: OBZoneSeries, fvg: FVGZoneSeries, gap: GapZoneSeries, 
 
 const C_UP   = 'rgba(38,166,154,1)';
 const C_DOWN = 'rgba(239,83,80,1)';
+// Time-based volume histogram along the chart's bottom edge — the app's
+// volume orange (shared with the Volume Profile), faded so it sits behind
+// aVWAPs/profiles instead of competing with them. Its own overlay price
+// scale confined to the bottom VOLUME_HEIGHT of the pane, so tall volume
+// never compresses the candles (lightweight-charts v4 has no separate
+// panes; overlapping the candles' bottom edge is the TradingView-default
+// look anyway).
+const C_VOLUME      = `rgba(${RGB_VOLUME},0.4)`;
+const VOLUME_HEIGHT = 0.2;
 
 // Divergence colours — aqua / strong red, distinct from candle teal/salmon
 const DIV_BULL         = 'rgba(0,229,255,1)';
@@ -136,6 +145,15 @@ export class ChartManager {
       wickUpColor:    C_UP,   wickDownColor:   C_DOWN,
     });
 
+    this._volume = this._chart.addHistogramSeries({
+      priceScaleId: 'volume', priceFormat: { type: 'volume' }, color: C_VOLUME,
+      priceLineVisible: false, lastValueVisible: false,
+    });
+    this._chart.priceScale('volume').applyOptions({
+      scaleMargins: { top: 1 - VOLUME_HEIGHT, bottom: 0 },
+    });
+    this._volData = [];
+
     // Overlay series — transparent body, thick wicks/borders at divergence pivot bars
     this._divCandleSeries = this._chart.addCandlestickSeries({
       upColor:          'rgba(0,0,0,0)',
@@ -169,6 +187,13 @@ export class ChartManager {
     // Remove old static series
     for (const s of Object.values(this._lines)) this._chart.removeSeries(s);
     this._lines = {};
+
+    // Volume bars, built once per load so reveal() only slices them per
+    // replay step (mirrors how candles are revealed).
+    this._volData = bars.map(b => ({
+      time:  (b.Date || b.date || '').slice(0, 10),
+      value: b.Volume ?? b.volume ?? 0,
+    }));
 
     // Remove old Supertrend series
     if (this._stLine) { try { this._chart.removeSeries(this._stLine); } catch (_) {} this._stLine = null; }
@@ -290,6 +315,7 @@ export class ChartManager {
       return entry;
     });
     this._candles.setData(candles);
+    this._volume.setData(this._volData.slice(0, n + 1));
 
     // Static indicator lines. A column can opt into per-point color (e.g.
     // aVWAP_minmax's curve-to-straight coloring) by shipping a same-named
@@ -674,6 +700,11 @@ export class ChartManager {
     const barIdx = this.barIndexAtX(x);
     if (barIdx == null) return null;
     return this._engine.createRangedManualAnchor(startIdx, barIdx, withStdev, withProfile);
+  }
+
+  /** Show/hide the volume histogram along the chart's bottom edge. */
+  setVolumeVisible(visible) {
+    this._volume?.applyOptions({ visible });
   }
 
   /** Click at (x, y) cycles a manual anchor's Volume Profile display mode (normal → LVN → both POCs, bars hidden) if the click landed inside it. Returns true if a profile was cycled. */

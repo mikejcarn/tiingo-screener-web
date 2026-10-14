@@ -12,7 +12,7 @@ def calculate_atr_divergence(df: pd.DataFrame, period: int = 14,
     atr = tr.rolling(period).mean()
 
     reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['Close'], atr, left, right)
+        df['High'], df['Low'], atr, left, right)
     return {
         'ATR':                  atr,
         'ATR_Regular_Bullish':  reg_bull,

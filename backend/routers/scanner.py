@@ -1,3 +1,4 @@
+import fnmatch
 import importlib
 import json
 import os
@@ -49,7 +50,7 @@ _CRITERIA_PARAM_DESCRIPTIONS = {
     'threshold_lower':       "Minimum indicator value the most recent bar must reach to match.",
     'threshold_upper':       "Maximum indicator value the most recent bar must reach to match.",
     'threshold':             "Standard deviation threshold defining the band boundary. Price must be beyond this level (above for overbought, below for oversold) to match.",
-    'divergence_types':      "Oscillator types to check for divergence. Only types with matching columns in the indicator data will be evaluated.",
+    'divergence_types':      "Oscillator types to check for divergence (column prefixes: RSI, MACD, OBV, ATR, Fisher, Fractal, MFI, Momo, Stochastic, Vol, VI). Leave blank to use every oscillator the indicator config has turned on. Only types with matching columns in the indicator data are evaluated.",
     'max_bars_back':         "Maximum number of bars back to search for a divergence pivot high or low.",
     'require_confirmation':  "When enabled, requires a price-action confirmation signal before counting the divergence as valid.",
     'atr_threshold':         "ATR-based tolerance for how close price must be to the order block zone. Set to 0 to require price to be strictly within the zone.",
@@ -119,10 +120,11 @@ def check_criteria_compatibility(ind_conf_id: int, timeframe: str = "daily"):
     available = set(json.loads(row[0]).keys())
 
     def _matches(req: list[str]) -> bool:
+        # An entry containing '*' is a glob ('aVWAP_*', '*_Regular_*') that
+        # just needs any one matching column; anything else must exist as-is.
         for r in req:
-            if r.endswith('*'):
-                prefix = r[:-1]
-                if not any(c.startswith(prefix) for c in available):
+            if '*' in r:
+                if not any(fnmatch.fnmatchcase(c, r) for c in available):
                     return False
             else:
                 if r not in available:

@@ -13,7 +13,7 @@ def calculate_obv_divergence(df: pd.DataFrame, period: int = 21,
     obv_smoothed = obv.ewm(span=period, adjust=False).mean()
 
     reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['Close'], obv_smoothed, left, right)
+        df['High'], df['Low'], obv_smoothed, left, right)
     return {
         'OBV':                  obv,
         'OBV_Smoothed':         obv_smoothed,

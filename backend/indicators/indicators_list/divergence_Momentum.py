@@ -9,7 +9,7 @@ def calculate_momentum_divergence(df: pd.DataFrame, period: int = 10,
     momentum = close - close.shift(period)
     smoothed = momentum.ewm(span=smooth_period, adjust=False).mean()
 
-    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(close, smoothed, left, right)
+    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(df['High'], df['Low'], smoothed, left, right)
     return {
         'Momentum':              momentum,
         'Momentum_Smoothed':     smoothed,
