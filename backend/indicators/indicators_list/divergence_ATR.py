@@ -1,24 +1,25 @@
 import numpy as np
 import pandas as pd
-from backend.indicators.indicators_list._divergence_core import detect_divergences
+from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_atr_divergence(df: pd.DataFrame, period: int = 14,
-                              left: int = 5, right: int = 5, **_):
+                              left: int = 5, right: int = 5, **div_opts):
     high_low   = df['High'] - df['Low']
     high_close = (df['High'] - df['Close'].shift(1)).abs()
     low_close  = (df['Low']  - df['Close'].shift(1)).abs()
     tr  = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     atr = tr.rolling(period).mean()
 
-    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['High'], df['Low'], atr, left, right)
+    reg_bull, reg_bear, hid_bull, hid_bear, prev = detect_divergences(
+        df['High'], df['Low'], atr, left, right, **div_opts)
     return {
         'ATR':                  atr,
         'ATR_Regular_Bullish':  reg_bull,
         'ATR_Regular_Bearish':  reg_bear,
         'ATR_Hidden_Bullish':   hid_bull,
         'ATR_Hidden_Bearish':   hid_bear,
+        **prev_columns('ATR', prev),
     }
 
 

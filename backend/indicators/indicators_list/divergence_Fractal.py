@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
-from backend.indicators.indicators_list._divergence_core import detect_divergences
+from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_fractal_divergence(df: pd.DataFrame, period: int = 12,
                                   vol_filter: bool = True,
-                                  left: int = 5, right: int = 5, **_):
+                                  left: int = 5, right: int = 5, **div_opts):
     """
     Fractal Energy: measures the ratio of directional close movement to the
     average high-low range. High energy = trending move; low energy = exhaustion.
@@ -22,8 +22,8 @@ def calculate_fractal_divergence(df: pd.DataFrame, period: int = 12,
     else:
         vol_confirmed = pd.Series(True, index=df.index)
 
-    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['High'], df['Low'], energy, left, right)
+    reg_bull, reg_bear, hid_bull, hid_bear, prev = detect_divergences(
+        df['High'], df['Low'], energy, left, right, **div_opts)
 
     return {
         'Fractal_Energy':          energy,
@@ -31,6 +31,7 @@ def calculate_fractal_divergence(df: pd.DataFrame, period: int = 12,
         'Fractal_Regular_Bearish': reg_bear & vol_confirmed,
         'Fractal_Hidden_Bullish':  hid_bull & vol_confirmed,
         'Fractal_Hidden_Bearish':  hid_bear & vol_confirmed,
+        **prev_columns('Fractal', prev),
     }
 
 

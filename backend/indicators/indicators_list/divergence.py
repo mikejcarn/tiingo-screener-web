@@ -47,6 +47,10 @@ param_labels = {
     'vortex_period':    'Vortex Period',
     'left':             'Pivot Left Bars',
     'right':            'Pivot Right Bars',
+    'max_lookback_pivots': 'Swings to Look Back',
+    'max_pivot_distance':  'Max Bars Between Swings',
+    'line_of_sight':       'Require Line of Sight',
+    'los_endpoint_bars':   'Line of Sight: Oscillator Endpoint Allowance (bars)',
     'macd_fast':        'MACD Fast',
     'macd_slow':        'MACD Slow',
     'macd_signal':      'MACD Signal',
@@ -71,6 +75,24 @@ param_descriptions = {
     'stoch_k':         "Stochastic %K lookback. Standard default 14 (%D smoothing is stoch_d).",
     'volume_period':   "EMA span of the volume average compared at swing points. Default 14.",
     'vortex_period':   "Vortex Indicator lookback. Standard default 14.",
+    'max_lookback_pivots': "How many earlier swings (same side — lows for bullish, highs for "
+                           "bearish) each new swing is compared against, most recent first; the "
+                           "first one that forms a valid divergence is used. 1 = only the "
+                           "immediately previous swing (the old behavior). Lets a divergence "
+                           "against the swing that matters be found even when a minor swing "
+                           "sits in between.",
+    'max_pivot_distance':  "Maximum bars between the two swings of a divergence — earlier "
+                           "swings further back than this are never compared. Blank/0 = no limit.",
+    'line_of_sight':       "Reject a divergence if price or the oscillator crosses its own "
+                           "straight line between the two swings — a line joining lows must not "
+                           "be undercut, one joining highs must not be exceeded. A divergence "
+                           "claims those two lines disagree; if either line is broken in "
+                           "between, the two points don't form one clean line.",
+    'los_endpoint_bars':   "Bars beside each end of the oscillator's line that line_of_sight "
+                           "ignores. The oscillator is read at the price swing bars, but its own "
+                           "turn is often a bar or two off, so it pokes past its line right next "
+                           "to an endpoint without that being a real break. 0 = strict. Price is "
+                           "always checked strictly (its endpoints are the real swing bars).",
 }
 
 
@@ -80,41 +102,46 @@ def calculate_divergence(df,
     RSI=True, MACD=False, OBV=False, ATR=False, Fisher=False,
     Fractal=False, MFI=False, Momentum=False, Stochastic=False,
     Volume=False, Vortex=False,
-    left=5, right=5,
+    left=5, right=5, max_lookback_pivots=3, max_pivot_distance=60, line_of_sight=True,
+    los_endpoint_bars=2,
     rsi_period=14, macd_fast=12, macd_slow=26, macd_signal=9, obv_period=21,
     atr_period=14, fisher_period=10, fractal_period=12, mfi_period=14,
     momentum_period=10, smooth_period=3, stoch_k=14, stoch_d=3,
     volume_period=14, vortex_period=14, volume_threshold=1.2, vol_filter=True,
     **_
 ):
+    div_opts = {'max_lookback_pivots': max_lookback_pivots,
+                'max_pivot_distance':  max_pivot_distance,
+                'line_of_sight':       line_of_sight,
+                'los_endpoint_bars':   los_endpoint_bars}
     result = {}
     if RSI:
-        result.update(calculate_rsi_divergence(df, period=rsi_period, left=left, right=right))
+        result.update(calculate_rsi_divergence(df, period=rsi_period, left=left, right=right, **div_opts))
     if MACD:
         result.update(calculate_macd_divergence(df, fast_period=macd_fast, slow_period=macd_slow,
-                                                signal_period=macd_signal, left=left, right=right))
+                                                signal_period=macd_signal, left=left, right=right, **div_opts))
     if OBV:
-        result.update(calculate_obv_divergence(df, period=obv_period, left=left, right=right))
+        result.update(calculate_obv_divergence(df, period=obv_period, left=left, right=right, **div_opts))
     if ATR:
-        result.update(calculate_atr_divergence(df, period=atr_period, left=left, right=right))
+        result.update(calculate_atr_divergence(df, period=atr_period, left=left, right=right, **div_opts))
     if Fisher:
-        result.update(calculate_fisher_divergence(df, period=fisher_period, left=left, right=right))
+        result.update(calculate_fisher_divergence(df, period=fisher_period, left=left, right=right, **div_opts))
     if Fractal:
         result.update(calculate_fractal_divergence(df, period=fractal_period, vol_filter=vol_filter,
-                                                   left=left, right=right))
+                                                   left=left, right=right, **div_opts))
     if MFI:
         result.update(calculate_mfi_divergence(df, period=mfi_period, volume_threshold=volume_threshold,
-                                               left=left, right=right))
+                                               left=left, right=right, **div_opts))
     if Momentum:
         result.update(calculate_momentum_divergence(df, period=momentum_period, smooth_period=smooth_period,
-                                                    left=left, right=right))
+                                                    left=left, right=right, **div_opts))
     if Stochastic:
         result.update(calculate_stochastic_divergence(df, k_period=stoch_k, d_period=stoch_d,
-                                                      left=left, right=right))
+                                                      left=left, right=right, **div_opts))
     if Volume:
-        result.update(calculate_volume_divergence(df, period=volume_period, left=left, right=right))
+        result.update(calculate_volume_divergence(df, period=volume_period, left=left, right=right, **div_opts))
     if Vortex:
-        result.update(calculate_vortex_divergence(df, period=vortex_period, left=left, right=right))
+        result.update(calculate_vortex_divergence(df, period=vortex_period, left=left, right=right, **div_opts))
 
     if not show_regular:
         result = {k: v for k, v in result.items() if '_Regular_' not in k}

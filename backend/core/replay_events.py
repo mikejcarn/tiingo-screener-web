@@ -725,9 +725,18 @@ def _extract_divergence_markers(df: pd.DataFrame, params: dict = None) -> dict:
                 pivot_arr = low_pivot_bars if bull else high_pivot_bars
                 price_arr = low_vals       if bull else high_vals
                 if pivot_arr is not None:
-                    idx = int(_np.searchsorted(pivot_arr, b))
-                    if idx > 0:
-                        prev_b = int(pivot_arr[idx - 1])
+                    # The earlier swing the detector actually matched (it can
+                    # look back past the immediately previous one) — from the
+                    # '{col}_prev' companion column; data computed before
+                    # that column existed falls back to the previous pivot.
+                    prev_col = col + '_prev'
+                    prev_val = df[prev_col].iat[b] if prev_col in df.columns else None
+                    if prev_val is not None and not pd.isna(prev_val):
+                        prev_b = int(prev_val)
+                    else:
+                        idx = int(_np.searchsorted(pivot_arr, b))
+                        prev_b = int(pivot_arr[idx - 1]) if idx > 0 else None
+                    if prev_b is not None:
                         key = (prev_b, b, kind)
                         if key not in line_map:
                             line_map[key] = {

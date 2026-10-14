@@ -126,7 +126,8 @@ def col_styles_for_columns(columns: list) -> dict:
         # Divergence signals rendered as candle markers; oscillator values are
         # subplot indicators — neither belongs on the price chart as a line.
         if (col.endswith('_Regular_Bullish') or col.endswith('_Regular_Bearish')
-                or col.endswith('_Hidden_Bullish') or col.endswith('_Hidden_Bearish')):
+                or col.endswith('_Hidden_Bullish') or col.endswith('_Hidden_Bearish')
+                or re.search(r'_(Regular|Hidden)_(Bullish|Bearish)_prev$', col)):
             continue
         # Per-point-color companion columns (e.g. aVWAP_minmax's curve-to-
         # straight coloring) — data for chart.js to read alongside their

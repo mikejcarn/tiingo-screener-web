@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
-from backend.indicators.indicators_list._divergence_core import detect_divergences
+from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_fisher_divergence(df: pd.DataFrame, period: int = 10,
-                                 left: int = 5, right: int = 5, **_):
+                                 left: int = 5, right: int = 5, **div_opts):
     hl2     = (df['High'] + df['Low']) / 2
     max_hl2 = hl2.rolling(period).max()
     min_hl2 = hl2.rolling(period).min()
@@ -13,8 +13,8 @@ def calculate_fisher_divergence(df: pd.DataFrame, period: int = 10,
     fisher = 0.5 * np.log((1 + val) / (1 - val))
     signal = fisher.ewm(span=3, adjust=False).mean()
 
-    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['High'], df['Low'], fisher, left, right)
+    reg_bull, reg_bear, hid_bull, hid_bear, prev = detect_divergences(
+        df['High'], df['Low'], fisher, left, right, **div_opts)
     return {
         'Fisher':                  fisher,
         'Fisher_Signal':           signal,
@@ -22,6 +22,7 @@ def calculate_fisher_divergence(df: pd.DataFrame, period: int = 10,
         'Fisher_Regular_Bearish':  reg_bear,
         'Fisher_Hidden_Bullish':   hid_bull,
         'Fisher_Hidden_Bearish':   hid_bear,
+        **prev_columns('Fisher', prev),
     }
 
 

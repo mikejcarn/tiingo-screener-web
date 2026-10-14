@@ -1,10 +1,10 @@
 import pandas as pd
-from backend.indicators.indicators_list._divergence_core import detect_divergences
+from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_mfi_divergence(df: pd.DataFrame, period: int = 14,
                               volume_threshold: float = 1.2,
-                              left: int = 5, right: int = 5, **_):
+                              left: int = 5, right: int = 5, **div_opts):
     typical_price = (df['High'] + df['Low'] + df['Close']) / 3
     money_flow    = typical_price * df['Volume']
 
@@ -17,8 +17,8 @@ def calculate_mfi_divergence(df: pd.DataFrame, period: int = 14,
     vol_ema  = df['Volume'].ewm(span=period, adjust=False).mean()
     vol_conf = df['Volume'] > vol_ema * volume_threshold
 
-    reg_bull, reg_bear, hid_bull, hid_bear = detect_divergences(
-        df['High'], df['Low'], mfi, left, right)
+    reg_bull, reg_bear, hid_bull, hid_bear, prev = detect_divergences(
+        df['High'], df['Low'], mfi, left, right, **div_opts)
 
     # Keep the oversold/overbought zone filters — they reduce noise meaningfully
     return {
@@ -27,6 +27,7 @@ def calculate_mfi_divergence(df: pd.DataFrame, period: int = 14,
         'MFI_Regular_Bearish':  reg_bear & (mfi > 60) & vol_conf,
         'MFI_Hidden_Bullish':   hid_bull & vol_conf,
         'MFI_Hidden_Bearish':   hid_bear & vol_conf,
+        **prev_columns('MFI', prev),
     }
 
 

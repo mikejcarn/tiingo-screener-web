@@ -1,10 +1,10 @@
 import pandas as pd
-from backend.indicators.indicators_list._divergence_core import detect_divergences
+from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 import numpy as np
 
 
 def calculate_vortex_divergence(df: pd.DataFrame, period: int = 14,
-                                  left: int = 5, right: int = 5, **_):
+                                  left: int = 5, right: int = 5, **div_opts):
     tr       = pd.concat([df['High'] - df['Low'],
                            (df['High'] - df['Close'].shift(1)).abs(),
                            (df['Low']  - df['Close'].shift(1)).abs()], axis=1).max(axis=1)
@@ -17,8 +17,10 @@ def calculate_vortex_divergence(df: pd.DataFrame, period: int = 14,
     # Bullish: price lows vs VI+ — lower price low + higher VI+ = bullish
     # Bearish: price highs vs VI- — higher price high + lower VI- = bearish
     # Two passes, one per VI line, keeping only that line's side.
-    rb_bull, _, hb_bull, _ = detect_divergences(df['High'], df['Low'], vi_plus,  left, right)
-    _, rb_bear, _, hb_bear = detect_divergences(df['High'], df['Low'], vi_minus, left, right)
+    rb_bull, _, hb_bull, _, prev_plus  = detect_divergences(df['High'], df['Low'], vi_plus,  left, right, **div_opts)
+    _, rb_bear, _, hb_bear, prev_minus = detect_divergences(df['High'], df['Low'], vi_minus, left, right, **div_opts)
+    prev = {'reg_bull': prev_plus['reg_bull'],  'hid_bull': prev_plus['hid_bull'],
+            'reg_bear': prev_minus['reg_bear'], 'hid_bear': prev_minus['hid_bear']}
 
     return {
         'VI_plus':             vi_plus,
@@ -27,6 +29,7 @@ def calculate_vortex_divergence(df: pd.DataFrame, period: int = 14,
         'VI_Regular_Bearish':  rb_bear,
         'VI_Hidden_Bullish':   hb_bull,
         'VI_Hidden_Bearish':   hb_bear,
+        **prev_columns('VI', prev),
     }
 
 
