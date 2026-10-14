@@ -120,12 +120,14 @@ const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 // same ~8%-per-side reach as the indicator's own 2-of-24 default.
 const MANUAL_VP_LVN_LOCALITY = 0;
 const MANUAL_VP_NODE_WINDOW  = 16;
-// Click-cycle order: normal → LVN → bars hidden with both POCs (orange
-// busiest level + indigo deepest LVN) → back to normal.
+// Click-cycle order: normal → LVN → both histograms + both POCs (orange
+// busiest level + indigo deepest LVN) → bars hidden with both POCs → back
+// to normal.
 const VP_MODE_NORMAL = 0;
 const VP_MODE_LVN    = 1;
-const VP_MODE_POCS   = 2;
-const VP_MODE_COUNT  = 3;
+const VP_MODE_BOTH   = 2;
+const VP_MODE_POCS   = 3;
+const VP_MODE_COUNT  = 4;
 // When a profile is paired (Ctrl+.), the vwap line matches the profile's
 // own color instead of the usual amber — they're one visual unit then.
 const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
@@ -1185,9 +1187,10 @@ export class DynamicVWAPEngine {
     if (entry.profile) {
       const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN);
       if (payload) {
-        if (entry.vpMode === VP_MODE_POCS) {
-          payload.showHistogram = false;
+        if (entry.vpMode === VP_MODE_BOTH || entry.vpMode === VP_MODE_POCS) {
           payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
+          if (entry.vpMode === VP_MODE_BOTH) payload.dualHistogram = true;
+          else payload.showHistogram = false;
         }
         // Bounding box for cycleProfileModeAt's click hit-test — bars span
         // this price range even while hidden in VP_MODE_POCS (aVWAP/POC stay
@@ -1219,7 +1222,8 @@ export class DynamicVWAPEngine {
 
   /**
    * Advance a manual anchor's Volume Profile to its next display mode
-   * (normal → LVN → both POCs with bars hidden → normal) — used when the
+   * (normal → LVN → both histograms + both POCs → both POCs with bars
+   * hidden → normal) — used when the
    * user clicks directly on a profile. Recolors the paired aVWAP and
    * other-side lines to match (indigo only in LVN mode, where the bars are
    * indigo too; orange otherwise), since profile + lines read as one unit.

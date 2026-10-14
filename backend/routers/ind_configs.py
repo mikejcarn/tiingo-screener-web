@@ -244,8 +244,8 @@ _PARAM_DESCRIPTIONS = {
     'kc_mult':               "Keltner Channel ATR multiplier — larger values widen the channel and make squeezes less frequent.",
     'use_true_range':        "Use True Range (accounts for overnight gaps) instead of High−Low for the Keltner Channel ATR.",
     # ── Divergence ───────────────────────────────────────────────────────────
-    'show_regular':          "Show regular divergences — price makes a new extreme but the oscillator does not, signalling a potential reversal.",
-    'show_hidden':           "Show hidden divergences — oscillator makes a new extreme but price does not, signalling trend continuation.",
+    'show_regular':          "Show regular divergences — price makes a new extreme but the oscillator does not, signalling a potential reversal. Turning this off also leaves regular divergences out of the stored data, so the scanner won't see them either.",
+    'show_hidden':           "Show hidden divergences — oscillator makes a new extreme but price does not, signalling trend continuation. Turning this off also leaves hidden divergences out of the stored data, so the scanner won't see them either.",
     'show_labels':           "Replace shape markers with arrows and oscillator name labels for clearer source identification.",
     'show_markers':          "Show shape markers at divergence pivot bars — squares for regular divergences, circles for hidden.",
     'show_wicks':            "Highlight the wick and border of candles at divergence pivot bars in aqua (bullish) or red (bearish).",

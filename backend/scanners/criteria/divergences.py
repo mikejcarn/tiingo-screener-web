@@ -5,7 +5,7 @@ from typing import List, Optional
 display_name = "Divergences"
 # Any divergence column at all — which oscillators exist depends on what the
 # divergence indicator config turned on, so no single column is required.
-required_columns = ['*_Regular_*']
+required_columns = ['*_[RH]*_Bullish']  # any Regular_/Hidden_ divergence column
 param_schema = {
     'mode':                {'label': 'Direction',     'type': 'select',   'options': ['bearish', 'bullish'], 'default': 'bearish'},
     'divergence_types':    {'label': 'Types (comma, blank = all enabled)', 'type': 'list_str', 'default': []},

@@ -57,10 +57,18 @@ def _clear_line_of_sight(vals, j, i, above, skip=0):
     return bool(np.all(seg[ok] >= line[ok]) if above else np.all(seg[ok] <= line[ok]))
 
 
+# Bars of indicator history min_osc_change's standard deviation is measured
+# over — long enough to be a stable yardstick for "a meaningful move in this
+# oscillator", short enough to follow regime changes.
+OSC_STD_WINDOW = 50
+
+
 def detect_divergences(high: pd.Series, low: pd.Series, indicator_series: pd.Series,
                        left: int = 5, right: int = 5,
                        max_lookback_pivots: int = 3, max_pivot_distance: int = 60,
-                       line_of_sight: bool = True, los_endpoint_bars: int = 2, **_):
+                       line_of_sight: bool = True, los_endpoint_bars: int = 2,
+                       equal_swing_atr: float = 0.25, min_osc_change: float = 0.2,
+                       atr: pd.Series = None, **_):
     """
     Detect regular and hidden divergences between price swing points and an
     indicator sampled at those same bars.
@@ -90,6 +98,20 @@ def detect_divergences(high: pd.Series, low: pd.Series, indicator_series: pd.Ser
     without that being a real break (price endpoints are true pivots, so
     price gets no exemption).
 
+    equal_swing_atr: two swings within this many ATRs of each other count as
+    EQUAL rather than higher/lower — so a 1-cent difference no longer
+    decides between regular and hidden. Equal swings with a diverging
+    indicator count as REGULAR (the classic double-bottom/double-top
+    divergence); they never count as hidden, which needs a real higher low /
+    lower high. atr is the ATR series to measure with (divergence.py passes
+    a standard 14-bar ATR); without one, the 14-bar average high-low range
+    is used. 0 = off (strict higher/lower, the old behavior).
+
+    min_osc_change: the indicator's difference between the two swings must
+    exceed this many of its own rolling standard deviations (OSC_STD_WINDOW
+    bars, at the newer swing) — scale-free, so one setting works for RSI
+    (0-100), MACD (price units) and OBV (shares) alike. 0 = off.
+
     Pivots and the price comparison use the same series, so the pivot lines
     replay_events.py draws (High-to-High / Low-to-Low) connect exactly the
     two prices that were compared.
@@ -105,6 +127,11 @@ def detect_divergences(high: pd.Series, low: pd.Series, indicator_series: pd.Ser
     ind = indicator_series.values.astype(float)
     n   = len(hi)
 
+    if atr is None:
+        atr = (high - low).rolling(14, min_periods=1).mean()
+    atr_v   = np.asarray(atr, dtype=float)
+    ind_std = indicator_series.rolling(OSC_STD_WINDOW, min_periods=20).std().values
+
     highs, lows = find_price_pivots(high, low, left, right)
     high_idx = np.where(highs)[0]
     low_idx  = np.where(lows)[0]
@@ -118,6 +145,8 @@ def detect_divergences(high: pd.Series, low: pd.Series, indicator_series: pd.Ser
             i = pivots[k]
             if np.isnan(ind[i]):
                 continue
+            tol  = equal_swing_atr * atr_v[i] if equal_swing_atr and not np.isnan(atr_v[i]) else 0.0
+            othr = min_osc_change * ind_std[i] if min_osc_change and not np.isnan(ind_std[i]) else 0.0
             for kind in (reg, hid):
                 for back in range(1, max(1, max_lookback_pivots) + 1):
                     if k - back < 0:
@@ -127,16 +156,18 @@ def detect_divergences(high: pd.Series, low: pd.Series, indicator_series: pd.Ser
                         break
                     if np.isnan(ind[j]):
                         continue
+                    d = price[i] - price[j]   # newer swing minus earlier swing
+                    e = ind[i] - ind[j]
                     if at_lows:
-                        if kind == reg:   # lower low, higher indicator low
-                            match = price[i] < price[j] and ind[i] > ind[j]
-                        else:             # higher low, lower indicator low
-                            match = price[i] > price[j] and ind[i] < ind[j]
+                        if kind == reg:   # lower (or equal) low, higher indicator low
+                            match = (d < 0 or (tol > 0 and d <= tol)) and e > othr
+                        else:             # clearly higher low, lower indicator low
+                            match = d > tol and e < -othr
                     else:
-                        if kind == reg:   # higher high, lower indicator high
-                            match = price[i] > price[j] and ind[i] < ind[j]
-                        else:             # lower high, higher indicator high
-                            match = price[i] < price[j] and ind[i] > ind[j]
+                        if kind == reg:   # higher (or equal) high, lower indicator high
+                            match = (d > 0 or (tol > 0 and d >= -tol)) and e < -othr
+                        else:             # clearly lower high, higher indicator high
+                            match = d < -tol and e > othr
                     if not match:
                         continue
                     if line_of_sight and not (

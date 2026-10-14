@@ -1,3 +1,4 @@
+import pandas as pd
 from backend.indicators.indicators_list.divergence_RSI        import calculate_rsi_divergence
 from backend.indicators.indicators_list.divergence_MACD       import calculate_macd_divergence
 from backend.indicators.indicators_list.divergence_OBV        import calculate_obv_divergence
@@ -51,6 +52,8 @@ param_labels = {
     'max_pivot_distance':  'Max Bars Between Swings',
     'line_of_sight':       'Require Line of Sight',
     'los_endpoint_bars':   'Line of Sight: Oscillator Endpoint Allowance (bars)',
+    'equal_swing_atr':     'Equal-Swing Tolerance (× ATR)',
+    'min_osc_change':      'Min Oscillator Difference (× its std dev)',
     'macd_fast':        'MACD Fast',
     'macd_slow':        'MACD Slow',
     'macd_signal':      'MACD Signal',
@@ -93,7 +96,26 @@ param_descriptions = {
                            "turn is often a bar or two off, so it pokes past its line right next "
                            "to an endpoint without that being a real break. 0 = strict. Price is "
                            "always checked strictly (its endpoints are the real swing bars).",
+    'equal_swing_atr':     "Two swings within this many ATRs (14-bar) of each other count as "
+                           "EQUAL instead of higher/lower, so a 1-cent difference no longer "
+                           "decides between regular and hidden. Equal swings with a diverging "
+                           "oscillator count as REGULAR — the classic double-bottom/double-top "
+                           "divergence; they never count as hidden, which needs a real higher "
+                           "low / lower high. 0 = off (strict higher/lower).",
+    'min_osc_change':      "The oscillator's difference between the two swings must exceed this "
+                           "many of its own standard deviations (over the last 50 bars) — "
+                           "scale-free, so one value works for RSI, MACD and OBV alike. Filters "
+                           "hairline disagreements like RSI 30.0 vs 30.1. 0 = off.",
 }
+
+
+def _atr(df, period):
+    """Standard ATR (simple mean of true range) — the yardstick for
+    equal_swing_atr, computed once here and shared by every oscillator."""
+    tr = pd.concat([df['High'] - df['Low'],
+                    (df['High'] - df['Close'].shift(1)).abs(),
+                    (df['Low']  - df['Close'].shift(1)).abs()], axis=1).max(axis=1)
+    return tr.rolling(period, min_periods=1).mean()
 
 
 def calculate_divergence(df,
@@ -103,7 +125,7 @@ def calculate_divergence(df,
     Fractal=False, MFI=False, Momentum=False, Stochastic=False,
     Volume=False, Vortex=False,
     left=5, right=5, max_lookback_pivots=3, max_pivot_distance=60, line_of_sight=True,
-    los_endpoint_bars=2,
+    los_endpoint_bars=2, equal_swing_atr=0.25, min_osc_change=0.2,
     rsi_period=14, macd_fast=12, macd_slow=26, macd_signal=9, obv_period=21,
     atr_period=14, fisher_period=10, fractal_period=12, mfi_period=14,
     momentum_period=10, smooth_period=3, stoch_k=14, stoch_d=3,
@@ -113,7 +135,10 @@ def calculate_divergence(df,
     div_opts = {'max_lookback_pivots': max_lookback_pivots,
                 'max_pivot_distance':  max_pivot_distance,
                 'line_of_sight':       line_of_sight,
-                'los_endpoint_bars':   los_endpoint_bars}
+                'los_endpoint_bars':   los_endpoint_bars,
+                'equal_swing_atr':     equal_swing_atr,
+                'min_osc_change':      min_osc_change,
+                'atr':                 _atr(df, 14)}
     result = {}
     if RSI:
         result.update(calculate_rsi_divergence(df, period=rsi_period, left=left, right=right, **div_opts))

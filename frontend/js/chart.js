@@ -707,7 +707,7 @@ export class ChartManager {
     this._volume?.applyOptions({ visible });
   }
 
-  /** Click at (x, y) cycles a manual anchor's Volume Profile display mode (normal → LVN → both POCs, bars hidden) if the click landed inside it. Returns true if a profile was cycled. */
+  /** Click at (x, y) cycles a manual anchor's Volume Profile display mode (normal → LVN → both histograms + both POCs → both POCs, bars hidden) if the click landed inside it. Returns true if a profile was cycled. */
   cycleProfileModeAtXY(x, y) {
     if (!this._engine || !this._candles) return false;
     const barIdx = this.barIndexAtX(x);

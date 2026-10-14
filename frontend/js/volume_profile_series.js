@@ -13,6 +13,7 @@
  * lo/bs are the histogram's price origin and bin size, bins the per-bin
  * volume totals, poc/vah/val the Point of Control and Value Area bounds,
  * lvnPoc an optional second, LVN-colored POC drawn alongside poc,
+ * dualHistogram (bars style) draws the HVN and LVN histograms together,
  * hvn/lvn arrays of [lo, hi] High/Low Volume Node price ranges (see
  * volume_profile.py for how all of these are computed).
  */
@@ -98,7 +99,7 @@ export class VolumeProfileRenderer {
     const last  = data.bars[data.bars.length - 1];
     const {
       lo, bs, bins, dir, fillOpacity, poc, lvnPoc, vah, val, hvn, lvn,
-      showHistogram, directionalColor, barStyle,
+      showHistogram, dualHistogram, directionalColor, barStyle,
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
       histogramGrayscale,
     } = first.originalData;
@@ -166,7 +167,7 @@ export class VolumeProfileRenderer {
       const { localMin, localMax } = locality > 0
         ? _localMinMax(bins, nodeWindow ?? 2)
         : { localMin: null, localMax: null };
-      const intensityOf = (v, i) => {
+      const intensityOf = (v, i, lvnMode = lvnEmphasis) => {
         let hvnShare = v / maxBin;
         if (locality > 0) {
           const lMin = localMin[i], lMax = localMax[i];
@@ -176,7 +177,7 @@ export class VolumeProfileRenderer {
         // 'hvn' (default): share of the emphasized peak — highest bins
         // strongest. 'lvn': inverted — share of peak EMPTINESS, so the
         // thinnest/untraded bins are strongest instead, and busy bins fade.
-        const share = lvnEmphasis ? 1 - hvnShare : hvnShare;
+        const share = lvnMode ? 1 - hvnShare : hvnShare;
         return Math.pow(share, gamma);
       };
       // Value-area dimming is skipped in 'lvn' emphasis: VAH/VAL marks the
@@ -195,6 +196,26 @@ export class VolumeProfileRenderer {
           ctx.fillStyle = `rgba(${histRgb},${opacity})`;
           ctx.fillRect(x0, top, x1 - x0, Math.max(bottom - top, vr));
         }, lvnEmphasis);
+      } else if (dualHistogram) {
+        // HVN and LVN together as one diverging histogram. Overlaying both
+        // from the anchor is mirror-symmetric about half the max width (LVN
+        // width = max minus HVN width at locality 0 / contrast 1), so the
+        // left half is always the blended overlap and carries no
+        // information. This draws only the right half — the part of each
+        // histogram that reaches past the midpoint — stretched back to full
+        // width from the anchor: an orange bar where a level's volume is
+        // above half the POC's, an indigo bar where it's below, its length
+        // how far past the midpoint. No VA dimming, same as LVN emphasis.
+        // Zero-volume bins included (full-length indigo).
+        const hvnFill = `rgba(${histogramGrayscale ? RGB_GRAYSCALE : RGB_DEFAULT},${baseOpacity})`;
+        const lvnFill = `rgba(${RGB_LVN_DEFAULT},${baseOpacity})`;
+        forEachBin((v, top, bottom, inVA, i) => {
+          const h  = Math.max(bottom - top, vr);
+          const hx = Math.max(0, intensityOf(v, i, false) - 0.5) * 2 * maxWidth;
+          const lx = Math.max(0, intensityOf(v, i, true)  - 0.5) * 2 * maxWidth;
+          if (lx > 0) { ctx.fillStyle = lvnFill; ctx.fillRect(x0, top, lx, h); }
+          if (hx > 0) { ctx.fillStyle = hvnFill; ctx.fillRect(x0, top, hx, h); }
+        }, true);
       } else {
         forEachBin((v, top, bottom, inVA, i) => {
           const width = intensityOf(v, i) * maxWidth;
