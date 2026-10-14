@@ -88,6 +88,15 @@ const SLOPE_ALPHA_MIN_DEFAULT = 0.15;
 
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
+// Alt+. "fan": an aVWAP anchored at every candle from the hovered one on (or
+// across a ','-marked range). Past MANUAL_FAN_MAX_LINES candles it thins to
+// every k-th candle (first always included) so a fan stays ~that many lines.
+// Same amber, 1px, fading from the oldest anchor (FAN_ALPHA_OLD) to the
+// newest (FAN_ALPHA_NEW) so the fan's shape reads rather than a solid band.
+const C_MANUAL_RGB          = '255,193,7';
+const MANUAL_FAN_MAX_LINES  = 100;
+const FAN_ALPHA_OLD         = 0.85;
+const FAN_ALPHA_NEW         = 0.15;
 // Shift+. also draws stdev bands (vwap +/- k*stdev) around a manual anchor —
 // same rgb (amber), dashed, tiered opacity by k using the identical formula
 // col_styles.py uses for aVWAP_pinch's own stdev bands (tightest band most
@@ -238,7 +247,8 @@ export class DynamicVWAPEngine {
     this._pmmPools = [];
     // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
     this._manualSeries = {};
-    this._manualOrder  = []; // anchor bar indices in placement order, for undo (LIFO)
+    this._manualOrder  = []; // anchor bar indices (or {fan} entries) in placement order, for undo (LIFO)
+    this._manualFans   = []; // Alt+. fans: [{anchors, series, fixedEnd}]
     this._lastN = 0; // last n passed to reveal() — for clamping a hold-and-drag's end point
   }
 
@@ -285,6 +295,8 @@ export class DynamicVWAPEngine {
     for (const entry of Object.values(this._manualSeries)) this._removeManualEntry(entry);
     this._manualSeries = {};
     this._manualOrder  = [];
+    for (const fan of this._manualFans) this._removeFan(fan);
+    this._manualFans = [];
   }
 
   // ── Manual (click-placed) anchors ───────────────────────────────────────
@@ -520,10 +532,51 @@ export class DynamicVWAPEngine {
   undoManualAnchor() {
     const anchorIdx = this._manualOrder.pop();
     if (anchorIdx === undefined) return null;
+    if (anchorIdx?.fan) {                    // a whole Alt+. fan is one undo step
+      this._removeFan(anchorIdx.fan);
+      this._manualFans = this._manualFans.filter(f => f !== anchorIdx.fan);
+      return anchorIdx.fan.anchors[0];
+    }
     const entry = this._manualSeries[anchorIdx];
     if (entry) this._removeManualEntry(entry);
     delete this._manualSeries[anchorIdx];
     return anchorIdx;
+  }
+
+  /**
+   * Alt+. fan — an aVWAP anchored at every candle in [fromIdx, toIdx]
+   * (thinned to every k-th candle past MANUAL_FAN_MAX_LINES, first candle
+   * always kept), each line growing to "now" (fixedEnd null) or stopping at
+   * fixedEnd (',' then Alt+.). One undo step for the whole fan.
+   */
+  createManualFan(fromIdx, toIdx, fixedEnd = null) {
+    if (fromIdx == null || toIdx == null) return null;
+    const lo = Math.max(0, Math.min(fromIdx, toIdx)), hi = Math.min(this._bars.length - 1, Math.max(fromIdx, toIdx));
+    const count = hi - lo + 1;
+    if (count < 1) return null;
+    const step = Math.max(1, Math.ceil(count / MANUAL_FAN_MAX_LINES));
+    const anchors = [];
+    for (let i = lo; i <= hi; i += step) anchors.push(i);
+    const m = anchors.length;
+    const series = anchors.map((_, i) => {
+      const alpha = m > 1 ? FAN_ALPHA_OLD - (FAN_ALPHA_OLD - FAN_ALPHA_NEW) * i / (m - 1) : FAN_ALPHA_OLD;
+      return this._series(`rgba(${C_MANUAL_RGB},${alpha.toFixed(3)})`, 1, 0);
+    });
+    const fan = { anchors, series, fixedEnd };
+    this._manualFans.push(fan);
+    this._manualOrder.push({ fan });
+    this._renderFan(fan);
+    return fan;
+  }
+
+  _renderFan(fan) {
+    const n = this._lastN;
+    const toIdx = fan.fixedEnd != null ? Math.min(fan.fixedEnd, n) : n;
+    fan.anchors.forEach((a, i) => fan.series[i].setData(a <= toIdx ? this._vwapLine(a, toIdx) : []));
+  }
+
+  _removeFan(fan) {
+    for (const s of fan.series) { try { this._chart.removeSeries(s); } catch (_) {} }
   }
 
   // ── PMM greedy extrema ────────────────────────────────────────────────────
@@ -1163,6 +1216,7 @@ export class DynamicVWAPEngine {
     for (const [anchorIdxStr, entry] of Object.entries(this._manualSeries)) {
       this._renderManualEntry(parseInt(anchorIdxStr, 10), entry);
     }
+    for (const fan of this._manualFans) this._renderFan(fan);
   }
 
   /**

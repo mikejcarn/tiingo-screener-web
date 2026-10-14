@@ -437,6 +437,21 @@ function _wireControls() {
       chartEl.style.cursor = 'crosshair';
       return;
     }
+    // Alt+. — aVWAP fan: one at every candle from the hovered one to the
+    // current bar (growing to "now"); after ',' it fans across the marked
+    // range instead, every line stopping at the range's end.
+    if (e.code === 'Period' && e.altKey) {
+      e.preventDefault();
+      if (_lastChartX == null) return;
+      if (_rangeStartIdx != null) {
+        chart.createRangedFanAtX(_rangeStartIdx, _lastChartX);
+        _rangeStartIdx = null;
+        chartEl.style.cursor = '';
+      } else {
+        chart.createFanAtX(_lastChartX);
+      }
+      return;
+    }
     if (e.code === 'Period' && !e.altKey) {
       if (_lastChartX == null) return;
       if (_rangeStartIdx != null) {

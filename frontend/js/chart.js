@@ -42,15 +42,14 @@ const ZONE_SERIES = { ob: OBZoneSeries, fvg: FVGZoneSeries, gap: GapZoneSeries, 
 
 const C_UP   = 'rgba(38,166,154,1)';
 const C_DOWN = 'rgba(239,83,80,1)';
-// Time-based volume histogram along the chart's bottom edge — the app's
-// volume orange (shared with the Volume Profile), faded so it sits behind
-// aVWAPs/profiles instead of competing with them. Its own overlay price
-// scale confined to the bottom VOLUME_HEIGHT of the pane, so tall volume
-// never compresses the candles (lightweight-charts v4 has no separate
-// panes; overlapping the candles' bottom edge is the TradingView-default
-// look anyway).
-const C_VOLUME      = `rgba(${RGB_VOLUME},0.4)`;
-const VOLUME_HEIGHT = 0.2;
+// Volume histogram — its own pane directly below price (a built-in pane
+// definition ahead of any oscillator panes, see load()), in the app's volume
+// orange (shared with the Volume Profile). Shorter than an oscillator pane
+// (VOLUME_PANE_STRETCH vs 1). Shown/hidden by Shift+V, the show/hide panel's
+// Volume row, or its own × — all one global setting (replay.js).
+const C_VOLUME            = `rgba(${RGB_VOLUME},0.5)`;
+const VOLUME_PANE_ID      = '__volume__';
+const VOLUME_PANE_STRETCH = 0.6;
 // Oscillator panes (oscillators indicator) — height shares as stretch
 // factors: each oscillator pane 1, the price pane max(3, 1.5 × pane count),
 // so price keeps 75% with one pane and ~60% with several instead of
@@ -240,14 +239,6 @@ export class ChartManager {
     });
     this._candleMarkers = LightweightCharts.createSeriesMarkers(this._candles, []);
 
-    this._volume = this._chart.addSeries(LightweightCharts.HistogramSeries, {
-      priceScaleId: 'volume', priceFormat: { type: 'volume' }, color: C_VOLUME,
-      priceLineVisible: false, lastValueVisible: false,
-    });
-    this._chart.priceScale('volume').applyOptions({
-      scaleMargins: { top: 1 - VOLUME_HEIGHT, bottom: 0 },
-    });
-    this._volData = [];
 
     // Overlay series — transparent body, thick wicks/borders at divergence pivot bars
     this._divCandleSeries = this._chart.addSeries(LightweightCharts.CandlestickSeries, {
@@ -283,12 +274,6 @@ export class ChartManager {
     for (const s of Object.values(this._lines)) this._chart.removeSeries(s);
     this._lines = {};
 
-    // Volume bars, built once per load so reveal() only slices them per
-    // replay step (mirrors how candles are revealed).
-    this._volData = bars.map(b => ({
-      time:  (b.Date || b.date || '').slice(0, 10),
-      value: b.Volume ?? b.volume ?? 0,
-    }));
 
     // Remove old Supertrend series
     if (this._stLine) { try { this._chart.removeSeries(this._stLine); } catch (_) {} this._stLine = null; }
@@ -320,10 +305,19 @@ export class ChartManager {
     // a value is missing, so every column's array stays index-aligned with
     // the bars for reveal()'s slice), then the panes themselves.
     this._destroyPanes();
-    this._paneDefs = panes || [];
-    this._paneData = {};
+    // Volume first — its own built-in pane right under price.
+    const volumePane = {
+      id: VOLUME_PANE_ID, key: 'Volume', label: 'Volume', stretch: VOLUME_PANE_STRETCH,
+      series: [{ col: VOLUME_PANE_ID, kind: 'histogram', color: C_VOLUME }],
+      refs: [], div: [], margins: { top: 0.2, bottom: 0 },
+    };
+    this._paneDefs = [volumePane, ...(panes || [])];
+    this._paneData = {
+      [VOLUME_PANE_ID]: bars.map(b => ({ time: (b.Date || b.date || '').slice(0, 10), value: b.Volume ?? b.volume ?? 0 })),
+    };
     for (const pane of this._paneDefs) {
       for (const s of pane.series) {
+        if (s.col === VOLUME_PANE_ID) continue;
         this._paneData[s.col] = bars.map(b => {
           const time = (b.Date || b.date || '').slice(0, 10);
           const v = b[s.col];
@@ -460,7 +454,6 @@ export class ChartManager {
       return entry;
     });
     this._candles.setData(candles);
-    this._volume.setData(this._volData.slice(0, n + 1));
     for (const [col, series] of Object.entries(this._paneSeries)) {
       series.setData(this._paneData[col].slice(0, n + 1));
     }
@@ -853,9 +846,26 @@ export class ChartManager {
     return this._engine.createRangedManualAnchor(startIdx, barIdx, withStdev, withProfile);
   }
 
-  /** Show/hide the volume histogram along the chart's bottom edge. */
+  /** Alt+. — aVWAP fan anchored at every candle from the one under x to the current bar, all growing to "now". */
+  createFanAtX(x) {
+    if (!this._engine) return null;
+    const barIdx = this.barIndexAtX(x);
+    if (barIdx == null) return null;
+    return this._engine.createManualFan(barIdx, this._curN, null);
+  }
+
+  /** ',' then Alt+. — aVWAP fan anchored at every candle across [startIdx, candle under x], each stopping at the range's end. */
+  createRangedFanAtX(startIdx, x) {
+    if (!this._engine) return null;
+    const barIdx = this.barIndexAtX(x);
+    if (barIdx == null) return null;
+    const lo = Math.min(startIdx, barIdx), hi = Math.max(startIdx, barIdx);
+    return this._engine.createManualFan(lo, hi, hi);
+  }
+
+  /** Show/hide the volume pane. */
   setVolumeVisible(visible) {
-    this._volume?.applyOptions({ visible });
+    this.setPaneVisible(VOLUME_PANE_ID, visible);
   }
 
   /** Click at (x, y) cycles a manual anchor's Volume Profile display mode (normal → LVN → both histograms + both POCs → both POCs, bars hidden) if the click landed inside it. Returns true if a profile was cycled. */
@@ -954,19 +964,21 @@ export class ChartManager {
       pane.series.forEach((s, j) => {
         const common = { priceLineVisible: false, crosshairMarkerVisible: false,
                          priceFormat: PANE_PRICE_FORMAT,
-                         // only the pane's main line shows its current value on the axis
-                         lastValueVisible: j === pane.series.findIndex(x => x.kind === 'line') };
+                         // only the pane's main series shows its current value on the
+                         // axis — its first line, or its histogram if it has no line (volume)
+                         lastValueVisible: j === Math.max(0, pane.series.findIndex(x => x.kind === 'line')) };
         const series = s.kind === 'histogram'
-          ? this._chart.addSeries(LightweightCharts.HistogramSeries, { ...common, lastValueVisible: false }, paneIndex)
+          ? this._chart.addSeries(LightweightCharts.HistogramSeries,
+              { ...common, ...(s.color ? { color: s.color } : { lastValueVisible: false }) }, paneIndex)
           : this._chart.addSeries(LightweightCharts.LineSeries, { ...common, color: paneColor(s.color), lineWidth: s.width }, paneIndex);
         this._paneSeries[s.col] = series;
         if (this._curN >= 0) series.setData(this._paneData[s.col].slice(0, this._curN + 1));
       });
       // Reference levels (RSI 30/50/70, MACD 0, ...) on the pane's first line.
-      const anchor = this._paneSeries[pane.series.find(x => x.kind === 'line').col];
+      const anchor = this._paneSeries[(pane.series.find(x => x.kind === 'line') || pane.series[0]).col];
       // Headroom above the lines for the top-left label (Stochastic, RSI etc.
       // regularly touch their pane's top), a little below too.
-      anchor.priceScale().applyOptions({ scaleMargins: { top: 0.2, bottom: 0.08 } });
+      anchor.priceScale().applyOptions({ scaleMargins: pane.margins || { top: 0.2, bottom: 0.08 } });
       for (const price of pane.refs) {
         anchor.createPriceLine({ price, color: pane.ref_color, lineWidth: 1,
           lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false });
@@ -997,7 +1009,7 @@ export class ChartManager {
     } else {
       const nOsc = chartPanes.length - 1;
       if (chartPanes.length) chartPanes[0].setStretchFactor(Math.max(PRICE_PANE_MIN_STRETCH, PRICE_PANE_PER_OSC * nOsc));
-      for (let i = 1; i < chartPanes.length; i++) chartPanes[i].setStretchFactor(OSC_PANE_STRETCH);
+      for (let i = 1; i < chartPanes.length; i++) chartPanes[i].setStretchFactor(this._visiblePanes?.[i - 1]?.stretch ?? OSC_PANE_STRETCH);
     }
     this._applyCollapsedVisibility(maxIdx);
   }
