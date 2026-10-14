@@ -331,6 +331,9 @@ def indicator_defaults():
     param_labels     = {name: v for name in available if (v := _get_mod_attr(name, 'param_labels', {}))}
     display_names    = {name: v for name in available if (v := _get_mod_attr(name, 'display_name'))}
     param_separators = {name: v for name in available if (v := _get_mod_attr(name, 'param_separators', []))}
+    # {param: controlling bool param} — rows the config page shows only while
+    # that toggle is on (e.g. oscillators' divergence settings).
+    param_conditions = {name: v for name in available if (v := _get_mod_attr(name, 'param_conditions', {}))}
     descriptions = {name: _DESCRIPTIONS[name] for name in available if name in _DESCRIPTIONS}
     merged_param_desc: Dict[str, str] = dict(_PARAM_DESCRIPTIONS)
     for name in available:
@@ -338,4 +341,5 @@ def indicator_defaults():
     return {"available": available, "defaults": defaults,
             "param_options": param_options, "param_labels": param_labels,
             "display_names": display_names, "param_separators": param_separators,
+            "param_conditions": param_conditions,
             "descriptions": descriptions, "param_descriptions": merged_param_desc}

@@ -1,4 +1,5 @@
 import pandas as pd
+from backend.indicators.indicators_list import _oscillators_core as osc
 from backend.indicators.indicators_list.divergence_RSI        import calculate_rsi_divergence
 from backend.indicators.indicators_list.divergence_MACD       import calculate_macd_divergence
 from backend.indicators.indicators_list.divergence_OBV        import calculate_obv_divergence
@@ -25,6 +26,7 @@ param_labels = {
     'show_wicks':       'Show Wick Highlights',
     'show_candles':     'Show Candle Colors',
     'show_pivots':      'Show Pivot Lines',
+    'show_oscillator_panes': 'Show Oscillator Panes',
     'RSI':              'RSI',
     'MACD':             'MACD',
     'OBV':              'OBV',
@@ -70,6 +72,11 @@ param_labels = {
 # described for QQEMOD/anchor scoring) are left out here to avoid
 # overwriting those indicators' descriptions.
 param_descriptions = {
+    'show_oscillator_panes': "Draw each enabled oscillator in its own pane below price (labelled "
+                             "'· Divergence'), with this indicator's divergences drawn as lines on "
+                             "the oscillator itself — the in-pane twin of each price pivot line, "
+                             "from the exact oscillator values that were compared. Display only: "
+                             "uses the oscillator data this indicator already computes.",
     'obv_period':      "EMA span used to smooth OBV before comparing it at swing points. Default 21.",
     'fisher_period':   "Fisher Transform lookback (high/low normalization window). Default 10.",
     'fractal_period':  "Fractal Energy lookback (net close move vs. average range). Default 12.",
@@ -111,16 +118,15 @@ param_descriptions = {
 
 def _atr(df, period):
     """Standard ATR (simple mean of true range) — the yardstick for
-    equal_swing_atr, computed once here and shared by every oscillator."""
-    tr = pd.concat([df['High'] - df['Low'],
-                    (df['High'] - df['Close'].shift(1)).abs(),
-                    (df['Low']  - df['Close'].shift(1)).abs()], axis=1).max(axis=1)
-    return tr.rolling(period, min_periods=1).mean()
+    equal_swing_atr, computed once here and shared by every oscillator.
+    min_periods=1 so it exists from the first bar (unlike osc.atr)."""
+    return osc.true_range(df).rolling(period, min_periods=1).mean()
 
 
 def calculate_divergence(df,
     show_regular=True, show_hidden=True,
     show_labels=True, show_markers=True, show_wicks=True, show_candles=False, show_pivots=False,
+    show_oscillator_panes=False,
     RSI=True, MACD=False, OBV=False, ATR=False, Fisher=False,
     Fractal=False, MFI=False, Momentum=False, Stochastic=False,
     Volume=False, Vortex=False,

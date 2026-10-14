@@ -30,7 +30,7 @@ import { FVGZoneSeries } from './fvg_zone_series.js';
 import { GapZoneSeries } from './gap_zone_series.js';
 import { LiquidityZoneSeries } from './liquidity_zone_series.js';
 import { VolumeProfileSeries, RGB_DEFAULT as RGB_VOLUME } from './volume_profile_series.js';
-import { cssVar, onThemeChange } from './theme.js';
+import { cssVar, isDark, onThemeChange } from './theme.js';
 
 // Segment types with a real zone (top/bottom bounds) get a custom series that
 // draws the actual filled rectangle instead of the flat-line-at-one-price
@@ -51,6 +51,80 @@ const C_DOWN = 'rgba(239,83,80,1)';
 // look anyway).
 const C_VOLUME      = `rgba(${RGB_VOLUME},0.4)`;
 const VOLUME_HEIGHT = 0.2;
+// Oscillator panes (oscillators indicator) — height shares as stretch
+// factors: each oscillator pane 1, the price pane max(3, 1.5 × pane count),
+// so price keeps 75% with one pane and ~60% with several instead of
+// shrinking as panes are added. The separators can still be dragged.
+const PRICE_PANE_MIN_STRETCH = 3;
+const PRICE_PANE_PER_OSC     = 1.5;
+const OSC_PANE_STRETCH       = 1;
+
+// Oscillator panes' main line color — the 'fg' token from osc_panes.py:
+// off-white on dark, dark grey on light, so the colored divergence lines are
+// the only colored strokes in a pane. Re-applied on theme switch.
+const PANE_FG = { dark: 'rgba(225,225,218,0.85)', light: 'rgba(60,60,60,0.85)' };
+const paneColor = c => c === 'fg' ? PANE_FG[isDark() ? 'dark' : 'light'] : c;
+
+// Oscillator panes' axis labels. Every pane shares one price-axis width —
+// the widest label anywhere — so OBV / Volume MA's raw digits
+// ('4000000000.00') would widen the axis for all panes, price included.
+// Large magnitudes are abbreviated (4.00B, 35.8M, 12.3K); small ones keep
+// two decimals exactly as before (RSI 60.50, MACD 3.79).
+function compactNumber(v) {
+  const a = Math.abs(v);
+  // K only from 10,000 up — '4567.00' is no wider than '4.57K' and more exact.
+  for (const [div, suffix, min] of [[1e12, 'T', 1e12], [1e9, 'B', 1e9], [1e6, 'M', 1e6], [1e3, 'K', 1e4]]) {
+    if (a >= min) {
+      const x = v / div, ax = Math.abs(x);
+      return x.toFixed(ax >= 100 ? 0 : ax >= 10 ? 1 : 2) + suffix;
+    }
+  }
+  return v.toFixed(2);
+}
+const PANE_PRICE_FORMAT = { type: 'custom', formatter: compactNumber, minMove: 0.01 };
+
+// Stretch factor every other pane shrinks to while one oscillator pane is
+// maximized — effectively zero height, without removing (and rebuilding) them.
+const COLLAPSED_PANE_STRETCH = 0.0001;
+
+// Divergence lines inside an oscillator pane (oscillators' show_divergences):
+// one segment per divergence, between the oscillator's values at the two
+// swings that were compared — the in-pane twin of the price chart's pivot
+// lines (same colors). A series primitive on the line the divergences were
+// measured on, so prices map through that line's own scale. Segments appear
+// once replay reaches their confirmation bar (vf), like the price markers.
+class DivLinesPrimitive {
+  constructor(lines) {
+    this._lines = lines;   // [{t0, v0, t1, v1, vf, bull}]
+    this._n = -1;
+    const renderer = { draw: target => this._draw(target) };
+    this._views = [{ renderer: () => renderer, zOrder: () => 'top' }];
+  }
+  attached({ chart, series, requestUpdate }) { this._chart = chart; this._series = series; this._request = requestUpdate; }
+  detached() { this._chart = this._series = this._request = null; }
+  paneViews() { return this._views; }
+  setRevealed(n) { if (n !== this._n) { this._n = n; this._request?.(); } }
+  _draw(target) {
+    if (!this._chart || !this._series) return;
+    const ts = this._chart.timeScale();
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      ctx.save();
+      ctx.lineWidth = 1.5;
+      for (const ln of this._lines) {
+        if (ln.vf > this._n) continue;
+        const x0 = ts.timeToCoordinate(ln.t0), x1 = ts.timeToCoordinate(ln.t1);
+        const y0 = this._series.priceToCoordinate(ln.v0), y1 = this._series.priceToCoordinate(ln.v1);
+        if (x0 == null || x1 == null || y0 == null || y1 == null) continue;
+        ctx.strokeStyle = ln.bull ? DIV_BULL : DIV_BEAR;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
+}
 
 // Divergence colours — aqua / strong red, distinct from candle teal/salmon
 const DIV_BULL         = 'rgba(0,229,255,1)';
@@ -81,6 +155,12 @@ export class ChartManager {
     this._chart     = null;
     this._candles   = null;
     this._lines     = {};      // col -> static LineSeries
+    this._paneDefs    = [];    // oscillator pane layouts from the server (osc_panes.py), in order
+    this._paneHidden  = new Set(); // pane keys switched off in the show/hide panel
+    this._paneSeries  = {};    // col -> series living in an oscillator pane
+    this._paneData    = {};    // col -> per-bar data, built once per load, sliced in reveal()
+    this._paneDivLines = {};   // pane id -> {target col: [divergence segments]}, built once per load
+    this._paneDivPrims = [];   // attached DivLinesPrimitive instances (one per target line)
     this._engine    = null;    // DynamicVWAPEngine
     this._stLine    = null;    // Supertrend — single series, per-point color
     this._segSeries = {};      // type -> LineSeries[]
@@ -127,6 +207,13 @@ export class ChartManager {
       rightPriceScale: { borderColor: c.border },
       timeScale:       { borderColor: c.border },
     });
+    this._chart.applyOptions({ layout: { panes: { separatorColor: c.border } } });
+    // Theme-dependent pane line colors ('fg').
+    for (const pane of this._paneDefs || []) {
+      for (const s of pane.series) {
+        if (s.color === 'fg') this._paneSeries[s.col]?.applyOptions({ color: paneColor('fg') });
+      }
+    }
   }
 
   _init() {
@@ -134,7 +221,8 @@ export class ChartManager {
     this._chart = LightweightCharts.createChart(this._container, {
       // attributionLogo off: the TradingView credit the library's license
       // asks for lives in the help panel's footer instead (see help.js).
-      layout:          { background: { color: c.bg }, textColor: c.text, attributionLogo: false },
+      layout:          { background: { color: c.bg }, textColor: c.text, attributionLogo: false,
+                         panes: { separatorColor: c.border } },
       grid:            { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       crosshair:       { mode: LightweightCharts.CrosshairMode.Normal },
       // v5.2 default: draw whichever series is under the mouse on top of the
@@ -186,7 +274,7 @@ export class ChartManager {
 
   // ── Static + Supertrend series setup ────────────────────────────────────
 
-  load(bars, styles = {}) {
+  load(bars, styles = {}, panes = []) {
     this._bars = bars;
     this._N    = bars.length;
     this.clearMeasure();
@@ -227,6 +315,49 @@ export class ChartManager {
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
       });
     }
+
+    // Oscillator panes — per-bar data built once here (whitespace {time} where
+    // a value is missing, so every column's array stays index-aligned with
+    // the bars for reveal()'s slice), then the panes themselves.
+    this._destroyPanes();
+    this._paneDefs = panes || [];
+    this._paneData = {};
+    for (const pane of this._paneDefs) {
+      for (const s of pane.series) {
+        this._paneData[s.col] = bars.map(b => {
+          const time = (b.Date || b.date || '').slice(0, 10);
+          const v = b[s.col];
+          if (v == null || Number.isNaN(v)) return { time };
+          if (s.kind === 'histogram') return { time, value: v, color: v >= 0 ? s.up : s.down };
+          // color_vs: per-bar color by which side of a reference line this
+          // one is on (MACD signal: red above the MACD line, teal below).
+          if (s.color_vs) {
+            const ref = b[s.color_vs.ref];
+            if (ref != null && !Number.isNaN(ref)) return { time, value: v, color: v > ref ? s.color_vs.above : s.color_vs.below };
+          }
+          return { time, value: v };
+        });
+      }
+    }
+    // Divergence segments per pane, grouped by the line they sit on.
+    this._paneDivLines = {};
+    const dateOf = b => (b.Date || b.date || '').slice(0, 10);
+    for (const pane of this._paneDefs) {
+      const byTarget = {};
+      for (const d of pane.div || []) {
+        for (let i = 0; i < bars.length; i++) {
+          const prev = bars[i][d.col];
+          if (prev == null || Number.isNaN(prev)) continue;
+          if (d.sig && !bars[i][d.sig]) continue;   // divergence source: gated by its signal column
+          const v0 = bars[prev]?.[d.target], v1 = bars[i][d.target];
+          if (v0 == null || v1 == null) continue;
+          (byTarget[d.target] ??= []).push({ t0: dateOf(bars[prev]), v0, t1: dateOf(bars[i]), v1,
+                                             vf: i + (pane.div_right ?? 5), bull: d.kind === 'bull' });
+        }
+      }
+      this._paneDivLines[pane.id] = byTarget;
+    }
+    this._buildPanes();
 
     // (Re)create dynamic VWAP engine
     if (this._engine) this._engine.destroy();
@@ -270,6 +401,13 @@ export class ChartManager {
     n = Math.max(0, Math.min(this._N - 1, n));
     const slice = this._bars.slice(0, n + 1);
     if (!slice.length) return;
+    // lightweight-charts v5 throws ('Value is null') when series data is cut
+    // back while the mouse's crosshair sits in the price pane and oscillator
+    // panes exist — e.g. double-click / Home / ← to an earlier bar with the
+    // cursor over the chart. Clearing the crosshair first avoids it; it
+    // reappears on the next mouse move. Only needed when moving backward, so
+    // forward playback leaves the crosshair alone.
+    if (n < this._curN) this._chart.clearCrosshairPosition();
     this._curN = n;
 
     // Candles with per-bar color overrides
@@ -323,6 +461,10 @@ export class ChartManager {
     });
     this._candles.setData(candles);
     this._volume.setData(this._volData.slice(0, n + 1));
+    for (const [col, series] of Object.entries(this._paneSeries)) {
+      series.setData(this._paneData[col].slice(0, n + 1));
+    }
+    for (const { prim } of this._paneDivPrims) prim.setRevealed(n);
 
     // Static indicator lines. A column can opt into per-point color (e.g.
     // aVWAP_minmax's curve-to-straight coloring) by shipping a same-named
@@ -718,7 +860,7 @@ export class ChartManager {
 
   /** Click at (x, y) cycles a manual anchor's Volume Profile display mode (normal → LVN → both histograms + both POCs → both POCs, bars hidden) if the click landed inside it. Returns true if a profile was cycled. */
   cycleProfileModeAtXY(x, y) {
-    if (!this._engine || !this._candles) return false;
+    if (!this._engine || !this._candles || !this._inPricePane(y)) return false;
     const barIdx = this.barIndexAtX(x);
     const price  = this._candles.coordinateToPrice(y);
     if (barIdx == null || price == null) return false;
@@ -798,7 +940,192 @@ export class ChartManager {
 
   // ── Per-indicator show/hide (data stays loaded; only rendering changes) ──
 
+  // ── Oscillator panes ──────────────────────────────────────────────────
+
+  /** (Re)create every visible oscillator pane, in the server's order, below
+   * the price pane. Pane i+1 for the i-th visible one — lightweight-charts
+   * removes a pane by itself once its last series is gone, so hiding a pane
+   * is just _destroyPanes + rebuild without it. */
+  _buildPanes() {
+    this._destroyPanes();
+    const visible = this._paneDefs.filter(p => !this._paneHidden.has(p.id));
+    visible.forEach((pane, i) => {
+      const paneIndex = i + 1;
+      pane.series.forEach((s, j) => {
+        const common = { priceLineVisible: false, crosshairMarkerVisible: false,
+                         priceFormat: PANE_PRICE_FORMAT,
+                         // only the pane's main line shows its current value on the axis
+                         lastValueVisible: j === pane.series.findIndex(x => x.kind === 'line') };
+        const series = s.kind === 'histogram'
+          ? this._chart.addSeries(LightweightCharts.HistogramSeries, { ...common, lastValueVisible: false }, paneIndex)
+          : this._chart.addSeries(LightweightCharts.LineSeries, { ...common, color: paneColor(s.color), lineWidth: s.width }, paneIndex);
+        this._paneSeries[s.col] = series;
+        if (this._curN >= 0) series.setData(this._paneData[s.col].slice(0, this._curN + 1));
+      });
+      // Reference levels (RSI 30/50/70, MACD 0, ...) on the pane's first line.
+      const anchor = this._paneSeries[pane.series.find(x => x.kind === 'line').col];
+      // Headroom above the lines for the top-left label (Stochastic, RSI etc.
+      // regularly touch their pane's top), a little below too.
+      anchor.priceScale().applyOptions({ scaleMargins: { top: 0.2, bottom: 0.08 } });
+      for (const price of pane.refs) {
+        anchor.createPriceLine({ price, color: pane.ref_color, lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false });
+      }
+      for (const [targetCol, lines] of Object.entries(this._paneDivLines[pane.id] || {})) {
+        const prim = new DivLinesPrimitive(lines);
+        this._paneSeries[targetCol].attachPrimitive(prim);
+        prim.setRevealed(this._curN);
+        this._paneDivPrims.push({ series: this._paneSeries[targetCol], prim });
+      }
+    });
+    if (this._maxPaneId && !visible.some(p => p.id === this._maxPaneId)) {
+      this._maxPaneId = null;          // the maximized pane was hidden
+      try { navigator.keyboard?.unlock?.(); } catch (_) {}
+    }
+    this._visiblePanes = visible;
+    this._applyPaneStretch();
+    this._buildPaneOverlays();
+  }
+
+  /** Heights: normally price max(3, 1.5 × panes) : each pane 1; with a pane
+   * maximized, that pane takes everything and the rest collapse. */
+  _applyPaneStretch() {
+    const chartPanes = this._chart.panes();
+    const maxIdx = this._maxPaneId ? (this._visiblePanes || []).findIndex(p => p.id === this._maxPaneId) + 1 : 0;
+    if (maxIdx > 0) {
+      chartPanes.forEach((p, i) => p.setStretchFactor(i === maxIdx ? 1 : COLLAPSED_PANE_STRETCH));
+    } else {
+      const nOsc = chartPanes.length - 1;
+      if (chartPanes.length) chartPanes[0].setStretchFactor(Math.max(PRICE_PANE_MIN_STRETCH, PRICE_PANE_PER_OSC * nOsc));
+      for (let i = 1; i < chartPanes.length; i++) chartPanes[i].setStretchFactor(OSC_PANE_STRETCH);
+    }
+    this._applyCollapsedVisibility(maxIdx);
+  }
+
+  /** Collapsed panes still get a couple of pixels from lightweight-charts,
+   * enough to show a smear of squashed candles/lines. While a pane is
+   * maximized, make the collapsed panes' rows (price scale included) and the
+   * pane separators invisible — visibility, not display, so the chart's own
+   * layout is untouched — and clear it all again on restore. Rows may not
+   * exist until the chart lays out, so retried on the next frame. */
+  _applyCollapsedVisibility(maxIdx, attempt = 0) {
+    const chartPanes = this._chart.panes();
+    const rows = chartPanes.map(p => p.getHTMLElement());
+    if (rows.some(r => !r) && attempt < 5) {
+      requestAnimationFrame(() => this._applyCollapsedVisibility(maxIdx, attempt + 1));
+      return;
+    }
+    rows.forEach((row, i) => { if (row) row.style.visibility = (maxIdx > 0 && i !== maxIdx) ? 'hidden' : ''; });
+    const table = rows.find(Boolean)?.closest('table');
+    for (const row of table?.rows || []) {
+      if (row.cells.length === 1) row.style.visibility = maxIdx > 0 ? 'hidden' : '';   // pane separators
+    }
+  }
+
+  /** Each oscillator pane's top-left overlay: its name + settings in quiet
+   * grey, and a maximize toggle right next to it. HTML (not canvas) so the
+   * button is clickable; placed inside the pane's own cell, which
+   * lightweight-charts positions relatively, so it moves/resizes with it.
+   * The pane's element may not exist until the chart lays out — retried on
+   * the next frame. */
+  _buildPaneOverlays(attempt = 0) {
+    for (const el of this._paneOverlays || []) el.remove();
+    this._paneOverlays = [];
+    const chartPanes = this._chart.panes();
+    (this._visiblePanes || []).forEach((pane, i) => {
+      // While a pane is maximized the others are collapsed to ~0 height —
+      // their overlays would just pile up over the time axis.
+      if (this._maxPaneId && this._maxPaneId !== pane.id) return;
+      const rowOrCell = chartPanes[i + 1]?.getHTMLElement();
+      if (!rowOrCell) {
+        if (attempt < 5) requestAnimationFrame(() => this._buildPaneOverlays(attempt + 1));
+        return;
+      }
+      const cell = rowOrCell.tagName === 'TR' ? rowOrCell.cells[1] : rowOrCell;
+      const maxed = this._maxPaneId === pane.id;
+      const el = document.createElement('div');
+      el.className = 'pane-overlay';
+      el.innerHTML = `<span class="pane-overlay-label"></span>
+        <button type="button" class="pane-max-btn${maxed ? ' active' : ''}"
+                title="${maxed ? 'Restore pane (Esc)' : 'Maximize pane'}">${maxed ? '&#x2921;' : '&#x2922;'}</button>`;
+      el.querySelector('.pane-overlay-label').textContent = pane.label || pane.key;
+      const btn = el.querySelector('button');
+      btn.addEventListener('mousedown', e => e.stopPropagation());   // keep the chart from starting a drag
+      btn.addEventListener('click', e => { e.stopPropagation(); btn.blur(); this.togglePaneMaximized(pane.id); });
+      cell.appendChild(el);
+      this._paneOverlays.push(el);
+
+      // × at the top-right closes (hides) the pane — routed through
+      // onPaneClose (replay.js) so it goes through the same show/hide-panel
+      // state as unticking it there, and comes back by re-ticking it.
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'pane-close-btn';
+      close.title = 'Close pane (re-enable it in the show/hide indicators panel)';
+      close.innerHTML = '&#x2715;';
+      close.addEventListener('mousedown', e => e.stopPropagation());
+      close.addEventListener('click', e => {
+        e.stopPropagation();
+        if (this.onPaneClose) this.onPaneClose(pane.id); else this.setPaneVisible(pane.id, false);
+      });
+      cell.appendChild(close);
+      this._paneOverlays.push(close);
+    });
+  }
+
+  /** Maximize one oscillator pane to the whole chart area, or restore it.
+   * In the app's fullscreen mode, Esc is held by Chrome's Keyboard Lock while
+   * a pane is maximized, so its first press restores the pane instead of
+   * leaving fullscreen (holding Esc still exits; browsers without Keyboard
+   * Lock exit fullscreen as usual). */
+  togglePaneMaximized(id) {
+    this._maxPaneId = this._maxPaneId === id ? null : id;
+    this._applyPaneStretch();
+    this._buildPaneOverlays();
+    try {
+      if (this._maxPaneId && document.fullscreenElement) navigator.keyboard?.lock?.(['Escape']).catch(() => {});
+      else navigator.keyboard?.unlock?.();
+    } catch (_) {}
+  }
+
+  /** Esc handling: restore a maximized pane. True if there was one. */
+  restoreMaximizedPane() {
+    if (!this._maxPaneId) return false;
+    this.togglePaneMaximized(this._maxPaneId);
+    return true;
+  }
+
+  _destroyPanes() {
+    for (const el of this._paneOverlays || []) el.remove();
+    this._paneOverlays = [];
+    for (const { series, prim } of this._paneDivPrims || []) {
+      try { series.detachPrimitive(prim); } catch (_) {}
+    }
+    this._paneDivPrims = [];
+    for (const s of Object.values(this._paneSeries)) {
+      try { this._chart.removeSeries(s); } catch (_) {}
+    }
+    this._paneSeries = {};
+  }
+
+  /** Show/hide one oscillator pane by its id ('oscillators:RSI', 'divergence:MACD', ...). */
+  setPaneVisible(id, visible) {
+    if (visible) this._paneHidden.delete(id); else this._paneHidden.add(id);
+    this._buildPanes();
+  }
+
+  /** True if (x, y), in #chart-local px, is inside the price pane — clicks
+   * in an oscillator pane below shouldn't be read as price-pane clicks. */
+  _inPricePane(y) {
+    const p = this._chart?.panes()[0];
+    return !p || y < p.getHeight();
+  }
+
   setIndicatorVisible(cols, visible) {
+    // An oscillator pane's columns → show/hide the whole pane (removed and
+    // rebuilt, so hidden panes give their height back to the others).
+    const pane = this._paneDefs.find(p => p.series.length === cols.length && p.series.every(s => cols.includes(s.col)));
+    if (pane) { this.setPaneVisible(pane.id, visible); return; }
     let touchedTint = false;
     const engineKinds = new Set();
     for (const col of cols) {
@@ -842,6 +1169,9 @@ export class ChartManager {
     this._destroyDivLines();
     this._destroyPoc();
     this._destroySegments();
+    this._destroyPanes();
+    this._paneDefs = [];
+    if (this._maxPaneId) { this._maxPaneId = null; try { navigator.keyboard?.unlock?.(); } catch (_) {} }
     this.clearMeasure();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }
     if (this._stLine)  { try { this._chart.removeSeries(this._stLine); } catch (_) {} this._stLine = null; }

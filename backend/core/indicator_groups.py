@@ -79,7 +79,7 @@ SEGMENT_TYPE_BY_INDICATOR = {
 }
 
 
-def columns_by_indicator(indicator_list: list, columns: list) -> dict:
+def columns_by_indicator(indicator_list: list, columns: list, params: dict = None) -> dict:
     """
     Returns {indicator_name: [matching columns]} for whichever configured
     indicators (from load_config_from_db's indicator_list) have a known
@@ -87,6 +87,18 @@ def columns_by_indicator(indicator_list: list, columns: list) -> dict:
     """
     result = {}
     for name in indicator_list:
+        # Oscillator panes: one show/hide entry per pane ('oscillators:RSI',
+        # 'divergence:RSI', ...) rather than one for the whole indicator —
+        # each pane toggles alone. Divergence only has panes when its
+        # show_oscillator_panes is on.
+        if name == 'oscillators' or (name == 'divergence'
+                                     and (params or {}).get('divergence', {}).get('show_oscillator_panes')):
+            from backend.core.osc_panes import pane_columns
+            present = set(columns)
+            for key, cols in pane_columns(name).items():
+                if all(c in present for c in cols):
+                    result[f'{name}:{key}'] = cols
+            continue
         matcher = _MATCHERS.get(name)
         if not matcher:
             continue

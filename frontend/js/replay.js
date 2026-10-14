@@ -13,6 +13,7 @@ let chart    = null;
 let ws       = null;
 let bars     = [];        // full preloaded bar array
 let styles   = {};        // col → {color,width,lineStyle} from server
+let panes    = [];        // oscillator pane layouts from server (osc_panes.py)
 let N        = 0;
 let current  = 0;
 let playing  = false;
@@ -122,6 +123,7 @@ export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   if (chart) { chart.destroy(); }
   bars    = [];
   styles  = {};
+  panes   = [];
   N       = 0;
   current = 0;
   _restoreDate = restoreDate || null;
@@ -136,6 +138,8 @@ export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   hiddenIndicators  = _loadHiddenIndicators(indConf);
 
   chart = new ChartManager(document.getElementById('chart'));
+  // An oscillator pane's × — same as unticking it in the show/hide panel.
+  chart.onPaneClose = id => toggleIndicatorVisible(id, false);
   _setStatus('connecting…');
   _connectWS(ticker, timeframe, indConf);
   if (!controlsWired) { _wireControls(); controlsWired = true; }
@@ -182,6 +186,7 @@ function _connectWS(ticker, timeframe, indConf) {
     if (msg.type === 'meta') {
       N      = msg.total;
       styles = msg.styles || {};
+      panes  = msg.panes  || [];
       indicatorColumns  = msg.indicator_columns  || {};
       segmentIndicators = msg.segment_indicators || {};
       return;
@@ -213,7 +218,7 @@ function _onAllLoaded() {
   barTotal.textContent = N - 1;
   const lastBar = bars[N - 1];
   dateEnd.textContent = (lastBar?.Date || lastBar?.date || '').slice(0, 10) || '—';
-  chart.load(bars, styles);
+  chart.load(bars, styles, panes);
   chart.fitContent();
   _applyIndicatorVisibility();
   const target = _restoreDate ? _findBarByDate(_restoreDate) : N - 1;
@@ -523,6 +528,15 @@ function _wireControls() {
 // ── Keyboard ──────────────────────────────────────────────────
 
 function _wireKeys() {
+  // Esc with an oscillator pane maximized restores just that pane — capture
+  // phase + stopImmediatePropagation so nothing else (measurement cancel,
+  // blur, fullscreen) also reacts to the same press.
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && chart?.restoreMaximizedPane()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (_measureActive) {

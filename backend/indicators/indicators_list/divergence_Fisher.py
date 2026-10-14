@@ -1,17 +1,11 @@
-import numpy as np
 import pandas as pd
+from backend.indicators.indicators_list import _oscillators_core as osc
 from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_fisher_divergence(df: pd.DataFrame, period: int = 10,
                                  left: int = 5, right: int = 5, **div_opts):
-    hl2     = (df['High'] + df['Low']) / 2
-    max_hl2 = hl2.rolling(period).max()
-    min_hl2 = hl2.rolling(period).min()
-
-    val    = (0.33 * 2 * ((hl2 - min_hl2) / (max_hl2 - min_hl2 + 1e-7) - 0.5)).clip(-0.999, 0.999)
-    fisher = 0.5 * np.log((1 + val) / (1 - val))
-    signal = fisher.ewm(span=3, adjust=False).mean()
+    fisher, signal = osc.fisher(df, period)
 
     reg_bull, reg_bear, hid_bull, hid_bear, prev = detect_divergences(
         df['High'], df['Low'], fisher, left, right, **div_opts)

@@ -1,13 +1,12 @@
 import pandas as pd
+from backend.indicators.indicators_list import _oscillators_core as osc
 from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_momentum_divergence(df: pd.DataFrame, period: int = 10,
                                    smooth_period: int = 3,
                                    left: int = 5, right: int = 5, **div_opts):
-    close    = df['Close']
-    momentum = close - close.shift(period)
-    smoothed = momentum.ewm(span=smooth_period, adjust=False).mean()
+    momentum, smoothed = osc.momentum(df, period, smooth_period)
 
     reg_bull, reg_bear, hid_bull, hid_bear, prev = detect_divergences(df['High'], df['Low'], smoothed, left, right, **div_opts)
     return {

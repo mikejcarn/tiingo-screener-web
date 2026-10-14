@@ -134,6 +134,9 @@ def col_styles_for_columns(columns: list) -> dict:
         # base line column, not a line of their own.
         if col.endswith('_curvecolor'):
             continue
+        # oscillators indicator — drawn in their own panes (osc_panes.py), never here.
+        if col.startswith('OSC_'):
+            continue
         if col in ('RSI', 'MACD', 'Signal', 'Histogram', 'OBV', 'OBV_Smoothed',
                    'ATR', 'Fisher', 'Fisher_Signal', 'Fractal_Energy',
                    'MFI', 'Momentum', 'Momentum_Smoothed',

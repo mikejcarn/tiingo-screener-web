@@ -1,18 +1,11 @@
 import pandas as pd
+from backend.indicators.indicators_list import _oscillators_core as osc
 from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
-import numpy as np
 
 
 def calculate_vortex_divergence(df: pd.DataFrame, period: int = 14,
                                   left: int = 5, right: int = 5, **div_opts):
-    tr       = pd.concat([df['High'] - df['Low'],
-                           (df['High'] - df['Close'].shift(1)).abs(),
-                           (df['Low']  - df['Close'].shift(1)).abs()], axis=1).max(axis=1)
-    vm_plus  = (df['High'] - df['Low'].shift(1)).abs()
-    vm_minus = (df['Low']  - df['High'].shift(1)).abs()
-    tr_sum   = tr.rolling(period).sum()
-    vi_plus  = vm_plus.rolling(period).sum()  / tr_sum
-    vi_minus = vm_minus.rolling(period).sum() / tr_sum
+    vi_plus, vi_minus = osc.vortex(df, period)
 
     # Bullish: price lows vs VI+ — lower price low + higher VI+ = bullish
     # Bearish: price highs vs VI- — higher price high + lower VI- = bearish

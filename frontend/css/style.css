@@ -1644,6 +1644,34 @@ body.ind-page {
 /* ── Param tree ───────────────────────────────────────────── */
 .param-tree { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .param-separator { border-top: 1px solid var(--b4); margin: 4px 0 2px; }
+/* Oscillator pane overlay (chart.js _buildPaneOverlays): name + maximize toggle,
+   top-left of each pane. Only the button takes the mouse. */
+.pane-overlay {
+  position: absolute; top: 4px; left: 8px; z-index: 3;
+  display: flex; align-items: center; gap: 6px;
+  font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: rgba(128,128,128,0.85);
+  pointer-events: none;
+}
+.pane-max-btn {
+  pointer-events: auto;
+  padding: 0 4px; line-height: 14px; font-size: 12px;
+  color: rgba(128,128,128,0.85); background: transparent;
+  border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+}
+.pane-max-btn:hover  { color: var(--t8); border-color: var(--b6); }
+.pane-max-btn.active { color: var(--t8); border-color: var(--b6); background: var(--c-raised); }
+.pane-close-btn {
+  position: absolute; top: 4px; right: 6px; z-index: 3;
+  padding: 0 4px; line-height: 14px; font-size: 11px;
+  color: rgba(128,128,128,0.85); background: transparent;
+  border: 1px solid transparent; border-radius: 3px; cursor: pointer;
+}
+.pane-close-btn:hover { color: var(--t8); border-color: var(--b6); }
+
+/* Conditional rows (param_conditions) while their controlling toggle is off —
+   !important since .param-field's display:flex would otherwise beat [hidden]. */
+.param-tree > [hidden] { display: none !important; }
 
 .ind-tooltip {
   position: fixed;

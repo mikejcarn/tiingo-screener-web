@@ -121,6 +121,8 @@ let _paramDescriptions = {}; // {param_key: description} — hover tooltip text 
 let _paramSeparators  = {}; // {ind: [key, ...]} — insert divider before these keys
 let _currentParamLabels     = {}; // active indicator's labels during rendering
 let _currentParamSeparators = []; // active indicator's separator keys during rendering
+let _paramConditions = {};        // {ind: {param: controlling bool param}} from the API
+let _currentParamConditions = {}; // active indicator's conditions during rendering
 let _activeTf    = 'daily';
 let _pending     = {};   // {tf: {ind: params}} unsaved per-tab state
 let _dirty       = false;
@@ -191,6 +193,7 @@ async function _loadDefaults() {
   _descriptions      = _defaults.descriptions      || {};
   _paramDescriptions = _defaults.param_descriptions || {};
   _paramSeparators   = _defaults.param_separators  || {};
+  _paramConditions   = _defaults.param_conditions  || {};
 }
 
 async function _selectConfig(id, { toggleQueue = true } = {}) {
@@ -391,6 +394,7 @@ function _renderIndicatorCard(ind, enabled, params) {
   const normalized = _normalizeParams(ind, params);
   _currentParamLabels     = _paramLabels[ind]     || {};
   _currentParamSeparators = _paramSeparators[ind] || [];
+  _currentParamConditions = _paramConditions[ind] || {};
   const bodyHtml = enabled
     ? `<div class="ind-card-body">
          <div class="param-tree">${_renderParamTree(normalized)}</div>
@@ -418,10 +422,22 @@ function _renderIndicatorCard(ind, enabled, params) {
 function _renderParamTree(params) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return '';
   return Object.entries(params).map(([k, v]) => {
+    // Conditional rows (param_conditions): tagged with the toggle that
+    // controls them and hidden while it's off — tagged in place rather than
+    // wrapped, since _readParamTree reads the tree's direct children.
+    const ctrl = _currentParamConditions[k];
+    const condAttr = ctrl
+      ? ` data-cond="${_esc(ctrl)}"${params[ctrl] ? '' : ' hidden'}` : '';
     const sep = _currentParamSeparators.includes(k)
-      ? '<div class="param-separator"></div>' : '';
-    return sep + _renderParamValue(k, v);
+      ? `<div class="param-separator"${condAttr}></div>` : '';
+    const field = _renderParamValue(k, v);
+    return sep + (ctrl ? field.replace(/^(\s*<\w+)/, `$1${condAttr}`) : field);
   }).join('');
+}
+
+// Show/hide the conditional rows a bool param controls when it's toggled.
+function _syncParamConditions(tree, key, on) {
+  for (const el of tree.querySelectorAll(`:scope > [data-cond="${CSS.escape(key)}"]`)) el.hidden = !on;
 }
 
 function _numSpin(disabled) {
@@ -971,6 +987,11 @@ function _wireListEvents() {
   });
 
   list.addEventListener('input', () => { _dirty = true; });
+  list.addEventListener('change', e => {
+    const field = e.target.closest('.param-field[data-type="bool"]');
+    const tree  = field?.parentElement;
+    if (field && tree?.classList.contains('param-tree')) _syncParamConditions(tree, field.dataset.key, e.target.checked);
+  });
 
   list.addEventListener('click', e => {
     const head = e.target.closest('.ind-card-head');
@@ -1075,6 +1096,7 @@ function _onToggle(checkbox) {
     };
     _currentParamLabels     = _paramLabels[ind]     || {};
     _currentParamSeparators = _paramSeparators[ind] || [];
+    _currentParamConditions = _paramConditions[ind] || {};
     let body = card.querySelector('.ind-card-body');
     if (!body) {
       body = document.createElement('div');

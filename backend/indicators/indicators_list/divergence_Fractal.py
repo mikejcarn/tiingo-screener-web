@@ -1,5 +1,5 @@
-import numpy as np
 import pandas as pd
+from backend.indicators.indicators_list import _oscillators_core as osc
 from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
@@ -12,9 +12,7 @@ def calculate_fractal_divergence(df: pd.DataFrame, period: int = 12,
     Divergence: price makes a new extreme but energy is fading (or surging at a
     lower extreme), suggesting the move lacks conviction.
     """
-    hl_range    = (df['High'] - df['Low']).rolling(period).mean()
-    close_range = df['Close'].diff(period).abs()
-    energy      = (close_range / hl_range).replace([np.inf, -np.inf], np.nan).fillna(0)
+    energy = osc.fractal_energy(df, period)
 
     if vol_filter:
         vol_ema       = df['Volume'].ewm(span=20, adjust=False).mean()

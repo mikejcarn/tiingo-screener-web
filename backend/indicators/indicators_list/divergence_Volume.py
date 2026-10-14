@@ -1,10 +1,11 @@
 import pandas as pd
+from backend.indicators.indicators_list import _oscillators_core as osc
 from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_volume_divergence(df: pd.DataFrame, period: int = 14,
                                  left: int = 5, right: int = 5, **div_opts):
-    vol_ma = df['Volume'].ewm(span=period, adjust=False).mean()
+    vol_ma = osc.volume_ma(df, period)
 
     reg_bull, reg_bear, hid_bull, hid_bear, prev = detect_divergences(
         df['High'], df['Low'], vol_ma, left, right, **div_opts)

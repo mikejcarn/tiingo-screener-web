@@ -1,18 +1,12 @@
 import pandas as pd
+from backend.indicators.indicators_list import _oscillators_core as osc
 from backend.indicators.indicators_list._divergence_core import detect_divergences, prev_columns
 
 
 def calculate_mfi_divergence(df: pd.DataFrame, period: int = 14,
                               volume_threshold: float = 1.2,
                               left: int = 5, right: int = 5, **div_opts):
-    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-    money_flow    = typical_price * df['Volume']
-
-    pos_flow = money_flow.where(typical_price > typical_price.shift(1), 0.0)
-    neg_flow = money_flow.where(typical_price < typical_price.shift(1), 0.0)
-    pos_sum  = pos_flow.rolling(period).sum()
-    neg_sum  = neg_flow.rolling(period).sum()
-    mfi      = 100 * pos_sum / (pos_sum + neg_sum)
+    mfi = osc.mfi(df, period)
 
     vol_ema  = df['Volume'].ewm(span=period, adjust=False).mean()
     vol_conf = df['Volume'] > vol_ema * volume_threshold

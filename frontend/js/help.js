@@ -166,6 +166,11 @@ const _PAGES = [
       <tr><td>Alt+Click &nbsp;or&nbsp; Alt+Space</td><td>Lock a measurement start point (Alt+Space uses the last mouse position over the chart); move the cursor to explore $ / % change live; repeat either, or press Escape, to dismiss</td></tr>
       <tr><td><kbd>Escape</kbd></td><td>Cancel a pending <kbd>,</kbd> range-start mark, or dismiss an active measurement</td></tr>
 
+      <tr class="help-section"><td colspan="2">Oscillator Panes</td></tr>
+      <tr><td>&#x2922; next to a pane's name</td><td>Maximize that pane to the whole chart area; click it again (&#x2921;) to restore</td></tr>
+      <tr><td>&#x2715; at a pane's top right</td><td>Close that pane — bring it back by re-ticking it in the show/hide indicators panel (&#9776;)</td></tr>
+      <tr><td><kbd>Escape</kbd></td><td>Restore a maximized pane. In fullscreen mode (<kbd>F</kbd>) the first press only restores the pane — press again (or hold) to leave fullscreen</td></tr>
+
       <tr class="help-section"><td colspan="2">Ticker Navigation</td></tr>
       <tr><td>Shift+<kbd>L</kbd> &nbsp;or&nbsp; &#9734; button</td><td>Flag / unflag the current ticker; &#9873; button opens the flagged-ticker panel (click a row to jump, &#10005; to unflag)</td></tr>
       <tr><td>Alt+<kbd>L</kbd></td><td>Toggle ticker cycling (<kbd>=</kbd> / <kbd>-</kbd>, prev/next buttons) to the flagged tickers only; toggle again to return to the previous list</td></tr>

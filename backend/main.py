@@ -21,6 +21,7 @@ from backend.core.scheduler import scheduler_loop
 from backend.core.globals import TIMEFRAME_ALIASES
 from backend.core.col_styles import col_styles_for_columns
 from backend.core.indicator_groups import columns_by_indicator, segment_indicators
+from backend.core.osc_panes import panes_for_columns
 from backend.core.replay_events import extract_events
 from backend.indicators.indicators import load_config_from_db
 
@@ -101,7 +102,16 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
     styles  = col_styles_for_columns(columns)
 
     indicator_list, ind_params = load_config_from_db(ind_conf, tf)
-    indicator_columns = columns_by_indicator(indicator_list, columns)
+    indicator_columns = columns_by_indicator(indicator_list, columns, ind_params)
+    # Oscillator panes (oscillators indicator) — layout per pane, see osc_panes.py.
+    # Oscillator panes — the oscillators indicator's, then the divergence
+    # indicator's own (its show_oscillator_panes). Layouts per osc_panes.py.
+    params_ = ind_params or {}
+    panes = []
+    if 'oscillators' in (indicator_list or []):
+        panes += panes_for_columns(columns, params_.get('oscillators', {}), 'oscillators')
+    if 'divergence' in (indicator_list or []) and params_.get('divergence', {}).get('show_oscillator_panes'):
+        panes += panes_for_columns(columns, params_['divergence'], 'divergence')
     seg_indicators = segment_indicators(indicator_columns)
 
     await websocket.send_text(json.dumps({
@@ -114,6 +124,7 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         "styles": styles,
         "indicator_columns": indicator_columns,
         "segment_indicators": seg_indicators,
+        "panes": panes,
     }))
 
     # Send all bars up-front so the client can load them in one shot

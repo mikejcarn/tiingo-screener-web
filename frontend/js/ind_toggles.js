@@ -20,6 +20,9 @@ let _displayNames = {}; // {indicatorName: display_name} — best-effort, falls 
 function _label(name) {
   if (name === '__candles__') return 'Candles';
   if (name === '__volume__')  return 'Volume';
+  // Per-pane entries ('oscillators:RSI', 'divergence:RSI') — indicator · pane.
+  const pane = name.match(/^(oscillators|divergence):(.+)$/);
+  if (pane) return `${_displayNames[pane[1]] || pane[1]} · ${pane[2]}`;
   return _displayNames[name] || name;
 }
 
