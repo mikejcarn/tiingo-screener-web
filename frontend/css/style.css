@@ -506,6 +506,18 @@ input[type="text"].ctrl-inp:focus, input[type="number"].ctrl-inp:focus { outline
   overflow-y: auto;
 }
 
+#help-footer {
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--b6);
+}
+#help-attribution {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; color: var(--t4); text-decoration: none;
+  --tv-fill: var(--t6); --tv-stroke: var(--c-card);
+}
+#help-attribution:hover { color: var(--t7); --tv-fill: var(--t8); }
+
 .help-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .help-table td { padding: 4px 8px; color: var(--t6); vertical-align: top; }
 .help-table td:first-child { color: var(--t7); white-space: nowrap; width: 200px; }

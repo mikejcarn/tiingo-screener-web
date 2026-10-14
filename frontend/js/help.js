@@ -11,6 +11,17 @@ const _GLOBAL_ROWS = `
   <tr><td><kbd>-</kbd> / <kbd>=</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd> &nbsp;or&nbsp; <kbd>]</kbd> / <kbd>[</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
   <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>`;
 
+// TradingView attribution for the chart library (Lightweight Charts™,
+// Apache 2.0, which asks for a link to tradingview.com on pages using it).
+// Shown here instead of the library's on-chart logo (attributionLogo: false
+// in chart.js) — same SVG mark the library itself draws.
+const _ATTRIBUTION = `
+  <a id="help-attribution" href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer"
+     title="Charts by TradingView Lightweight Charts™">
+    <svg xmlns="http://www.w3.org/2000/svg" width="35" height="19" fill="none" aria-hidden="true"><g fill-rule="evenodd" clip-rule="evenodd"><path fill="var(--tv-stroke)" d="M2 0H0v10h6v9h21.4l.5-1.3 6-15 1-2.7H23.7l-.5 1.3-.2.6a5 5 0 0 0-7-.9V0H2Zm20 17h4l5.2-13 .8-2h-7l-1 2.5-.2.5-1.5 3.8-.3.7V17Zm-.8-10a3 3 0 0 0 .7-2.7A3 3 0 1 0 16.8 7h4.4ZM14 7V2H2v6h6v9h4V7h2Z"/><path fill="var(--tv-fill)" d="M14 2H2v6h6v9h6V2Zm12 15h-7l6-15h7l-6 15Zm-7-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></g></svg>
+    <span>Charts by TradingView Lightweight Charts™</span>
+  </a>`;
+
 const _PAGES = [
   {
     id: 'tickers',
@@ -219,7 +230,9 @@ function _createOverlay() {
 
 function _switchTab(idx) {
   _activeIdx = (idx + _PAGES.length) % _PAGES.length;
-  _body.innerHTML = _PAGES[_activeIdx].html;
+  // Attribution sits at the end of the scrolling content, under the page's
+  // own text — not a fixed footer that stays visible while scrolling.
+  _body.innerHTML = _PAGES[_activeIdx].html + `<div id="help-footer">${_ATTRIBUTION}</div>`;
   _overlay.querySelectorAll('.help-tab').forEach((t, i) => {
     t.classList.toggle('active', i === _activeIdx);
   });

@@ -245,7 +245,7 @@ export class DynamicVWAPEngine {
   // ── Setup ──────────────────────────────────────────────────────────────────
 
   _series(color, width = 2, lineStyle = 0) {
-    return this._chart.addLineSeries({
+    return this._chart.addSeries(LightweightCharts.LineSeries, {
       color,
       lineWidth:              width,
       lineStyle,

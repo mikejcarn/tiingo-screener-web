@@ -132,20 +132,27 @@ export class ChartManager {
   _init() {
     const c = this._chartColors();
     this._chart = LightweightCharts.createChart(this._container, {
-      layout:          { background: { color: c.bg }, textColor: c.text },
+      // attributionLogo off: the TradingView credit the library's license
+      // asks for lives in the help panel's footer instead (see help.js).
+      layout:          { background: { color: c.bg }, textColor: c.text, attributionLogo: false },
       grid:            { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       crosshair:       { mode: LightweightCharts.CrosshairMode.Normal },
+      // v5.2 default: draw whichever series is under the mouse on top of the
+      // rest. On a chart this dense that makes lines jump in front of the
+      // candles as the cursor moves — keep v4's fixed drawing order.
+      hoveredSeriesOnTop: false,
       rightPriceScale: { borderColor: c.border, scaleMargins: { top: 0.03, bottom: 0.03 } },
       timeScale:       { borderColor: c.border, timeVisible: true },
     });
 
-    this._candles = this._chart.addCandlestickSeries({
+    this._candles = this._chart.addSeries(LightweightCharts.CandlestickSeries, {
       upColor:        C_UP,   downColor:       C_DOWN,
       borderUpColor:  C_UP,   borderDownColor: C_DOWN,
       wickUpColor:    C_UP,   wickDownColor:   C_DOWN,
     });
+    this._candleMarkers = LightweightCharts.createSeriesMarkers(this._candles, []);
 
-    this._volume = this._chart.addHistogramSeries({
+    this._volume = this._chart.addSeries(LightweightCharts.HistogramSeries, {
       priceScaleId: 'volume', priceFormat: { type: 'volume' }, color: C_VOLUME,
       priceLineVisible: false, lastValueVisible: false,
     });
@@ -155,7 +162,7 @@ export class ChartManager {
     this._volData = [];
 
     // Overlay series — transparent body, thick wicks/borders at divergence pivot bars
-    this._divCandleSeries = this._chart.addCandlestickSeries({
+    this._divCandleSeries = this._chart.addSeries(LightweightCharts.CandlestickSeries, {
       upColor:          'rgba(0,0,0,0)',
       downColor:        'rgba(0,0,0,0)',
       borderUpColor:    'rgba(0,0,0,0)',
@@ -203,7 +210,7 @@ export class ChartManager {
 
     // Create one LineSeries per styled column
     for (const [col, st] of Object.entries(styles)) {
-      this._lines[col] = this._chart.addLineSeries({
+      this._lines[col] = this._chart.addSeries(LightweightCharts.LineSeries, {
         color:                  st.color,
         lineWidth:              st.width,
         lineStyle:              st.lineStyle,
@@ -215,7 +222,7 @@ export class ChartManager {
 
     // Supertrend: single series with per-point color (teal = uptrend, red = downtrend)
     if (bars.length > 0 && 'Supertrend_Direction' in bars[0]) {
-      this._stLine = this._chart.addLineSeries({
+      this._stLine = this._chart.addSeries(LightweightCharts.LineSeries, {
         lineWidth: 2,
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
       });
@@ -398,7 +405,7 @@ export class ChartManager {
             lastValueVisible: false,
           }));
         } else {
-          this._segSeries[type].push(this._chart.addLineSeries({
+          this._segSeries[type].push(this._chart.addSeries(LightweightCharts.LineSeries, {
             color:                  this._segColor(type, ev),
             lineWidth:              SEG_WIDTH[type]  || 1,
             lineStyle:              SEG_LSTYLE[type] || 0,
@@ -482,7 +489,7 @@ export class ChartManager {
   _buildPoc(poc) {
     if (!poc || !poc.starts) return;
     this._pocData = poc;
-    this._pocSeries = poc.starts.map(() => this._chart.addLineSeries({
+    this._pocSeries = poc.starts.map(() => this._chart.addSeries(LightweightCharts.LineSeries, {
       color:                  'rgba(255,165,0,0.35)',
       lineWidth:              4,
       lineStyle:              0,
@@ -528,7 +535,7 @@ export class ChartManager {
       const color = bull ? DIV_BULL : DIV_BEAR;
       this._divLineData.push({ s: ln.s, e: ln.e, p0: ln.p0, p1: ln.p1, vf: ln.vf });
       this._divLineKeys.push(-2);
-      this._divLineSeries.push(this._chart.addLineSeries({
+      this._divLineSeries.push(this._chart.addSeries(LightweightCharts.LineSeries, {
         color,
         lineWidth:              Math.min(ln.count, 3),
         lineStyle:              0,
@@ -601,7 +608,9 @@ export class ChartManager {
     }
     markers.sort((a, b)     => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     overlayData.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
-    this._candles.setMarkers(markers);
+    // v5 moved markers out of the series API into a plugin, created once
+    // per candle series (see _init) and fed the full marker list here.
+    this._candleMarkers.setMarkers(markers);
     this._divCandleSeries.setData(overlayData);
   }
 
