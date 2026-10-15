@@ -145,10 +145,13 @@ const FAN_VP_POINT_BUDGET = 250000;
 // modes (click a profile) applied to the fan: 'hvn' volume orange, bright
 // through heavily traded levels → 'lvn' indigo, bright through THIN levels →
 // 'both' orange where a level's volume is above half the POC's, indigo where
-// below, brighter the further from that midpoint → 'pocs' every line a faint
-// flat grey with the span's POC (orange) and deepest LVN (indigo, same rule
-// as the profile's LVN-POC) drawn across the fan → 'hvn'.
-const FAN_VP_MODES        = ['hvn', 'lvn', 'both', 'pocs'];
+// below, brighter the further from that midpoint → 'barvol' every line shaded
+// by each BAR's own volume instead (time, not price: at bar i all lines take
+// bar i's shade, so the volume histogram reads as vertical bands across the
+// fan — bar volume / the span's FAN_BARVOL_PCTL percentile, capped at 1, so
+// one spike doesn't flatten the rest) → 'hvn'.
+const FAN_VP_MODES        = ['hvn', 'lvn', 'both', 'barvol'];
+const FAN_BARVOL_PCTL     = 0.95;
 const C_FAN_MAX      = 'rgba(255,0,0,1.0)';
 const C_FAN_MIN      = 'rgba(0,255,255,0.85)';
 const FAN_MINMAX_WIDTH = 2;
@@ -354,14 +357,20 @@ class FanPrimitive {
     if (!(maxBin > 0)) return;
     const nb = bins.length;
     // Two palettes (volume orange / LVN indigo), FAN_VP_LEVELS paths each;
-    // 'pocs' uses a single flat grey path.
+    // 'barvol' uses the orange paths, by bar volume instead of price level.
     const orange = Array.from({ length: FAN_VP_LEVELS }, () => new Path2D());
     const indigo = Array.from({ length: FAN_VP_LEVELS }, () => new Path2D());
-    const grey = new Path2D();
     const zero = new Path2D();   // zero-volume levels in 'hvn' — not drawn
+    // 'barvol': per-bar volume level for each visible bar.
+    let barLv = null;
+    if (mode === 'barvol') {
+      const vols = this._engine._volumes, ref = fan.volRef || 1;
+      barLv = new Int16Array(to - from + 1);
+      for (let i = from; i <= to; i++) barLv[i - from] = Math.min(FAN_VP_LEVELS - 1, Math.floor(Math.min(1, vols[i] / ref) * FAN_VP_LEVELS));
+    }
     const lv = t => Math.min(FAN_VP_LEVELS - 1, Math.max(0, Math.floor(t * FAN_VP_LEVELS)));
-    const pathOf = price => {
-      if (mode === 'pocs') return grey;
+    const pathOf = (price, i) => {
+      if (mode === 'barvol') return orange[barLv[i - from]];
       const b = Math.min(nb - 1, Math.max(0, Math.floor((price - priceMin) / binSize)));
       const s = bins[b] / maxBin;
       if (mode === 'hvn' && !(bins[b] > 0)) return zero;
@@ -380,49 +389,22 @@ class FanPrimitive {
         const x = xs[i - from], y = toY(price);
         if (y == null || Number.isNaN(x)) { px = NaN; continue; }
         if (!Number.isNaN(px)) {
-          const path = pathOf(price);
+          const path = pathOf(price, i);
           path.moveTo(px, py); path.lineTo(x, y);
         }
         px = x; py = y;
       }
     });
-    // 'pocs': the span's POC and deepest LVN as lines across the fan.
-    let pocLines = [];
-    if (mode === 'pocs') {
-      let pocBin = 0;
-      for (let b = 1; b < nb; b++) if (bins[b] > bins[pocBin]) pocBin = b;
-      const xFrom = this._chart.timeScale().logicalToCoordinate(Math.min(...fan.anchors));
-      const xTo   = this._chart.timeScale().logicalToCoordinate(toIdx);
-      const yPoc  = toY(priceMin + (pocBin + 0.5) * binSize);
-      // LVN-POC trough window scaled from the in-chart profile's (16 of 200 bins).
-      const nodeWindow = Math.round(MANUAL_VP_NODE_WINDOW * FAN_VP_BINS / MANUAL_VP_NUM_BINS);
-      const yLvn  = toY(this._engine._vpLvnPoc(priceMin, binSize, bins, nodeWindow));
-      if (xFrom != null && xTo != null) {
-        if (yPoc != null) pocLines.push({ y: yPoc, color: `rgba(${VP_RGB_DEFAULT},0.95)` });
-        if (yLvn != null) pocLines.push({ y: yLvn, color: `rgba(${VP_RGB_LVN},0.95)` });
-        pocLines = pocLines.map(l => ({ ...l, x0: xFrom, x1: xTo }));
-      }
-    }
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       ctx.save();
       ctx.lineWidth = 1;
       ctx.lineCap = 'round';
-      if (mode === 'pocs') {
-        ctx.strokeStyle = `rgba(${C_FAN_GREY_RGB},${FAN_FLAT_ALPHA})`;
-        ctx.stroke(grey);
-        ctx.lineWidth = 2;
-        for (const l of pocLines) {
-          ctx.strokeStyle = l.color;
-          ctx.beginPath(); ctx.moveTo(l.x0, l.y); ctx.lineTo(l.x1, l.y); ctx.stroke();
-        }
-      } else {
-        for (const [paths, rgb] of [[orange, VP_RGB_DEFAULT], [indigo, VP_RGB_LVN]]) {
-          paths.forEach((path, k) => {
-            const alpha = FAN_VP_ALPHA_FLOOR + (FAN_VP_ALPHA_MAX - FAN_VP_ALPHA_FLOOR) * Math.pow(k / (FAN_VP_LEVELS - 1), FAN_VP_GAMMA);
-            ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
-            ctx.stroke(path);
-          });
-        }
+      for (const [paths, rgb] of [[orange, VP_RGB_DEFAULT], [indigo, VP_RGB_LVN]]) {
+        paths.forEach((path, k) => {
+          const alpha = FAN_VP_ALPHA_FLOOR + (FAN_VP_ALPHA_MAX - FAN_VP_ALPHA_FLOOR) * Math.pow(k / (FAN_VP_LEVELS - 1), FAN_VP_GAMMA);
+          ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
+          ctx.stroke(path);
+        });
       }
       ctx.restore();
     });
@@ -936,6 +918,12 @@ export class DynamicVWAPEngine {
     if (fan.kind === 'vp') {
       const first = Math.min(...fan.anchors);
       fan.vp = first <= toIdx ? this._vpHistogram(first, toIdx, FAN_VP_BINS) : null;
+      // Reference volume for 'barvol' per-bar shading: the span's
+      // FAN_BARVOL_PCTL percentile of bar volume.
+      if (first <= toIdx) {
+        const v = Array.from(this._volumes.subarray(first, toIdx + 1)).sort((a, b) => a - b);
+        fan.volRef = v[Math.min(v.length - 1, Math.floor(FAN_BARVOL_PCTL * (v.length - 1)))] || 1;
+      }
     }
     fan._n = n; fan._toIdx = toIdx;
     fan.primitive.update();
