@@ -88,15 +88,70 @@ const SLOPE_ALPHA_MIN_DEFAULT = 0.15;
 
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
-// Alt+. "fan": an aVWAP anchored at every candle from the hovered one on (or
-// across a ','-marked range). Past MANUAL_FAN_MAX_LINES candles it thins to
-// every k-th candle (first always included) so a fan stays ~that many lines.
-// Same amber, 1px, fading from the oldest anchor (FAN_ALPHA_OLD) to the
-// newest (FAN_ALPHA_NEW) so the fan's shape reads rather than a solid band.
+// aVWAP fan — an aVWAP anchored at every candle across a span (hovered
+// candle → current bar, or a ','-marked range), each line growing to "now" or
+// stopping at the range's end. Every candle is classified by SIGNIFICANCE:
+// the largest of FAN_PV_WINDOWS at which it's still a peak/valley (same swing
+// rule as peaks_valleys.py — high/low equal to its centered window's max/min;
+// 0 for an in-between candle). Swings are scaled 0..1 within the fan (log of
+// the window survived); that sets each line's opacity (FAN_ALPHA_MIN ..
+// FAN_ALPHA_MAX) and, for the top swings, width — the significant swings
+// carry the fan's structure, minor swings and in-between candles stay faint.
+// Every candle gets a line unless that would exceed FAN_POINT_BUDGET points
+// drawn per frame (lines × their length — drawing cost, the only reason to
+// thin): then swings are kept first (most significant first) and in-between
+// candles fill the remaining budget evenly. A full-chart fan of ~1,200 lines
+// would otherwise take ~100ms+ to repaint on every pan/zoom.
+// Clicking a fan cycles FAN_MODES: amber (weighted) → peak red / valley teal,
+// in-between grey (weighted, min/max aVWAPs highlighted) → every line grey at
+// one flat FAN_FLAT_ALPHA, 1px, with only the min/max aVWAPs in color →
+// amber.
 const C_MANUAL_RGB          = '255,193,7';
-const MANUAL_FAN_MAX_LINES  = 100;
-const FAN_ALPHA_OLD         = 0.85;
-const FAN_ALPHA_NEW         = 0.15;
+const C_PEAK_RGB            = '239,83,80';
+const C_VALLEY_RGB          = '38,166,154';
+const C_FAN_GREY_RGB        = '150,150,150';
+const FAN_PV_WINDOWS        = [3, 5, 7, 10, 15, 20, 25, 35, 50, 75, 100, 150, 200, 300];
+const FAN_POINT_BUDGET      = 400000;
+const FAN_ALPHA_MIN         = 0.08;   // in-between candles
+const FAN_ALPHA_SWING_MIN   = 0.18;   // the least significant swing
+const FAN_ALPHA_MAX         = 0.8;    // the most significant swing
+const FAN_WIDE_MIN          = 0.75;   // significance at/above which a line is 2px
+const FAN_FLAT_ALPHA        = 0.2;    // every line's opacity in 'flat' mode
+const FAN_MODES             = ['amber', 'pv', 'flat'];
+// In the red/teal coloring, the fan's min/max aVWAPs — anchored at its
+// highest peak and lowest valley — are highlighted in the same colors the
+// aVWAP Min|Max lines use (avwap_max / avwap_min below), and wider.
+// Ctrl+. 'vp' fan — the same full aVWAP set, all in volume orange, each line
+// shaded point by point by the Volume Profile of the fan's span (bars from
+// its first anchor to the current/end bar) at that point's price: bright
+// through heavily traded levels (HVNs), faint through thin ones (LVNs).
+// Opacity follows the level's share of the busiest level raised to
+// FAN_VP_GAMMA (>1 keeps only the busiest levels bright — with hundreds of
+// overlapping lines, linear shading saturates into a solid band), quantized
+// into FAN_VP_LEVELS steps so segments batch into a few strokes; drawing
+// per segment costs more than per line, hence its smaller point budget.
+const FAN_VP_BINS         = 100;
+// Every segment at a level that traded at all gets at least FAN_VP_ALPHA_FLOOR
+// (the line stays visible there) and the shading adds up to FAN_VP_ALPHA_MAX
+// on top; only a level with truly zero volume is left out, in the modes where
+// it would be the faintest ('hvn' — in 'lvn'/'both' a zero-volume level is
+// the brightest).
+const FAN_VP_ALPHA_FLOOR  = 0.1;
+const FAN_VP_ALPHA_MAX    = 0.45;
+const FAN_VP_GAMMA        = 2;
+const FAN_VP_LEVELS       = 20;
+const FAN_VP_POINT_BUDGET = 250000;
+// Clicking a 'vp' fan cycles FAN_VP_MODES — the in-chart Volume Profile's own
+// modes (click a profile) applied to the fan: 'hvn' volume orange, bright
+// through heavily traded levels → 'lvn' indigo, bright through THIN levels →
+// 'both' orange where a level's volume is above half the POC's, indigo where
+// below, brighter the further from that midpoint → 'pocs' every line a faint
+// flat grey with the span's POC (orange) and deepest LVN (indigo, same rule
+// as the profile's LVN-POC) drawn across the fan → 'hvn'.
+const FAN_VP_MODES        = ['hvn', 'lvn', 'both', 'pocs'];
+const C_FAN_MAX      = 'rgba(255,0,0,1.0)';
+const C_FAN_MIN      = 'rgba(0,255,255,0.85)';
+const FAN_MINMAX_WIDTH = 2;
 // Shift+. also draws stdev bands (vwap +/- k*stdev) around a manual anchor —
 // same rgb (amber), dashed, tiered opacity by k using the identical formula
 // col_styles.py uses for aVWAP_pinch's own stdev bands (tightest band most
@@ -106,7 +161,7 @@ const MANUAL_STDEV_MAX_ALPHA = 0.65;
 const MANUAL_STDEV_MIN_ALPHA = 0.45;
 const MANUAL_STDEV_MULTIPLES = [1, 2]; // matches aVWAP_pinch's default stdev_multiples
 
-// Ctrl+. also pairs a Volume Profile with a manual anchor — fixed, sensible
+// ',' ',' also pairs a Volume Profile with a manual anchor — fixed, sensible
 // defaults rather than exposing the full configurable-indicator param set,
 // since this tool is deliberately parameter-free (press a key, get a
 // result). Reuses VolumeProfileSeries for rendering, so it looks identical
@@ -137,7 +192,7 @@ const VP_MODE_LVN    = 1;
 const VP_MODE_BOTH   = 2;
 const VP_MODE_POCS   = 3;
 const VP_MODE_COUNT  = 4;
-// When a profile is paired (Ctrl+.), the vwap line matches the profile's
+// When a profile is paired (',' ','), the vwap line matches the profile's
 // own color instead of the usual amber — they're one visual unit then.
 const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
 const C_MANUAL_WITH_PROFILE_LVN = `rgba(${VP_RGB_LVN},0.95)`;
@@ -215,6 +270,165 @@ function _grayscaleColor(r, g, b, rank, total) {
 }
 
 
+// Draws one aVWAP fan (see FAN_* above) on a single canvas layer — a
+// lightweight-charts series primitive on the fan's carrier line — instead of
+// one chart series per anchor: hundreds of separate series made creating or
+// rebuilding a fan take seconds. Values come straight from the engine's
+// cumulative price·volume / volume arrays (no per-line storage); only bars in
+// the visible range are drawn, and lines are batched by style (color, alpha,
+// width) into a few Path2D strokes, faintest first so significant swings and
+// the min/max lines sit on top.
+class FanPrimitive {
+  constructor(engine, fan) {
+    this._engine = engine;
+    this._fan = fan;
+    const renderer = { draw: target => this._draw(target) };
+    this._views = [{ renderer: () => renderer, zOrder: () => 'normal' }];
+  }
+  attached({ chart, series, requestUpdate }) { this._chart = chart; this._series = series; this._request = requestUpdate; }
+  detached() { this._chart = this._series = this._request = null; }
+  paneViews() { return this._views; }
+  update() { this._request?.(); }
+
+  _draw(target) {
+    const fan = this._fan, eng = this._engine;
+    if (!this._chart || !this._series || fan._toIdx == null) return;
+    const ts = this._chart.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    if (!range) return;
+    const toIdx = fan._toIdx, n = fan._n;
+    const from = Math.max(0, Math.floor(range.from) - 1), to = Math.min(toIdx, Math.ceil(range.to) + 1);
+    if (to < from) return;
+    const xs = new Float64Array(to - from + 1);
+    for (let i = from; i <= to; i++) xs[i - from] = ts.logicalToCoordinate(i) ?? NaN;
+    const cumPV = eng._cumPV, cumVol = eng._cumVol, series = this._series;
+    // Price → y. On a linear price scale that's a straight line, so derive it
+    // once from two reference prices instead of calling priceToCoordinate for
+    // every point (hundreds of thousands per frame for a full-chart fan).
+    // Log / percentage scales fall back to the API.
+    let toY = p => series.priceToCoordinate(p);
+    if ((series.priceScale().options().mode ?? 0) === 0) {
+      const y1 = series.priceToCoordinate(1), y2 = series.priceToCoordinate(2);
+      if (y1 != null && y2 != null) { const k = y2 - y1, c = y1 - k; toY = p => c + k * p; }
+    }
+    if (fan.kind === 'vp') return this._drawVp(target, { from, to, toIdx, n, xs, toY, cumPV, cumVol });
+    // Style buckets: key -> {style, width, order, path}
+    const buckets = new Map();
+    fan.anchors.forEach((a, k) => {
+      const st = fan.styles[k];
+      if (!st || !st.visible || a > to || a > toIdx || fan.confirm[k] > n) return;
+      let b = buckets.get(st.key);
+      if (!b) { b = { color: st.color, width: st.width, order: st.order, path: new Path2D() }; buckets.set(st.key, b); }
+      const pvBase = a > 0 ? cumPV[a - 1] : 0, volBase = a > 0 ? cumVol[a - 1] : 0;
+      let pen = false;
+      for (let i = Math.max(a, from); i <= to; i++) {
+        const vol = cumVol[i] - volBase;
+        if (!(vol > 0)) continue;
+        const y = toY((cumPV[i] - pvBase) / vol);
+        const x = xs[i - from];
+        if (y == null || Number.isNaN(x)) { pen = false; continue; }
+        if (pen) b.path.lineTo(x, y); else { b.path.moveTo(x, y); pen = true; }
+      }
+    });
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      ctx.save();
+      ctx.lineJoin = 'round';
+      for (const b of [...buckets.values()].sort((p, q) => p.order - q.order)) {
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.width;
+        ctx.stroke(b.path);
+      }
+      ctx.restore();
+    });
+  }
+
+  /** 'vp' fan: each segment colored from the Volume Profile share of the
+   * price level it sits at (segment's end point) per the fan's mode (see
+   * FAN_VP_MODES), batched by color and level. */
+  _drawVp(target, { from, to, toIdx, n, xs, toY, cumPV, cumVol }) {
+    const fan = this._fan, vp = fan.vp, mode = fan.colorMode;
+    if (!vp) return;
+    const { priceMin, binSize, bins } = vp;
+    let maxBin = 0;
+    for (const v of bins) if (v > maxBin) maxBin = v;
+    if (!(maxBin > 0)) return;
+    const nb = bins.length;
+    // Two palettes (volume orange / LVN indigo), FAN_VP_LEVELS paths each;
+    // 'pocs' uses a single flat grey path.
+    const orange = Array.from({ length: FAN_VP_LEVELS }, () => new Path2D());
+    const indigo = Array.from({ length: FAN_VP_LEVELS }, () => new Path2D());
+    const grey = new Path2D();
+    const zero = new Path2D();   // zero-volume levels in 'hvn' — not drawn
+    const lv = t => Math.min(FAN_VP_LEVELS - 1, Math.max(0, Math.floor(t * FAN_VP_LEVELS)));
+    const pathOf = price => {
+      if (mode === 'pocs') return grey;
+      const b = Math.min(nb - 1, Math.max(0, Math.floor((price - priceMin) / binSize)));
+      const s = bins[b] / maxBin;
+      if (mode === 'hvn' && !(bins[b] > 0)) return zero;
+      if (mode === 'lvn') return indigo[lv(1 - s)];
+      if (mode === 'both') return s >= 0.5 ? orange[lv((s - 0.5) * 2)] : indigo[lv((0.5 - s) * 2)];
+      return orange[lv(s)];
+    };
+    fan.anchors.forEach((a, k) => {
+      if (a > to || a > toIdx || fan.confirm[k] > n) return;
+      const pvBase = a > 0 ? cumPV[a - 1] : 0, volBase = a > 0 ? cumVol[a - 1] : 0;
+      let px = NaN, py = NaN;
+      for (let i = Math.max(a, from); i <= to; i++) {
+        const vol = cumVol[i] - volBase;
+        if (!(vol > 0)) continue;
+        const price = (cumPV[i] - pvBase) / vol;
+        const x = xs[i - from], y = toY(price);
+        if (y == null || Number.isNaN(x)) { px = NaN; continue; }
+        if (!Number.isNaN(px)) {
+          const path = pathOf(price);
+          path.moveTo(px, py); path.lineTo(x, y);
+        }
+        px = x; py = y;
+      }
+    });
+    // 'pocs': the span's POC and deepest LVN as lines across the fan.
+    let pocLines = [];
+    if (mode === 'pocs') {
+      let pocBin = 0;
+      for (let b = 1; b < nb; b++) if (bins[b] > bins[pocBin]) pocBin = b;
+      const xFrom = this._chart.timeScale().logicalToCoordinate(Math.min(...fan.anchors));
+      const xTo   = this._chart.timeScale().logicalToCoordinate(toIdx);
+      const yPoc  = toY(priceMin + (pocBin + 0.5) * binSize);
+      // LVN-POC trough window scaled from the in-chart profile's (16 of 200 bins).
+      const nodeWindow = Math.round(MANUAL_VP_NODE_WINDOW * FAN_VP_BINS / MANUAL_VP_NUM_BINS);
+      const yLvn  = toY(this._engine._vpLvnPoc(priceMin, binSize, bins, nodeWindow));
+      if (xFrom != null && xTo != null) {
+        if (yPoc != null) pocLines.push({ y: yPoc, color: `rgba(${VP_RGB_DEFAULT},0.95)` });
+        if (yLvn != null) pocLines.push({ y: yLvn, color: `rgba(${VP_RGB_LVN},0.95)` });
+        pocLines = pocLines.map(l => ({ ...l, x0: xFrom, x1: xTo }));
+      }
+    }
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'round';
+      if (mode === 'pocs') {
+        ctx.strokeStyle = `rgba(${C_FAN_GREY_RGB},${FAN_FLAT_ALPHA})`;
+        ctx.stroke(grey);
+        ctx.lineWidth = 2;
+        for (const l of pocLines) {
+          ctx.strokeStyle = l.color;
+          ctx.beginPath(); ctx.moveTo(l.x0, l.y); ctx.lineTo(l.x1, l.y); ctx.stroke();
+        }
+      } else {
+        for (const [paths, rgb] of [[orange, VP_RGB_DEFAULT], [indigo, VP_RGB_LVN]]) {
+          paths.forEach((path, k) => {
+            const alpha = FAN_VP_ALPHA_FLOOR + (FAN_VP_ALPHA_MAX - FAN_VP_ALPHA_FLOOR) * Math.pow(k / (FAN_VP_LEVELS - 1), FAN_VP_GAMMA);
+            ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
+            ctx.stroke(path);
+          });
+        }
+      }
+      ctx.restore();
+    });
+  }
+}
+
 export class DynamicVWAPEngine {
   /**
    * @param {object} lwChart  — raw LightweightCharts chart instance
@@ -248,7 +462,7 @@ export class DynamicVWAPEngine {
     // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
     this._manualSeries = {};
     this._manualOrder  = []; // anchor bar indices (or {fan} entries) in placement order, for undo (LIFO)
-    this._manualFans   = []; // Alt+. fans: [{anchors, series, fixedEnd}]
+    this._manualFans   = []; // Alt+. fans (see createManualFan)
     this._lastN = 0; // last n passed to reveal() — for clamping a hold-and-drag's end point
   }
 
@@ -438,7 +652,7 @@ export class DynamicVWAPEngine {
   /**
    * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to
    * toIdx. withStdev also draws vwap +/- k*stdev bands (Shift+.) around it —
-   * see _vwapStdevBands. withProfile (Ctrl+.) also pairs a Volume Profile
+   * see _vwapStdevBands. withProfile (',' ',') also pairs a Volume Profile
    * with it, same anchor-to-toIdx span, removed together as one unit.
    * Returns true if an anchor was added, false if an existing one (with or
    * without bands/profile) was removed.
@@ -459,7 +673,7 @@ export class DynamicVWAPEngine {
 
   /**
    * Create a manual anchor spanning the fixed range [anchorIdx, toIdx] —
-   * used when ',' marked anchorIdx as a range-start and '.'/Shift+./Ctrl+.
+   * used when ',' marked anchorIdx as a range-start and '.'/Shift+./',' again
    * then finalizes it at toIdx (see replay.js's ',' and '.' keydown
    * handling). Unlike toggleManualAnchor, this always creates — it never
    * toggles off an existing nearby anchor, since ',' then '.' is a
@@ -543,40 +757,210 @@ export class DynamicVWAPEngine {
     return anchorIdx;
   }
 
+  /** Bars a centered swing window of size `window` spans before / after its
+   * bar — pandas rolling(window, center=True)'s split (peaks_valleys.py), so
+   * an even window has one more bar before than after (10 → 5 / 4). */
+  static _swingSides(window) {
+    const before = Math.floor(window / 2);
+    return { before, after: window - 1 - before };
+  }
+
+  /** Significance of bar idx: the largest window in FAN_PV_WINDOWS at
+   * which it's a peak (kind 'peak') / valley ('valley'), or 0 if it isn't
+   * one even at the smallest. Windows are clipped to the data available
+   * (bar 0 .. n), so recent swings aren't penalised for having few bars
+   * after them yet. */
+  _swingSignificance(idx, kind, n) {
+    const last = Math.min(n, this._bars.length - 1);
+    let sig = 0;
+    for (const w of FAN_PV_WINDOWS) {
+      const { before, after } = DynamicVWAPEngine._swingSides(w);
+      const from = Math.max(0, idx - before), to = Math.min(last, idx + after);
+      let ok = true;
+      for (let j = from; j <= to && ok; j++) {
+        ok = kind === 'peak' ? this._highs[j] <= this._highs[idx] : this._lows[j] >= this._lows[idx];
+      }
+      if (!ok) break;
+      sig = w;
+    }
+    return sig;
+  }
+
   /**
-   * Alt+. fan — an aVWAP anchored at every candle in [fromIdx, toIdx]
-   * (thinned to every k-th candle past MANUAL_FAN_MAX_LINES, first candle
-   * always kept), each line growing to "now" (fixedEnd null) or stopping at
-   * fixedEnd (',' then Alt+.). One undo step for the whole fan.
+   * aVWAP fan across [fromIdx, toIdx] — see the FAN_* constants. Lines grow
+   * to "now" (fixedEnd null) or stop at fixedEnd (',' then the fan key). One
+   * undo step for the whole fan.
    */
-  createManualFan(fromIdx, toIdx, fixedEnd = null) {
+  createManualFan(fromIdx, toIdx, fixedEnd = null, kind = 'sig') {
     if (fromIdx == null || toIdx == null) return null;
     const lo = Math.max(0, Math.min(fromIdx, toIdx)), hi = Math.min(this._bars.length - 1, Math.max(fromIdx, toIdx));
-    const count = hi - lo + 1;
-    if (count < 1) return null;
-    const step = Math.max(1, Math.ceil(count / MANUAL_FAN_MAX_LINES));
-    const anchors = [];
-    for (let i = lo; i <= hi; i += step) anchors.push(i);
-    const m = anchors.length;
-    const series = anchors.map((_, i) => {
-      const alpha = m > 1 ? FAN_ALPHA_OLD - (FAN_ALPHA_OLD - FAN_ALPHA_NEW) * i / (m - 1) : FAN_ALPHA_OLD;
-      return this._series(`rgba(${C_MANUAL_RGB},${alpha.toFixed(3)})`, 1, 0);
+    if (hi < lo) return null;
+    const n = this._lastN;
+    // Classify every candle: peak / valley (whichever survives the larger
+    // window if both) with its significance, or in-between.
+    let cands = [];
+    for (let i = lo; i <= hi; i++) {
+      const sp = this._swingSignificance(i, 'peak', n), sv = this._swingSignificance(i, 'valley', n);
+      const kind = sp === 0 && sv === 0 ? null : (sp >= sv ? 'peak' : 'valley');
+      cands.push({ idx: i, kind, raw: Math.max(sp, sv) });
+    }
+    // Drawing budget (FAN_POINT_BUDGET): each line costs its length in
+    // points, up to the fan's end bar. Over budget → swings first (most
+    // significant first), then evenly spaced in-between candles in what's left.
+    const endBar = fixedEnd != null ? hi : n;
+    const cost = c => Math.max(1, endBar - c.idx + 1);
+    const budget = kind === 'vp' ? FAN_VP_POINT_BUDGET : FAN_POINT_BUDGET;
+    if (cands.reduce((t, c) => t + cost(c), 0) > budget) {
+      let left = budget;
+      const keep = [];
+      for (const c of cands.filter(c => c.kind).sort((x, y) => y.raw - x.raw)) {
+        if (cost(c) > left) continue;
+        keep.push(c); left -= cost(c);
+      }
+      const between = cands.filter(c => !c.kind);
+      const avg = between.length ? between.reduce((t, c) => t + cost(c), 0) / between.length : 1;
+      const room = Math.min(between.length, Math.floor(left / avg));
+      for (let k = 0; k < room; k++) keep.push(between[Math.floor(k * between.length / room)]);
+      cands = keep.sort((x, y) => x.idx - y.idx);
+    }
+    // Significance 0..1: in-between 0; swings on a log scale of the window
+    // survived, relative to the fan's own most significant swing.
+    const top = Math.max(0, ...cands.map(c => c.raw));
+    const base = FAN_PV_WINDOWS[0];
+    const sig = cands.map(c => !c.kind ? 0
+      : top > base ? Math.log(c.raw / base) / Math.log(top / base) : 1);
+    let maxI = -1, minI = -1;
+    cands.forEach((c, i) => {
+      if (c.kind === 'peak'   && (maxI < 0 || this._highs[c.idx] > this._highs[cands[maxI].idx])) maxI = i;
+      if (c.kind === 'valley' && (minI < 0 || this._lows[c.idx]  < this._lows[cands[minI].idx]))  minI = i;
     });
-    const fan = { anchors, series, fixedEnd };
+    const fan = {
+      kind, fixedEnd, colorMode: kind === 'vp' ? 'hvn' : 'amber', maxI, minI, sig, vp: null,
+      anchors: cands.map(c => c.idx),
+      kinds:   cands.map(c => c.kind),
+      confirm: cands.map(c => c.idx),
+      styles:  [],
+      _bounds: null,
+    };
+    // One invisible carrier series holds the fan's widest line (so the price
+    // scale and the primitive's price conversion have real data); the
+    // FanPrimitive attached to it draws every line.
+    fan.carrier = this._series('rgba(0,0,0,0)', 1, 0);
+    fan.carrierAnchor = Math.min(...fan.anchors);
+    fan.primitive = new FanPrimitive(this, fan);
+    fan.carrier.attachPrimitive(fan.primitive);
+    this._applyFanColors(fan);
     this._manualFans.push(fan);
     this._manualOrder.push({ fan });
     this._renderFan(fan);
     return fan;
   }
 
+  /** Line styling for the fan's current mode (see FAN_MODES): amber, or
+   * peak red / valley teal with in-between candles grey, opacity and width
+   * from significance — except 'flat': every line grey at FAN_FLAT_ALPHA,
+   * 1px. In both non-amber modes the min/max aVWAPs (highest peak / lowest
+   * valley) are drawn in the Min|Max colors. */
+  _applyFanColors(fan) {
+    if (fan.kind === 'vp') { fan.primitive?.update(); return; }   // drawn per mode in FanPrimitive._drawVp
+    const redTeal = fan.colorMode !== 'amber';
+    fan.styles = fan.anchors.map((_, i) => {
+      const sg = fan.sig[i], kind = fan.kinds[i];
+      const visible = true;
+      if (redTeal && (i === fan.maxI || i === fan.minI)) {
+        const color = i === fan.maxI ? C_FAN_MAX : C_FAN_MIN;
+        return { visible, color, width: FAN_MINMAX_WIDTH, order: 2, key: color + '|w' + FAN_MINMAX_WIDTH };
+      }
+      const flat = fan.colorMode === 'flat';
+      const rgb = !redTeal ? C_MANUAL_RGB
+        : flat ? C_FAN_GREY_RGB
+        : kind === 'peak' ? C_PEAK_RGB : kind === 'valley' ? C_VALLEY_RGB : C_FAN_GREY_RGB;
+      // Opacity quantized to 0.02 steps so lines batch into few strokes.
+      const raw = flat ? FAN_FLAT_ALPHA
+        : !kind ? FAN_ALPHA_MIN : FAN_ALPHA_SWING_MIN + (FAN_ALPHA_MAX - FAN_ALPHA_SWING_MIN) * sg;
+      const alpha = Math.round(raw * 50) / 50;
+      const width = !flat && sg >= FAN_WIDE_MIN ? 2 : 1;
+      const color = `rgba(${rgb},${alpha})`;
+      return { visible, color, width, order: alpha + width, key: color + '|w' + width };
+    });
+    fan.primitive?.update();
+  }
+
+  /** aVWAP value from anchor a at bar i, or null where there's no volume yet. */
+  _vwapAt(a, i) {
+    const pvBase  = a > 0 ? this._cumPV[a - 1]  : 0;
+    const volBase = a > 0 ? this._cumVol[a - 1] : 0;
+    const vol = this._cumVol[i] - volBase;
+    return vol > 0 ? (this._cumPV[i] - pvBase) / vol : null;
+  }
+
+  /** Bring a fan to the current replay bar: its end bar, the carrier line
+   * (the fan's oldest anchor — appended one point per forward step, rebuilt
+   * otherwise) and the click hit-test's bounding box (_bounds, extended
+   * incrementally on forward steps). Drawing itself is FanPrimitive's. */
   _renderFan(fan) {
     const n = this._lastN;
     const toIdx = fan.fixedEnd != null ? Math.min(fan.fixedEnd, n) : n;
-    fan.anchors.forEach((a, i) => fan.series[i].setData(a <= toIdx ? this._vwapLine(a, toIdx) : []));
+    const shown = i => fan.anchors[i] <= toIdx && fan.confirm[i] <= n;
+    const step = fan._n === n - 1 && fan._bounds;
+    if (step && toIdx > fan._toIdx) {
+      const b = fan._bounds;
+      const time = (this._bars[toIdx].Date || this._bars[toIdx].date || '').slice(0, 10);
+      const cv = this._vwapAt(fan.carrierAnchor, toIdx);
+      if (cv != null) fan.carrier.update({ time, value: cv });
+      fan.anchors.forEach((a, i) => {
+        if (!shown(i)) return;
+        const v = this._vwapAt(a, toIdx);
+        if (v == null) return;
+        if (v < b.priceLo) b.priceLo = v; if (v > b.priceHi) b.priceHi = v;
+        if (a < b.loBar) b.loBar = a;
+      });
+      b.hiBar = toIdx;
+    } else if (!step) {
+      fan.carrier.setData(fan.carrierAnchor <= toIdx ? this._vwapLine(fan.carrierAnchor, toIdx) : []);
+      let pLo = Infinity, pHi = -Infinity, bLo = Infinity;
+      fan.anchors.forEach((a, i) => {
+        if (!shown(i)) return;
+        const pvBase = a > 0 ? this._cumPV[a - 1] : 0, volBase = a > 0 ? this._cumVol[a - 1] : 0;
+        for (let j = a; j <= toIdx; j++) {
+          const vol = this._cumVol[j] - volBase;
+          if (!(vol > 0)) continue;
+          const v = (this._cumPV[j] - pvBase) / vol;
+          if (v < pLo) pLo = v; if (v > pHi) pHi = v;
+        }
+        if (a < bLo) bLo = a;
+      });
+      fan._bounds = Number.isFinite(pLo) ? { loBar: bLo, hiBar: toIdx, priceLo: pLo, priceHi: pHi } : null;
+    }
+    // 'vp' fan: Volume Profile of the span so far (first anchor → end bar).
+    if (fan.kind === 'vp') {
+      const first = Math.min(...fan.anchors);
+      fan.vp = first <= toIdx ? this._vpHistogram(first, toIdx, FAN_VP_BINS) : null;
+    }
+    fan._n = n; fan._toIdx = toIdx;
+    fan.primitive.update();
   }
 
   _removeFan(fan) {
-    for (const s of fan.series) { try { this._chart.removeSeries(s); } catch (_) {} }
+    try { fan.carrier.detachPrimitive(fan.primitive); } catch (_) {}
+    try { this._chart.removeSeries(fan.carrier); } catch (_) {}
+  }
+
+  /** Click on a fan: advance it to the next of FAN_MODES (amber → red/teal
+   * weighted → red/teal flat → amber). Topmost (most recently placed) fan whose
+   * drawn area contains the click. Returns true if a fan was cycled. */
+  cycleFanColorAt(barIdx, price) {
+    for (let i = this._manualFans.length - 1; i >= 0; i--) {
+      const fan = this._manualFans[i], b = fan._bounds;
+      if (!b) continue;
+      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) {
+        const modes = fan.kind === 'vp' ? FAN_VP_MODES : FAN_MODES;
+        fan.colorMode = modes[(modes.indexOf(fan.colorMode) + 1) % modes.length];
+        this._applyFanColors(fan);
+        return true;
+      }
+    }
+    return false;
   }
 
   // ── PMM greedy extrema ────────────────────────────────────────────────────
@@ -779,7 +1163,7 @@ export class DynamicVWAPEngine {
     // StDev bands (vwap +/- k*stdev) around every peak/valley anchor line —
     // one shared on/off + multiples per indicator (see _buildAnchorPools/
     // reveal(), which draw them via the same _vwapStdevBands the manual
-    // Ctrl+. tool's Shift+. bands already use).
+    // anchor tool's Shift+. bands already use).
     this._peaksShowStdev    = !!events.peaks_show_stdev;
     this._peaksStdevMults   = events.peaks_stdev_mults   || [1, 2];
     this._valleysShowStdev  = !!events.valleys_show_stdev;

@@ -356,13 +356,12 @@ function _wireControls() {
   // the cursor. ',' — mark the candle under the cursor as a range start;
   // the next '.' finalizes it as a ranged aVWAP between the two points —
   // same modifiers, same meaning, as a normal tap: '.' alone is plain,
-  // Shift+. also draws stdev bands, Ctrl+. also pairs a Volume Profile. A
-  // second ',' on the same candle is instead the same as a plain Ctrl+.
-  // tap (anchor + Volume Profile, growing to "now" — start and end are
-  // effectively the same point); a second ',' on a different candle is a
-  // shortcut straight to a ranged aVWAP + Volume Profile, same as ',' then
-  // Ctrl+. (see the keydown handling below; Escape still cancels a
-  // pending ',' outright). Alt+Click or Alt+Space — lock a measurement
+  // Shift+. also draws stdev bands, Alt+. is the aVWAP fan. A second ','
+  // on the same candle places an anchor + Volume Profile growing to "now"
+  // (start and end are effectively the same point); a second ',' on a
+  // different candle a ranged aVWAP + Volume Profile — the Volume Profile
+  // tool lives on ',' (see the keydown handling below; Escape still cancels
+  // a pending ',' outright). Alt+Click or Alt+Space — lock a measurement
   // start point (at the click position, or wherever the mouse last was
   // over the chart for the keyboard version); move the mouse freely to
   // explore the $ / % change live; click again, or press Alt+Space again,
@@ -397,9 +396,8 @@ function _wireControls() {
 
     // e.code (physical key), not e.key, so Shift+. — which types '>', not
     // '.' — still detects as the period key; e.shiftKey decides whether
-    // stdev bands get drawn, e.ctrlKey/e.metaKey whether a Volume Profile
-    // is paired with it (same anchor; toggling '.' again at that bar, or
-    // undoing it, removes the whole pair together — not just the VWAP).
+    // stdev bands get drawn, e.altKey makes it the aVWAP fan, e.ctrlKey /
+    // e.metaKey the Volume-Profile-shaded fan.
     // Undo: Shift+X (capital X — lowercase letters start a ticker search in
     // browse.js, capitals are this app's single-key commands) or Ctrl+Z.
     if ((e.key === 'X' && !e.ctrlKey && !e.metaKey && !e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
@@ -410,9 +408,9 @@ function _wireControls() {
     // ',' marks whichever candle is under the cursor as a pending range
     // start — no click/drag/key-hold needed, just hover there. The next
     // '.' (anywhere else) finalizes it: a plain '.' draws a ranged aVWAP
-    // between the two points, Ctrl+. also pairs a Volume Profile, Shift+.
-    // also draws stdev bands — same modifiers, same meaning, as a normal
-    // tap. (Not '/' — that's already bound app-wide to toggleTheme in
+    // between the two points, Shift+. also draws stdev bands, Alt+. a fan
+    // across the range — same modifiers, same meaning, as a normal tap; a
+    // second ',' pairs a Volume Profile (below). (Not '/' — that's already bound app-wide to toggleTheme in
     // browse.js, which would fire on the same keypress.)
     if (e.code === 'Comma' && !e.altKey) {
       if (_lastChartX == null) return;
@@ -420,13 +418,12 @@ function _wireControls() {
       if (barIdx == null) return;
       if (_rangeStartIdx != null) {
         if (Math.abs(barIdx - _rangeStartIdx) <= 2) {
-          // ',' again on (near enough) the same candle — same as a plain
-          // Ctrl+. tap: a normal (non-ranged) anchor + Volume Profile that
-          // grows to "now", since start and end are effectively the same point.
+          // ',' again on (near enough) the same candle — a normal
+          // (non-ranged) anchor + Volume Profile that grows to "now", since
+          // start and end are effectively the same point.
           chart.toggleManualAnchorAtX(_lastChartX, false, true);
         } else {
-          // ',' on a different candle — shortcut straight to the most
-          // common combo (equivalent to ',' then Ctrl+.) without holding Ctrl.
+          // ',' on a different candle — a ranged aVWAP + Volume Profile.
           chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, true);
         }
         _rangeStartIdx = null;
@@ -437,32 +434,36 @@ function _wireControls() {
       chartEl.style.cursor = 'crosshair';
       return;
     }
-    // Alt+. — aVWAP fan: one at every candle from the hovered one to the
-    // current bar (growing to "now"); after ',' it fans across the marked
-    // range instead, every line stopping at the range's end.
-    if (e.code === 'Period' && e.altKey) {
+    // Alt+. — aVWAP fan: an aVWAP at every candle from the hovered one to
+    // the current bar (growing to "now"), weighted by swing significance;
+    // after ',' it fans across the marked range instead, every line
+    // stopping at the range's end.
+    // Ctrl+. — the same full set as one Volume-Profile-shaded fan: volume
+    // orange, each line bright through heavily traded price levels of the
+    // span and faint through thin ones (',' first for a range).
+    if (e.code === 'Period' && (e.altKey || e.ctrlKey || e.metaKey) && !(e.altKey && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       if (_lastChartX == null) return;
+      const kind = e.altKey ? 'sig' : 'vp';
       if (_rangeStartIdx != null) {
-        chart.createRangedFanAtX(_rangeStartIdx, _lastChartX);
+        chart.createRangedFanAtX(_rangeStartIdx, _lastChartX, kind);
         _rangeStartIdx = null;
         chartEl.style.cursor = '';
       } else {
-        chart.createFanAtX(_lastChartX);
+        chart.createFanAtX(_lastChartX, kind);
       }
       return;
     }
-    if (e.code === 'Period' && !e.altKey) {
+    if (e.code === 'Period' && !e.altKey && !e.ctrlKey && !e.metaKey) {
       if (_lastChartX == null) return;
       if (_rangeStartIdx != null) {
         // Same modifiers, same meaning, as a plain tap: '.' alone is a
-        // plain ranged aVWAP, Shift+. also draws stdev bands, Ctrl+. also
-        // pairs a Volume Profile.
-        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, e.shiftKey, e.ctrlKey || e.metaKey);
+        // plain ranged aVWAP, Shift+. also draws stdev bands.
+        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, e.shiftKey, false);
         _rangeStartIdx = null;
         chartEl.style.cursor = '';
       } else {
-        chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey, e.ctrlKey || e.metaKey);
+        chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey, false);
       }
       return;
     }
@@ -485,8 +486,10 @@ function _wireControls() {
       return;
     }
     // A plain click elsewhere (no measurement, no Alt) cycles a manual
-    // Volume Profile's display mode, if it landed inside one.
-    chart.cycleProfileModeAtXY(e.clientX - rect.left, e.clientY - rect.top);
+    // Volume Profile's display mode if it landed inside one, otherwise
+    // switches a peaks/valleys aVWAP fan's coloring if it landed on one.
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    if (!chart.cycleProfileModeAtXY(cx, cy)) chart.cycleFanColorAtXY(cx, cy);
   });
 
   window.addEventListener('mousemove', (e) => {

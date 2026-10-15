@@ -838,7 +838,7 @@ export class ChartManager {
     return this._engine.undoManualAnchor();
   }
 
-  /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.'/Shift+./Ctrl+. (see replay.js). */
+  /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.'/Shift+., and ',' ',' for the Volume Profile pairing (see replay.js). */
   createRangedAnchorAtX(startIdx, x, withStdev = false, withProfile = false) {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
@@ -846,21 +846,30 @@ export class ChartManager {
     return this._engine.createRangedManualAnchor(startIdx, barIdx, withStdev, withProfile);
   }
 
-  /** Alt+. — aVWAP fan anchored at every candle from the one under x to the current bar, all growing to "now". */
-  createFanAtX(x) {
+  /** aVWAP fan from the candle under x to the current bar, all growing to "now" — kind 'sig' (Alt+., significance-weighted) or 'vp' (Ctrl+., Volume-Profile-shaded orange). See avwap_replay.js FAN_*. */
+  createFanAtX(x, kind = 'sig') {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
     if (barIdx == null) return null;
-    return this._engine.createManualFan(barIdx, this._curN, null);
+    return this._engine.createManualFan(barIdx, this._curN, null, kind);
   }
 
-  /** ',' then Alt+. — aVWAP fan anchored at every candle across [startIdx, candle under x], each stopping at the range's end. */
-  createRangedFanAtX(startIdx, x) {
+  /** ',' then the fan key — the same fan across [startIdx, candle under x], each line stopping at the range's end. */
+  createRangedFanAtX(startIdx, x, kind = 'sig') {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
     if (barIdx == null) return null;
     const lo = Math.min(startIdx, barIdx), hi = Math.max(startIdx, barIdx);
-    return this._engine.createManualFan(lo, hi, hi);
+    return this._engine.createManualFan(lo, hi, hi, kind);
+  }
+
+  /** Click on an aVWAP fan cycles its coloring (amber → peaks/valleys red/teal + grey → major only). Returns true if one was cycled. */
+  cycleFanColorAtXY(x, y) {
+    if (!this._engine || !this._candles || !this._inPricePane(y)) return false;
+    const barIdx = this.barIndexAtX(x);
+    const price  = this._candles.coordinateToPrice(y);
+    if (barIdx == null || price == null) return false;
+    return this._engine.cycleFanColorAt(barIdx, price);
   }
 
   /** Show/hide the volume pane. */
