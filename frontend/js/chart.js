@@ -872,6 +872,15 @@ export class ChartManager {
     return this._engine.cycleFanColorAt(barIdx, price);
   }
 
+  /** Click inside a Shift+. anchor's ±3σ envelope cycles its band display (dashed bands → VP-shaded σ cloud → mixed → σ-distance → bands). Returns true if one was cycled. */
+  cycleStdevModeAtXY(x, y) {
+    if (!this._engine || !this._candles || !this._inPricePane(y)) return false;
+    const barIdx = this.barIndexAtX(x);
+    const price  = this._candles.coordinateToPrice(y);
+    if (barIdx == null || price == null) return false;
+    return this._engine.cycleStdevModeAt(barIdx, price);
+  }
+
   /** Show/hide the volume pane. */
   setVolumeVisible(visible) {
     this.setPaneVisible(VOLUME_PANE_ID, visible);

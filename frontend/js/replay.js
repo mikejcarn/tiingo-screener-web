@@ -486,10 +486,11 @@ function _wireControls() {
       return;
     }
     // A plain click elsewhere (no measurement, no Alt) cycles a manual
-    // Volume Profile's display mode if it landed inside one, otherwise
-    // switches a peaks/valleys aVWAP fan's coloring if it landed on one.
+    // Volume Profile's display mode if it landed inside one, else a Shift+.
+    // anchor's σ-band display if inside its ±3σ envelope, else an aVWAP
+    // fan's coloring if it landed on one.
     const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    if (!chart.cycleProfileModeAtXY(cx, cy)) chart.cycleFanColorAtXY(cx, cy);
+    if (!chart.cycleProfileModeAtXY(cx, cy) && !chart.cycleStdevModeAtXY(cx, cy)) chart.cycleFanColorAtXY(cx, cy);
   });
 
   window.addEventListener('mousemove', (e) => {
