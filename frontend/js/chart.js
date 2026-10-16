@@ -74,13 +74,15 @@ const CANDLE_MODE_LABELS  = { sigma: 'σ distance from aVWAP', relvol: 'relative
 // 'vpsplit' — the Volume Profile's "Both" split on the candles: the close's
 // level vs half the range POC's volume — orange (HVN side) above, LVN indigo
 // below, opacity rising with distance from that midpoint (CANDLE_SPLIT_ALPHA_MIN
-// right at it, opaque at the POC / an untraded level); wicks teal/red.
+// right at it, opaque at the POC / an untraded level), closes AT the POC
+// level yellow (C_CANDLE_POC, the profile line's POC yellow); wicks teal/red.
 // 'vplevel' — same anchor and same body ramp as 'relvol', but the ratio is
 // the Volume Profile (anchor → current bar, CANDLE_VP_BINS price levels) at
 // the candle's CLOSE vs the profile's average traded level: LVN closes fade
 // grey/transparent, HVN closes go full orange; wicks teal/red.
 const CANDLE_VP_BINS      = 100;
 const CANDLE_SPLIT_ALPHA_MIN = 0.2;
+const C_CANDLE_POC        = 'rgba(255,214,0,1)';
 const CANDLE_SIGMA_FULL   = 2.5;
 const CANDLE_RELVOL_FULL  = 2.5;
 const RGB_CANDLE_VOL_GREY = [95, 95, 95];    // ratio → 0 (quiet bars read neutral)
@@ -294,6 +296,20 @@ export class ChartManager {
       wickUpColor:    C_UP,   wickDownColor:   C_DOWN,
     });
     this._candleMarkers = LightweightCharts.createSeriesMarkers(this._candles, []);
+    // Invisible whitespace series holding every revealed bar's time (set in
+    // reveal, before the candles). Works around a lightweight-charts 5.2.1
+    // data-layer bug: while the candles are the ONLY series with data (e.g.
+    // standard candle mode with the volume pane off), each candle setData
+    // rebuilds the time-point map from scratch but leaves the sorted point
+    // list on the old, now-empty records; once a second series gets data
+    // (the Shift+K reference aVWAP), the next candle setData's cleanup reads
+    // those stale records and deletes EVERY time point — empty time scale,
+    // chart blank until something else invalidates it. With this series
+    // always holding rows the candles are never alone, so that path never runs.
+    this._timeKeeper = this._chart.addSeries(LightweightCharts.LineSeries, {
+      visible: false, lastValueVisible: false, priceLineVisible: false,
+      crosshairMarkerVisible: false,
+    });
 
 
     // Overlay series — transparent body, thick wicks/borders at divergence pivot bars
@@ -525,6 +541,7 @@ export class ChartManager {
       }
       return entry;
     });
+    this._timeKeeper.setData(candles.map(c => ({ time: c.time })));   // whitespace — see constructor
     this._candles.setData(candles);
     for (const [col, series] of Object.entries(this._paneSeries)) {
       series.setData(this._paneData[col].slice(0, n + 1));
@@ -962,8 +979,12 @@ export class ChartManager {
   _setCandleState(mode, refIdx) {
     this._candleMode = mode;
     this._candleRefIdx = mode === 'standard' ? null : refIdx;
-    this._removeCandleRefLine();
-    if (this._candleRefIdx != null) {
+    // Created once and kept (emptied by _candleBodyTint while no anchor),
+    // not removed / re-added per mode change: removing it and adding a fresh
+    // series on the next press could leave lightweight-charts' time scale
+    // with no visible range — the whole chart blank until the next redraw
+    // (most often with the volume pane off).
+    if (this._candleRefIdx != null && !this._candleRefLine) {
       this._candleRefLine = this._chart.addSeries(LightweightCharts.LineSeries, {
         color: C_CANDLE_REF_LINE, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
@@ -1018,7 +1039,7 @@ export class ChartManager {
         const s = bins[bin] / poc;                       // 0..1 of the POC
         const t = Math.min(1, Math.abs(s - 0.5) * 2);    // distance from the midpoint
         const alpha = (CANDLE_SPLIT_ALPHA_MIN + (1 - CANDLE_SPLIT_ALPHA_MIN) * t).toFixed(3);
-        const body = `rgba(${s >= 0.5 ? RGB_VOLUME : RGB_LVN},${alpha})`;
+        const body = bins[bin] === poc ? C_CANDLE_POC : `rgba(${s >= 0.5 ? RGB_VOLUME : RGB_LVN},${alpha})`;
         return { fill: body, edge: body, wick: e.close >= e.open ? C_UP : C_DOWN };
       };
     }
@@ -1452,7 +1473,7 @@ export class ChartManager {
     this.clearMeasure();
     if (this._engine)  { this._engine.destroy(); this._engine = null; }
     if (this._stLine)  { try { this._chart.removeSeries(this._stLine); } catch (_) {} this._stLine = null; }
-    if (this._chart)  { this._chart.remove(); this._chart = null; this._candles = null; }
+    if (this._chart)  { this._chart.remove(); this._chart = null; this._candles = null; this._timeKeeper = null; }
     this._lines = {};
     this._bars  = [];
     this._N     = 0;

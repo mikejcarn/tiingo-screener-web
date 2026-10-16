@@ -234,6 +234,9 @@ const C_MANUAL_WITH_PROFILE_LVN = `rgba(${VP_RGB_LVN},0.95)`;
 // line, dotted instead of solid so it still reads as distinct without
 // introducing a third unrelated color.
 const C_OTHERSIDE = `rgba(${VP_RGB_DEFAULT},0.85)`;
+// Bars each side of the anchor used to class it as a peak or valley (see
+// _otherSideExtremum).
+const OTHER_SIDE_WINDOW = 10;
 const C_OTHERSIDE_LVN = `rgba(${VP_RGB_LVN},0.85)`;
 
 // Opacity range for multi-config anchor types (currently peaks/valleys). All configs
@@ -599,15 +602,28 @@ class StdevCloudPrimitive {
 // (VP_MODE_BOTH) and its line-only mode (VP_MODE_POCS — histogram hidden,
 // no floating POC lines; segments at the POC's price level drawn yellow,
 // C_PROFILE_LINE_POC, so the POC is marked on the line itself) — and the
-// dotted other-side aVWAP likewise, still dotted: drawn per segment — volume orange where its price level is
+// other-side aVWAP likewise (dotted in the Both mode, solid in line-only): drawn per segment — volume orange where its price level is
 // above half the profile's POC volume, LVN indigo below (the histogram's own
-// split), width PROFILE_LINE_WIDTH_MIN..MAX by the profile's volume share at
-// that price (thick through heavily traded levels). Its chart series goes
+// split), width PROFILE_LINE_WIDTH_MIN..MAX by node strength at that price —
+// distance from half the POC (thick near the POC for orange, near untraded
+// levels for purple; thin around the midpoint). Its chart series goes
 // transparent in that mode; a series primitive on it does the drawing, from
 // the profile data the engine keeps on the entry (entry._vp, entry._toIdx).
 const PROFILE_LINE_WIDTH_MIN = 1;
 const PROFILE_LINE_WIDTH_MAX = 5;
 const C_PROFILE_LINE_POC     = 'rgba(255,214,0,1)';
+// Line-only mode: for each HVN / LVN zone (contiguous price levels on one
+// side of half the POC's volume) either aVWAP passes through, a thin level
+// line in the zone's color at the zone's peak — an orange zone's busiest
+// level, a purple zone's deepest trough by the histogram's LVN POC rule (so
+// never the profile's thin top / bottom edge) — from where an aVWAP first reaches it to
+// the range's end, one per zone.
+// Node strength t (0..1) — the zone peak's distance from half the POC's
+// volume, as the mixed histogram measures it (1 at the POC for orange, at an
+// untraded level for purple) — sets the line's opacity
+// PROFILE_ZONE_LINE_ALPHA_MIN..1 and width 1..PROFILE_ZONE_LINE_WIDTH_MAX.
+const PROFILE_ZONE_LINE_ALPHA_MIN = 0.35;
+const PROFILE_ZONE_LINE_WIDTH_MAX = 3;
 class ProfileLinePrimitive {
   constructor(engine, entry) {
     this._engine = engine;
@@ -636,7 +652,9 @@ class ProfileLinePrimitive {
     const toIdx = entry._toIdx;
     // The anchor's aVWAP, plus (dotted) the other-side aVWAP when present.
     const lines = [{ a: entry.anchorIdx, dotted: false }];
-    if (entry._otherIdx != null) lines.push({ a: entry._otherIdx, dotted: true });
+    // Line-only mode draws it solid too: its zone fills already tie it to
+    // its levels, so the dots aren't needed to tell it apart.
+    if (entry._otherIdx != null) lines.push({ a: entry._otherIdx, dotted: !lineOnly });
     const segsOf = a => {
       const from = Math.max(a, Math.floor(range.from) - 1), to = Math.min(toIdx, Math.ceil(range.to) + 1);
       const pvBase = a > 0 ? eng._cumPV[a - 1] : 0, volBase = a > 0 ? eng._cumVol[a - 1] : 0;
@@ -654,14 +672,108 @@ class ProfileLinePrimitive {
           segs.push({ x0: px, y0: py, x1: x, y1: y,
                       color: lineOnly && b === pocBin ? C_PROFILE_LINE_POC
                            : `rgba(${share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},0.95)`,
-                      width: PROFILE_LINE_WIDTH_MIN + (PROFILE_LINE_WIDTH_MAX - PROFILE_LINE_WIDTH_MIN) * share });
+                      // width by node strength — distance from half the POC
+                      // (the mixed histogram's bar length), so strong purple
+                      // (very thin) levels are as bold as strong orange ones
+                      width: PROFILE_LINE_WIDTH_MIN + (PROFILE_LINE_WIDTH_MAX - PROFILE_LINE_WIDTH_MIN) * Math.min(1, Math.abs(share - 0.5) * 2) });
         }
         px = x; py = y;
       }
       return segs;
     };
+    // Zone level lines (line-only mode): one per HVN / LVN zone that either
+    // aVWAP (main or dotted contra) passes through, at the zone's peak (see
+    // zonePoc below), from the earliest bar either aVWAP reaches
+    // that level — or, if neither touches it exactly, first enters the zone —
+    // to the range's end. One line per zone, no doubles.
+    const zoneLines = [];
+    if (lineOnly) {
+      const zoneOf = new Int32Array(bins.length);
+      // Zone peak: an orange zone's busiest level (ties → the middle of the
+      // tied run); a purple zone's deepest trough (below).
+      const zonePoc = [];                      // zone -> its peak bin
+      const zoneTies = [];                     // zone -> bins tied at the peak
+      let z = -1;
+      for (let b = 0; b < bins.length; b++) {
+        const hvn = bins[b] / poc >= 0.5;
+        if (b === 0 || hvn !== (bins[b - 1] / poc >= 0.5)) z++;
+        zoneOf[b] = z;
+        const cur = zonePoc[z];
+        const better = cur == null || (hvn ? bins[b] > bins[cur] : bins[b] < bins[cur]);
+        if (better) { zonePoc[z] = b; zoneTies[z] = [b]; }
+        else if (bins[b] === bins[cur]) zoneTies[z].push(b);
+      }
+      zoneTies.forEach((t, zz) => { zonePoc[zz] = t[Math.floor((t.length - 1) / 2)]; });
+      // Purple zones use the histogram's LVN POC rule (_vpLvnPoc): the
+      // deepest real trough — bins equal to their full centered window's min,
+      // tied runs collapsed to their middle, widest on ties — so a zone at
+      // the profile's thin top / bottom isn't pinned to the range's edge.
+      // No trough in the zone → its thinnest level at least a window in
+      // from the profile's edges (else just off them).
+      {
+        const n = bins.length, W = MANUAL_VP_NODE_WINDOW;
+        const trough = new Array(n).fill(false);
+        for (let i = W; i < n - W; i++) {
+          let mn = Infinity;
+          for (let j = i - W; j <= i + W; j++) if (bins[j] < mn) mn = bins[j];
+          trough[i] = bins[i] === mn;
+        }
+        const best = new Map();                // purple zone -> [runStart, runEnd]
+        for (let i = 0; i < n; i++) {
+          if (!trough[i]) continue;
+          let j = i;
+          while (j + 1 < n && trough[j + 1] && zoneOf[j + 1] === zoneOf[i]) j++;
+          const zz = zoneOf[i], cur = best.get(zz);
+          if (bins[i] / poc < 0.5 &&
+              (!cur || bins[i] < bins[cur[0]] || (bins[i] === bins[cur[0]] && j - i > cur[1] - cur[0]))) best.set(zz, [i, j]);
+          i = j;
+        }
+        for (let zz = 0; zz <= z; zz++) {
+          if (bins[zonePoc[zz]] / poc >= 0.5) continue;        // orange: busiest level stands
+          const run = best.get(zz);
+          if (run) { zonePoc[zz] = Math.floor((run[0] + run[1]) / 2); continue; }
+          for (const [lo2, hi2] of [[W, n - 1 - W], [1, n - 2]]) {
+            let m = null;
+            for (let b = lo2; b <= hi2; b++) if (zoneOf[b] === zz && (m == null || bins[b] < bins[m])) m = b;
+            if (m != null) { zonePoc[zz] = m; break; }
+          }
+        }
+      }
+      const start = new Map();                 // zone -> {exact: bar|null, entry: bar}
+      for (const { a } of lines) {
+        const pvBase = a > 0 ? eng._cumPV[a - 1] : 0, volBase = a > 0 ? eng._cumVol[a - 1] : 0;
+        for (let i = a; i <= toIdx; i++) {
+          const vol = eng._cumVol[i] - volBase;
+          if (!(vol > 0)) continue;
+          const b = Math.floor(((eng._cumPV[i] - pvBase) / vol - lo) / bs);
+          if (b < 0 || b >= bins.length) continue;
+          const zz = zoneOf[b];
+          const st = start.get(zz) ?? { exact: null, entry: i };
+          if (i < st.entry) st.entry = i;
+          if (b === zonePoc[zz] && (st.exact == null || i < st.exact)) st.exact = i;
+          start.set(zz, st);
+        }
+      }
+      const xEnd = ts.logicalToCoordinate(toIdx);
+      for (const [zz, st] of start) {
+        const pb = zonePoc[zz];
+        const share = bins[pb] / poc;
+        const t = Math.min(1, Math.abs(share - 0.5) * 2);
+        const x0 = ts.logicalToCoordinate(st.exact ?? st.entry), y = toY(lo + (pb + 0.5) * bs);
+        if (x0 == null || xEnd == null || y == null) continue;
+        zoneLines.push({ x0, x1: xEnd, y, t,
+                         rgb: share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN,
+                         isPoc: bins[pb] === poc });     // the profile's POC level → yellow line
+      }
+    }
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       ctx.save();
+      for (const zl of zoneLines) {
+        ctx.strokeStyle = zl.isPoc ? C_PROFILE_LINE_POC
+          : `rgba(${zl.rgb},${(PROFILE_ZONE_LINE_ALPHA_MIN + (1 - PROFILE_ZONE_LINE_ALPHA_MIN) * zl.t).toFixed(3)})`;
+        ctx.lineWidth = 1 + (PROFILE_ZONE_LINE_WIDTH_MAX - 1) * zl.t;
+        ctx.beginPath(); ctx.moveTo(zl.x0, zl.y); ctx.lineTo(zl.x1, zl.y); ctx.stroke();
+      }
       for (const { a, dotted } of lines) {
         ctx.lineCap = dotted ? 'butt' : 'round';
         ctx.setLineDash(dotted ? [2, 3] : []);
@@ -1262,15 +1374,14 @@ export class DynamicVWAPEngine {
   }
 
   /**
-   * Find the "other side" extremum bar within [anchorIdx, toIdx] to pair a
+   * Find the "other side" extremum bar within (anchorIdx, toIdx] to pair a
    * second aVWAP with a manual anchor's Volume Profile — the swing-high
    * aVWAP complementing a swing-low anchor, or vice versa, so the profile
    * reads with both channel boundaries drawn in, not just the one the user
-   * happened to anchor on. Whichever of the range's highest high / lowest
-   * low sits FARTHER from anchorIdx is treated as "the other side" (the
-   * nearer one is assumed to be close to what the user already anchored
-   * on). Returns { idx, isHigh } or null if the range is too short or flat
-   * (high and low bar coincide, so there's nothing distinct to anchor).
+   * happened to anchor on. The anchor is classed as a peak or valley by its
+   * neighborhood (see below) and the other side is always the opposite
+   * extreme: the range's lowest low after a peak, highest high after a
+   * valley. Returns { idx, isHigh } or null if the range is too short.
    */
   /** Other-side dotted aVWAP's series color for the profile's mode —
    * transparent where ProfileLinePrimitive draws it (Both / line-only). */
@@ -1281,16 +1392,25 @@ export class DynamicVWAPEngine {
 
   _otherSideExtremum(anchorIdx, toIdx) {
     if (toIdx <= anchorIdx) return null;
-    let idxLow = anchorIdx, idxHigh = anchorIdx;
-    let lowVal = this._lows[anchorIdx], highVal = this._highs[anchorIdx];
-    for (let i = anchorIdx + 1; i <= toIdx; i++) {
-      if (this._lows[i]  < lowVal)  { lowVal  = this._lows[i];  idxLow  = i; }
-      if (this._highs[i] > highVal) { highVal = this._highs[i]; idxHigh = i; }
+    // Which side the anchor is on: a peak if its high stands above more of
+    // its neighbors' highs (OTHER_SIDE_WINDOW bars each side) than its low
+    // stands below their lows; a valley otherwise.
+    const n = this._highs.length;
+    let peakScore = 0, valleyScore = 0;
+    for (let j = Math.max(0, anchorIdx - OTHER_SIDE_WINDOW); j <= Math.min(n - 1, anchorIdx + OTHER_SIDE_WINDOW); j++) {
+      if (j === anchorIdx) continue;
+      if (this._highs[j] < this._highs[anchorIdx]) peakScore++;
+      if (this._lows[j]  > this._lows[anchorIdx])  valleyScore++;
     }
-    if (idxLow === idxHigh) return null;
-    const distLow  = Math.abs(anchorIdx - idxLow);
-    const distHigh = Math.abs(anchorIdx - idxHigh);
-    return distHigh >= distLow ? { idx: idxHigh, isHigh: true } : { idx: idxLow, isHigh: false };
+    const isPeak = peakScore >= valleyScore;
+    // The other side: the range's lowest low after a peak, highest high
+    // after a valley.
+    let idx = -1, val = isPeak ? Infinity : -Infinity;
+    for (let i = anchorIdx + 1; i <= toIdx; i++) {
+      const v = isPeak ? this._lows[i] : this._highs[i];
+      if (isPeak ? v < val : v > val) { val = v; idx = i; }
+    }
+    return idx === -1 ? null : { idx, isHigh: !isPeak };
   }
 
   _buildPmmPools(configs) {
