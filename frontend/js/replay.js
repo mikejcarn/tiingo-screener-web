@@ -582,6 +582,12 @@ function _wireKeys() {
     if (e.key === 'ArrowUp'   && !e.shiftKey) { e.preventDefault(); fps = Math.min(60, fps + 1); fpsInput.value = fps; }
     if (e.key === 'ArrowDown' && !e.shiftKey) { e.preventDefault(); fps = Math.max(1, fps - 1);  fpsInput.value = fps; }
     if (e.key === 'Backspace') { e.preventDefault(); _setAutoFit(!autoFit); }
+    // Shift+K — cycle live candle coloring (standard → σ distance from the
+    // latest Shift+. aVWAP → relative volume → standard).
+    if (e.key === 'K' && !ctrl && !e.altKey) {
+      e.preventDefault();
+      chart.cycleCandleMode(_lastChartX);
+    }
     // Shift+V — same toggle as the Volume row in the show/hide panel.
     if (e.key === 'V' && !ctrl && !e.altKey) {
       e.preventDefault();

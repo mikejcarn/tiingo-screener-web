@@ -29,7 +29,7 @@ import { OBZoneSeries } from './ob_zone_series.js';
 import { FVGZoneSeries } from './fvg_zone_series.js';
 import { GapZoneSeries } from './gap_zone_series.js';
 import { LiquidityZoneSeries } from './liquidity_zone_series.js';
-import { VolumeProfileSeries, RGB_DEFAULT as RGB_VOLUME } from './volume_profile_series.js';
+import { VolumeProfileSeries, RGB_DEFAULT as RGB_VOLUME, RGB_LVN_DEFAULT as RGB_LVN } from './volume_profile_series.js';
 import { cssVar, isDark, onThemeChange } from './theme.js';
 
 // Segment types with a real zone (top/bottom bounds) get a custom series that
@@ -42,6 +42,60 @@ const ZONE_SERIES = { ob: OBZoneSeries, fvg: FVGZoneSeries, gap: GapZoneSeries, 
 
 const C_UP   = 'rgba(38,166,154,1)';
 const C_DOWN = 'rgba(239,83,80,1)';
+// Live candle coloring (Shift+K cycles CANDLE_MODES). 'standard' leaves every
+// existing color path untouched (plain up/down, candle_colors' tint,
+// divergence wicks). The others color the WHOLE candle (border, wick, body)
+// so the color reads at any zoom — direction is carried by fill instead:
+// filled = up, hollow = down:
+//   'sigma'  — close's distance from a reference aVWAP in its σ. Entering the
+//              mode anchors that aVWAP at the candle under the mouse (shown
+//              as a thin dashed grey line while the mode is on); with the
+//              mouse off the chart it falls back to the latest Shift+. /
+//              manual anchor. Grey at the aVWAP, shading to red above / teal
+//              below, full at ±CANDLE_SIGMA_FULL σ; candles before the anchor
+//              stay standard.
+//   'relvol' — (one style for every candle: body — fill and border — carries
+//              the volume as an opaque orange ramp; only the WICK keeps the
+//              up teal / down red, so direction still reads)
+//              bar volume / the AVERAGE volume from an anchor to the current
+//              bar — relativity within that range only (the candle_colors
+//              RelVolume indicator covers the full chart). Anchored like
+//              'sigma': the candle under the mouse when entering the mode
+//              (mouse off the chart → the anchor in use / latest manual
+//              anchor). ratio = bar volume / range average, split at the
+//              average: below it the body fades from RGB_CANDLE_VOL_AVG
+//              (medium orange, ratio 1) toward RGB_CANDLE_VOL_GREY and
+//              transparency (CANDLE_VOL_ALPHA_MIN) as ratio → 0; above it it brightens to full volume orange at
+//              CANDLE_RELVOL_FULL×. Black only for a bar with genuinely zero
+//              volume. Candles before the anchor stay standard.
+const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vplevel', 'vpsplit'];
+const CANDLE_MODE_LABELS  = { sigma: 'σ distance from aVWAP', relvol: 'relative volume',
+                              vplevel: 'volume-profile level', vpsplit: 'HVN / LVN split' };
+// 'vpsplit' — the Volume Profile's "Both" split on the candles: the close's
+// level vs half the range POC's volume — orange (HVN side) above, LVN indigo
+// below, opacity rising with distance from that midpoint (CANDLE_SPLIT_ALPHA_MIN
+// right at it, opaque at the POC / an untraded level); wicks teal/red.
+// 'vplevel' — same anchor and same body ramp as 'relvol', but the ratio is
+// the Volume Profile (anchor → current bar, CANDLE_VP_BINS price levels) at
+// the candle's CLOSE vs the profile's average traded level: LVN closes fade
+// grey/transparent, HVN closes go full orange; wicks teal/red.
+const CANDLE_VP_BINS      = 100;
+const CANDLE_SPLIT_ALPHA_MIN = 0.2;
+const CANDLE_SIGMA_FULL   = 2.5;
+const CANDLE_RELVOL_FULL  = 2.5;
+const RGB_CANDLE_VOL_GREY = [95, 95, 95];    // ratio → 0 (quiet bars read neutral)
+const RGB_CANDLE_VOL_AVG  = [165, 85, 20];   // ratio 1 — exactly average volume
+const CANDLE_VOL_ALPHA_MIN = 0.25;            // body opacity as ratio → 0 (opaque from the average up)
+const RGB_CANDLE_NEUTRAL  = [120, 120, 120];
+const RGB_CANDLE_ABOVE    = [239, 83, 80];
+const RGB_CANDLE_BELOW    = [38, 166, 154];
+const RGB_CANDLE_VOLUME   = [255, 127, 0];
+// Reference aVWAP of the anchored candle modes — dotted, volume orange.
+const C_CANDLE_REF_LINE   = `rgba(${RGB_VOLUME},0.85)`;
+// Shift+K over a candle more than this many bars from the current anchor
+// re-anchors there and restarts the color cycle (at its first colored mode).
+const CANDLE_REANCHOR_BARS = 2;
+const lerpRgb = (a, b, t) => `rgb(${a.map((x, q) => Math.round(x + (b[q] - x) * t)).join(',')})`;
 // Volume histogram — its own pane directly below price (a built-in pane
 // definition ahead of any oscillator panes, see load()), in the app's volume
 // orange (shared with the Volume Profile). Shorter than an oscillator pane
@@ -180,6 +234,8 @@ export class ChartManager {
     this._N         = 0;
     this._curN      = -1;
     this._tintEnabled = true;  // candle_colors' color/Fill_Color tint — toggled via setIndicatorVisible
+    this._candleMode  = 'standard';   // live candle coloring, see CANDLE_MODES
+    this._volCum      = null;         // cumulative volume, built per load (range averages for 'relvol')
     this._measureEl          = null;  // live drag-measure overlay box
     this._measureLabelEl     = null;
     this._measureStartEl     = null;  // starting-price span within the label (neutral color)
@@ -267,6 +323,9 @@ export class ChartManager {
 
   load(bars, styles = {}, panes = []) {
     this._bars = bars;
+    this._volCum = null;
+    this._candleRefIdx = null;   // σ-mode anchor bar — bars changed, drop it
+    this._removeCandleRefLine();
     this._N    = bars.length;
     this.clearMeasure();
 
@@ -405,7 +464,8 @@ export class ChartManager {
     this._curN = n;
 
     // Candles with per-bar color overrides
-    const candles = slice.map(b => {
+    const bodyTint = this._candleBodyTint(n);   // null in 'standard'
+    const candles = slice.map((b, i) => {
       const time  = (b.Date || b.date || '').slice(0, 10);
       const entry = {
         time,
@@ -450,6 +510,18 @@ export class ChartManager {
         entry.color       = 'rgba(0,0,0,0)';
         entry.borderColor = ud ? C_UP : C_DOWN;
         entry.wickColor   = ud ? C_UP : C_DOWN;
+      }
+      // Live candle mode (Shift+K): whole candle in the mode's color,
+      // filled when up, hollow when down.
+      const tint = bodyTint ? bodyTint(i, entry) : null;
+      if (tint?.edge) {                  // body carries the mode, wick the direction
+        entry.color       = tint.fill;
+        entry.borderColor = tint.edge;
+        entry.wickColor   = tint.wick ?? tint.edge;
+      } else if (tint) {
+        entry.color       = entry.close >= entry.open ? tint : 'rgba(0,0,0,0)';
+        entry.borderColor = tint;
+        entry.wickColor   = tint;
       }
       return entry;
     });
@@ -829,13 +901,21 @@ export class ChartManager {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
     if (barIdx == null) return null;
-    return this._engine.toggleManualAnchor(barIdx, this._curN, withStdev, withProfile);
+    const r = this._engine.toggleManualAnchor(barIdx, this._curN, withStdev, withProfile);
+    this._refreshCandleTint();
+    return r;
   }
 
   /** Undo the most recently placed manual aVWAP anchor (LIFO). Returns the removed bar index, or null if none. */
   undoManualAnchor() {
     if (!this._engine) return null;
-    return this._engine.undoManualAnchor();
+    const r = this._engine.undoManualAnchor();
+    if (r?.candle) {                         // a Shift+K step — restore the state before it
+      this._setCandleState(r.candle.mode, r.candle.refIdx);
+      return null;
+    }
+    this._refreshCandleTint();
+    return r;
   }
 
   /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.'/Shift+., and ',' ',' for the Volume Profile pairing (see replay.js). */
@@ -843,7 +923,173 @@ export class ChartManager {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
     if (barIdx == null) return null;
-    return this._engine.createRangedManualAnchor(startIdx, barIdx, withStdev, withProfile);
+    const r = this._engine.createRangedManualAnchor(startIdx, barIdx, withStdev, withProfile);
+    this._refreshCandleTint();
+    return r;
+  }
+
+  // ── Live candle coloring (Shift+K) ───────────────────────────────────────
+
+  /** Advance to the next of CANDLE_MODES and redraw. Entering 'sigma'
+   * anchors its reference aVWAP at the candle under x (#chart-local px, the
+   * last mouse position), if any. Returns the new mode. */
+  cycleCandleMode(x = null) {
+    const prev = { mode: this._candleMode, refIdx: this._candleRefIdx };
+    const hoveredNow = x != null ? this.barIndexAtX(x) : null;
+    const newCandle = this._candleMode !== 'standard' && hoveredNow != null && this._candleRefIdx != null
+      && Math.abs(hoveredNow - this._candleRefIdx) > CANDLE_REANCHOR_BARS;
+    // A different candle restarts the wheel at its first colored mode;
+    // otherwise advance.
+    this._candleMode = newCandle
+      ? CANDLE_MODES[1]
+      : CANDLE_MODES[(CANDLE_MODES.indexOf(this._candleMode) + 1) % CANDLE_MODES.length];
+    // Anchor at the hovered candle; mouse off the chart keeps the anchor
+    // already in use (σ → relvol), else none (falls back per mode).
+    const refIdx = this._candleMode === 'standard' ? null : (hoveredNow ?? this._candleRefIdx);
+    // Switching a coloring on (from standard) or re-anchoring it is an undo
+    // step (Shift+X / Ctrl+Z restore `prev`); cycling σ → relvol → standard
+    // on the same anchor isn't.
+    if ((prev.mode === 'standard' && this._candleMode !== 'standard') || newCandle) {
+      this._engine?.pushUndoStep({ candle: prev });
+    }
+    const mode = this._candleMode;
+    this._candleMode = prev.mode;            // _setCandleState applies the change
+    this._setCandleState(mode, refIdx);
+    return this._candleMode;
+  }
+
+  /** Apply a candle mode + anchor: reference line, label, redraw. */
+  _setCandleState(mode, refIdx) {
+    this._candleMode = mode;
+    this._candleRefIdx = mode === 'standard' ? null : refIdx;
+    this._removeCandleRefLine();
+    if (this._candleRefIdx != null) {
+      this._candleRefLine = this._chart.addSeries(LightweightCharts.LineSeries, {
+        color: C_CANDLE_REF_LINE, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+    }
+    this._showCandleModeLabel();
+    if (this._curN >= 0) this.reveal(this._curN);
+  }
+
+  _removeCandleRefLine() {
+    if (this._candleRefLine) { try { this._chart.removeSeries(this._candleRefLine); } catch (_) {} }
+    this._candleRefLine = null;
+  }
+
+  /** The 'sigma' reference depends on manual anchors — redraw after they change. */
+  _refreshCandleTint() {
+    if (this._candleMode === 'sigma' && this._curN >= 0) this.reveal(this._curN);
+  }
+
+  /** Per-bar body color function for the current candle mode, or null
+   * ('standard', or no reference anchor yet in 'sigma'). */
+  _candleBodyTint(n) {
+    // Reference aVWAP line (both anchored modes).
+    this._candleRefLine?.setData(this._candleRefIdx != null && this._candleRefIdx <= n
+      ? this._engine._vwapLine(this._candleRefIdx, n) : []);
+    if (this._candleMode === 'sigma') {
+      // Hover-set anchor (Shift+K), else the latest Shift+. / manual anchor.
+      const ref = this._candleRefIdx != null
+        ? (this._candleRefIdx <= n ? this._engine?._stdevCloudData(this._candleRefIdx, n) : null)
+        : this._engine?.sigmaReference(n);
+      if (!ref) return null;
+      return (i, e) => {
+        const j = i - ref.from;
+        if (j < 0 || j >= ref.vwap.length) return null;
+        const v = ref.vwap[j], d = ref.sd[j];
+        if (Number.isNaN(v) || !(d > 0)) return null;
+        const t = Math.max(-1, Math.min(1, (e.close - v) / d / CANDLE_SIGMA_FULL));
+        return lerpRgb(RGB_CANDLE_NEUTRAL, t >= 0 ? RGB_CANDLE_ABOVE : RGB_CANDLE_BELOW, Math.abs(t));
+      };
+    }
+    if (this._candleMode === 'vpsplit') {
+      const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
+      if (a == null || a > n || !this._engine) return null;
+      const vp = this._engine._vpHistogram(a, n, CANDLE_VP_BINS);
+      if (!vp) return null;
+      const { priceMin, binSize, bins } = vp;
+      const poc = Math.max(...bins);
+      if (!(poc > 0)) return null;
+      return (i, e) => {
+        if (i < a) return null;
+        const bin = Math.min(bins.length - 1, Math.max(0, Math.floor((e.close - priceMin) / binSize)));
+        const s = bins[bin] / poc;                       // 0..1 of the POC
+        const t = Math.min(1, Math.abs(s - 0.5) * 2);    // distance from the midpoint
+        const alpha = (CANDLE_SPLIT_ALPHA_MIN + (1 - CANDLE_SPLIT_ALPHA_MIN) * t).toFixed(3);
+        const body = `rgba(${s >= 0.5 ? RGB_VOLUME : RGB_LVN},${alpha})`;
+        return { fill: body, edge: body, wick: e.close >= e.open ? C_UP : C_DOWN };
+      };
+    }
+    if (this._candleMode === 'vplevel') {
+      const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
+      if (a == null || a > n || !this._engine) return null;
+      const vp = this._engine._vpHistogram(a, n, CANDLE_VP_BINS);
+      if (!vp) return null;
+      const { priceMin, binSize, bins } = vp;
+      const traded = bins.filter(v => v > 0);
+      const avg = traded.reduce((t, v) => t + v, 0) / (traded.length || 1);
+      if (!(avg > 0)) return null;
+      return (i, e) => {
+        if (i < a) return null;
+        const bin = Math.min(bins.length - 1, Math.max(0, Math.floor((e.close - priceMin) / binSize)));
+        return { ...this._volumeRampBody(bins[bin], avg), wick: e.close >= e.open ? C_UP : C_DOWN };
+      };
+    }
+    if (this._candleMode === 'relvol') {
+      const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
+      if (a == null || a > n) return null;
+      if (!this._volCum) {
+        let sum = 0;
+        this._volCum = this._bars.map(b => (sum += (b.Volume ?? b.volume ?? 0)));
+      }
+      const avg = (this._volCum[n] - (a > 0 ? this._volCum[a - 1] : 0)) / (n - a + 1);
+      if (!(avg > 0)) return null;
+      return (i, e) => {
+        if (i < a) return null;
+        const b = this._bars[i];
+        const vol = b.Volume ?? b.volume ?? 0;
+        return { ...this._volumeRampBody(vol, avg), wick: e.close >= e.open ? C_UP : C_DOWN };
+      };
+    }
+    return null;
+  }
+
+  /** Body color for a volume-like value vs its average (shared by 'relvol'
+   * and 'vplevel'): below average → grey + transparent (squared), average →
+   * opaque medium orange, CANDLE_RELVOL_FULL× → full volume orange; black
+   * only for a genuine zero. */
+  _volumeRampBody(vol, avg) {
+    const ratio = vol / avg;
+    let body;
+    if (!(vol > 0)) body = 'rgb(0,0,0)';
+    else if (ratio < 1) {
+      // Below average: toward grey AND transparent. Squared — typical bars
+      // sit at 0.6-1×, so a linear fade barely moves them.
+      const q = ratio * ratio;
+      const rgb = RGB_CANDLE_VOL_GREY.map((g, k) => Math.round(g + (RGB_CANDLE_VOL_AVG[k] - g) * q));
+      body = `rgba(${rgb.join(',')},${(CANDLE_VOL_ALPHA_MIN + (1 - CANDLE_VOL_ALPHA_MIN) * q).toFixed(3)})`;
+    } else {
+      body = lerpRgb(RGB_CANDLE_VOL_AVG, RGB_CANDLE_VOLUME, Math.min(1, (ratio - 1) / (CANDLE_RELVOL_FULL - 1)));
+    }
+    return { fill: body, edge: body };
+  }
+
+  /** Small grey label at the price pane's top-left naming the active candle
+   * mode (removed in 'standard'). */
+  _showCandleModeLabel() {
+    this._candleModeLabel?.remove();
+    this._candleModeLabel = null;
+    if (this._candleMode === 'standard') return;
+    const row = this._chart.panes()[0]?.getHTMLElement();
+    const cell = row?.tagName === 'TR' ? row.cells[1] : row;
+    if (!cell) return;
+    const el = document.createElement('div');
+    el.className = 'pane-overlay';
+    el.textContent = `Candles · ${CANDLE_MODE_LABELS[this._candleMode]}  (Shift+K)`;
+    cell.appendChild(el);
+    this._candleModeLabel = el;
   }
 
   /** aVWAP fan from the candle under x to the current bar, all growing to "now" — kind 'sig' (Alt+., significance-weighted) or 'vp' (Ctrl+., Volume-Profile-shaded orange). See avwap_replay.js FAN_*. */
@@ -1199,6 +1445,7 @@ export class ChartManager {
     this._destroyDivLines();
     this._destroyPoc();
     this._destroySegments();
+    this._removeCandleRefLine();
     this._destroyPanes();
     this._paneDefs = [];
     if (this._maxPaneId) { this._maxPaneId = null; try { navigator.keyboard?.unlock?.(); } catch (_) {} }

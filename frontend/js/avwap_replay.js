@@ -925,6 +925,7 @@ export class DynamicVWAPEngine {
   undoManualAnchor() {
     const last = this._manualOrder.pop();
     if (last === undefined) return null;
+    if (last?.candle) return last;           // chart-level step (Shift+K candle mode) — chart.js restores it
     if (last?.fan) {                         // a whole fan is one undo step
       this._removeFan(last.fan);
       this._manualFans = this._manualFans.filter(f => f !== last.fan);
@@ -1689,6 +1690,35 @@ export class DynamicVWAPEngine {
     const slopeRef = mags.length ? mags[Math.min(mags.length - 1, Math.floor(AVWAP_SLOPE_PCTL * (mags.length - 1)))] : 1;
     return { from: anchorIdx, to: toIdx, vwap, sd, slope, slopeRef,
              vp: len ? this._vpHistogram(anchorIdx, toIdx, FAN_VP_BINS) : null };
+  }
+
+  /** Record a chart-level undo step (Shift+K candle mode) in the shared undo
+   * order, so Shift+X / Ctrl+Z undo it in sequence with anchors and fans.
+   * undoManualAnchor hands it back as-is. */
+  pushUndoStep(step) {
+    this._manualOrder.push(step);
+  }
+
+  /** Latest Shift+. anchor entry, else the latest manual anchor of any kind, or null. */
+  _referenceAnchorEntry() {
+    const ids = this._manualOrder.filter(o => typeof o === 'string' && this._manualSeries[o]);
+    const pick = [...ids].reverse().find(id => this._manualSeries[id].kind === 'stdev') ?? ids[ids.length - 1];
+    return pick ? this._manualSeries[pick] : null;
+  }
+
+  /** Bar index of that reference anchor (see _referenceAnchorEntry), or null. */
+  referenceAnchorIdx() {
+    return this._referenceAnchorEntry()?.anchorIdx ?? null;
+  }
+
+  /** Reference for the chart's 'sigma' candle mode: per-bar aVWAP / σ of
+   * the most recently placed Shift+. anchor (else the most recent manual
+   * anchor of any kind) up to bar n, or null if there's none. */
+  sigmaReference(n) {
+    const e = this._referenceAnchorEntry();
+    if (!e) return null;
+    const toIdx = e.fixedEnd != null ? Math.min(e.fixedEnd, n) : n;
+    return toIdx >= e.anchorIdx ? this._stdevCloudData(e.anchorIdx, toIdx) : null;
   }
 
   /** Click inside a Shift+. anchor's ±STDEV_CLOUD_K σ envelope: advance it
