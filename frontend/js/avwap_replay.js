@@ -595,6 +595,90 @@ class StdevCloudPrimitive {
   }
 }
 
+// The ',' ',' profile anchor's own aVWAP in the profile's "Both" mode
+// (VP_MODE_BOTH) and its line-only mode (VP_MODE_POCS — histogram hidden,
+// no floating POC lines; segments at the POC's price level drawn yellow,
+// C_PROFILE_LINE_POC, so the POC is marked on the line itself) — and the
+// dotted other-side aVWAP likewise, still dotted: drawn per segment — volume orange where its price level is
+// above half the profile's POC volume, LVN indigo below (the histogram's own
+// split), width PROFILE_LINE_WIDTH_MIN..MAX by the profile's volume share at
+// that price (thick through heavily traded levels). Its chart series goes
+// transparent in that mode; a series primitive on it does the drawing, from
+// the profile data the engine keeps on the entry (entry._vp, entry._toIdx).
+const PROFILE_LINE_WIDTH_MIN = 1;
+const PROFILE_LINE_WIDTH_MAX = 5;
+const C_PROFILE_LINE_POC     = 'rgba(255,214,0,1)';
+class ProfileLinePrimitive {
+  constructor(engine, entry) {
+    this._engine = engine;
+    this._entry = entry;
+    const renderer = { draw: target => this._draw(target) };
+    this._views = [{ renderer: () => renderer, zOrder: () => 'top' }];
+  }
+  attached({ chart, series, requestUpdate }) { this._chart = chart; this._series = series; this._request = requestUpdate; }
+  detached() { this._chart = this._series = this._request = null; }
+  paneViews() { return this._views; }
+  update() { this._request?.(); }
+
+  _draw(target) {
+    const entry = this._entry, vp = entry._vp, eng = this._engine;
+    const lineOnly = entry.vpMode === VP_MODE_POCS;
+    if (!this._chart || !this._series || !vp || entry._toIdx == null
+        || (entry.vpMode !== VP_MODE_BOTH && !lineOnly)) return;
+    const ts = this._chart.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    if (!range) return;
+    const { lo, bs, bins } = vp;
+    const poc = Math.max(...bins);
+    if (!(poc > 0)) return;
+    const pocBin = bins.indexOf(poc);
+    const toY = priceToYFn(this._series);
+    const toIdx = entry._toIdx;
+    // The anchor's aVWAP, plus (dotted) the other-side aVWAP when present.
+    const lines = [{ a: entry.anchorIdx, dotted: false }];
+    if (entry._otherIdx != null) lines.push({ a: entry._otherIdx, dotted: true });
+    const segsOf = a => {
+      const from = Math.max(a, Math.floor(range.from) - 1), to = Math.min(toIdx, Math.ceil(range.to) + 1);
+      const pvBase = a > 0 ? eng._cumPV[a - 1] : 0, volBase = a > 0 ? eng._cumVol[a - 1] : 0;
+      const segs = [];
+      let px = NaN, py = NaN;
+      for (let i = from; i <= to; i++) {
+        const vol = eng._cumVol[i] - volBase;
+        const x = ts.logicalToCoordinate(i);
+        if (!(vol > 0) || x == null) { px = NaN; continue; }
+        const v = (eng._cumPV[i] - pvBase) / vol, y = toY(v);
+        if (y == null) { px = NaN; continue; }
+        if (!Number.isNaN(px)) {
+          const b = Math.floor((v - lo) / bs);
+          const share = b >= 0 && b < bins.length ? bins[b] / poc : 0;
+          segs.push({ x0: px, y0: py, x1: x, y1: y,
+                      color: lineOnly && b === pocBin ? C_PROFILE_LINE_POC
+                           : `rgba(${share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},0.95)`,
+                      width: PROFILE_LINE_WIDTH_MIN + (PROFILE_LINE_WIDTH_MAX - PROFILE_LINE_WIDTH_MIN) * share });
+        }
+        px = x; py = y;
+      }
+      return segs;
+    };
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      ctx.save();
+      for (const { a, dotted } of lines) {
+        ctx.lineCap = dotted ? 'butt' : 'round';
+        ctx.setLineDash(dotted ? [2, 3] : []);
+        let dist = 0;   // dash offset carried across segments so the dots stay even
+        for (const sg of segsOf(a)) {
+          ctx.lineDashOffset = -dist;
+          ctx.strokeStyle = sg.color;
+          ctx.lineWidth = sg.width;
+          ctx.beginPath(); ctx.moveTo(sg.x0, sg.y0); ctx.lineTo(sg.x1, sg.y1); ctx.stroke();
+          dist += Math.hypot(sg.x1 - sg.x0, sg.y1 - sg.y0);
+        }
+      }
+      ctx.restore();
+    });
+  }
+}
+
 export class DynamicVWAPEngine {
   /**
    * @param {object} lwChart  — raw LightweightCharts chart instance
@@ -688,6 +772,7 @@ export class DynamicVWAPEngine {
   /** Tear down one manual anchor's vwap line + any stdev band series + any paired profile + its other-side aVWAP. */
   _removeManualEntry(entry) {
     if (entry.cloudPrim) { try { entry.vwap.detachPrimitive(entry.cloudPrim); } catch (_) {} }
+    if (entry.profileLinePrim) { try { entry.vwap.detachPrimitive(entry.profileLinePrim); } catch (_) {} }
     try { this._chart.removeSeries(entry.vwap); } catch (_) {}
     for (const band of entry.bands) {
       try { this._chart.removeSeries(band.upper); } catch (_) {}
@@ -1187,6 +1272,13 @@ export class DynamicVWAPEngine {
    * on). Returns { idx, isHigh } or null if the range is too short or flat
    * (high and low bar coincide, so there's nothing distinct to anchor).
    */
+  /** Other-side dotted aVWAP's series color for the profile's mode —
+   * transparent where ProfileLinePrimitive draws it (Both / line-only). */
+  _otherSideColor(entry) {
+    if (entry.vpMode === VP_MODE_BOTH || entry.vpMode === VP_MODE_POCS) return 'rgba(0,0,0,0)';
+    return entry.vpMode === VP_MODE_LVN ? C_OTHERSIDE_LVN : C_OTHERSIDE;
+  }
+
   _otherSideExtremum(anchorIdx, toIdx) {
     if (toIdx <= anchorIdx) return null;
     let idxLow = anchorIdx, idxHigh = anchorIdx;
@@ -1900,11 +1992,23 @@ export class DynamicVWAPEngine {
     }
     if (entry.profile) {
       const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN);
+      // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
+      entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins } : null;
+      entry._toIdx = toIdx;
+      if (!entry.profileLinePrim) {
+        entry.profileLinePrim = new ProfileLinePrimitive(this, entry);
+        entry.vwap.attachPrimitive(entry.profileLinePrim);
+      }
+      entry.profileLinePrim.update();
       if (payload) {
-        if (entry.vpMode === VP_MODE_BOTH || entry.vpMode === VP_MODE_POCS) {
+        if (entry.vpMode === VP_MODE_BOTH) {
           payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
-          if (entry.vpMode === VP_MODE_BOTH) payload.dualHistogram = true;
-          else payload.showHistogram = false;
+          payload.dualHistogram = true;
+        } else if (entry.vpMode === VP_MODE_POCS) {
+          // Line-only: no histogram and no floating POC lines — the aVWAP
+          // (ProfileLinePrimitive) carries the profile, POC marked yellow.
+          payload.showHistogram = false;
+          payload.poc = null;
         }
         // Bounding box for cycleProfileModeAt's click hit-test — bars span
         // this price range even while hidden in VP_MODE_POCS (aVWAP/POC stay
@@ -1925,12 +2029,15 @@ export class DynamicVWAPEngine {
       const ext = this._otherSideExtremum(anchorIdx, toIdx);
       if (ext) {
         if (!entry.otherSide.line) {
-          entry.otherSide.line = this._series(entry.vpMode === VP_MODE_LVN ? C_OTHERSIDE_LVN : C_OTHERSIDE, 2, 1); // lineStyle 1 = dotted
+          entry.otherSide.line = this._series(this._otherSideColor(entry), 2, 1); // lineStyle 1 = dotted
         }
         entry.otherSide.line.setData(this._vwapLine(ext.idx, toIdx));
-      } else if (entry.otherSide.line) {
-        entry.otherSide.line.setData([]);
+        entry._otherIdx = ext.idx;
+      } else {
+        entry.otherSide.line?.setData([]);
+        entry._otherIdx = null;
       }
+      entry.profileLinePrim?.update();
     }
   }
 
@@ -1951,8 +2058,10 @@ export class DynamicVWAPEngine {
     const entry = this._manualSeries[id];
     entry.vpMode = (entry.vpMode + 1) % VP_MODE_COUNT;
     const lvn = entry.vpMode === VP_MODE_LVN;
-    entry.vwap.applyOptions({ color: lvn ? C_MANUAL_WITH_PROFILE_LVN : C_MANUAL_WITH_PROFILE });
-    entry.otherSide?.line?.applyOptions({ color: lvn ? C_OTHERSIDE_LVN : C_OTHERSIDE });
+    // "Both" mode: the primitive draws the line (per-segment color/width).
+    entry.vwap.applyOptions({ color: entry.vpMode === VP_MODE_BOTH || entry.vpMode === VP_MODE_POCS ? 'rgba(0,0,0,0)'
+      : lvn ? C_MANUAL_WITH_PROFILE_LVN : C_MANUAL_WITH_PROFILE });
+    entry.otherSide?.line?.applyOptions({ color: this._otherSideColor(entry) });
     this._renderManualEntry(entry.anchorIdx, entry);
     return true;
   }
