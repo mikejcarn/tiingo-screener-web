@@ -626,8 +626,12 @@ export class DynamicVWAPEngine {
     // Array of {valleys, peaks, maxAnchors, spacing, vSeries[], pSeries[]}
     this._pmmPools = [];
     // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
+    // Manual anchors by unique id ('m1', 'm2', ...) — not by bar index, so
+    // different kinds (plain '.', Shift+. stdev, ',' ',' profile) can share
+    // a candle. Each entry carries its own anchorIdx and kind.
     this._manualSeries = {};
-    this._manualOrder  = []; // anchor bar indices (or {fan} entries) in placement order, for undo (LIFO)
+    this._manualSeq    = 0;
+    this._manualOrder  = []; // anchor ids (or {fan} entries) in placement order, for undo (LIFO)
     this._manualFans   = []; // Alt+. fans (see createManualFan)
     this._lastN = 0; // last n passed to reveal() — for clamping a hold-and-drag's end point
   }
@@ -800,20 +804,25 @@ export class DynamicVWAPEngine {
   }
 
   /**
-   * Find an existing manual anchor within `tolerance` bars of barIdx (the
-   * closest one, ties broken toward the lower index) — hovering the exact
-   * same bar you placed an anchor on is brittle at typical zoom (a few px
-   * per bar), so both removal and range-select look up anchors loosely
-   * instead of requiring an exact index match.
+   * Id of the existing manual anchor of the same `kind` within `tolerance`
+   * bars of barIdx (the closest one) — hovering the exact bar you placed an
+   * anchor on is brittle at typical zoom (a few px per bar), so removal looks
+   * anchors up loosely. Only the same kind: a Shift+. tap never removes a
+   * ',' ',' profile anchor on that candle (or vice versa), so both can sit
+   * on one candle.
    */
-  _nearestManualAnchor(barIdx, tolerance = 2) {
+  _nearestManualAnchor(barIdx, kind, tolerance = 2) {
     let best = null, bestDist = Infinity;
-    for (const key of Object.keys(this._manualSeries)) {
-      const idx = parseInt(key, 10);
-      const dist = Math.abs(idx - barIdx);
-      if (dist <= tolerance && dist < bestDist) { best = idx; bestDist = dist; }
+    for (const [id, entry] of Object.entries(this._manualSeries)) {
+      if (entry.kind !== kind) continue;
+      const dist = Math.abs(entry.anchorIdx - barIdx);
+      if (dist <= tolerance && dist < bestDist) { best = id; bestDist = dist; }
     }
     return best;
+  }
+
+  static _manualKind(withStdev, withProfile) {
+    return withProfile ? 'profile' : withStdev ? 'stdev' : 'plain';
   }
 
   /**
@@ -821,12 +830,12 @@ export class DynamicVWAPEngine {
    * toIdx. withStdev also draws vwap +/- k*stdev bands (Shift+.) around it —
    * see _vwapStdevBands. withProfile (',' ',') also pairs a Volume Profile
    * with it, same anchor-to-toIdx span, removed together as one unit.
-   * Returns true if an anchor was added, false if an existing one (with or
-   * without bands/profile) was removed.
+   * Returns true if an anchor was added, false if an existing one of the
+   * same kind (plain / bands / profile) was removed.
    */
   toggleManualAnchor(anchorIdx, toIdx, withStdev = false, withProfile = false) {
     if (anchorIdx == null || anchorIdx < 0 || anchorIdx >= this._bars.length) return null;
-    const existing = this._nearestManualAnchor(anchorIdx);
+    const existing = this._nearestManualAnchor(anchorIdx, DynamicVWAPEngine._manualKind(withStdev, withProfile));
     if (existing != null) {
       this._removeManualEntry(this._manualSeries[existing]);
       delete this._manualSeries[existing];
@@ -894,17 +903,19 @@ export class DynamicVWAPEngine {
     // otherSide: {} means "wanted, not yet created" (its line is created
     // lazily on the first render, once we know whether it's a high or low
     // and can pick its color) — see _renderManualEntry.
-    this._manualSeries[anchorIdx] = {
+    const id = `m${++this._manualSeq}`;
+    this._manualSeries[id] = {
+      anchorIdx, kind: DynamicVWAPEngine._manualKind(withStdev, withProfile),
       vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL,
       stdevMode: 'bands', cloud: null, cloudPrim: null,
       otherSide: withProfile ? {} : null,
     };
-    this._manualOrder.push(anchorIdx);
+    this._manualOrder.push(id);
     // Populate _profileBounds (for cycleProfileModeAt's click hit-test)
     // immediately — otherwise it stays unset until the next reveal(), so a
     // click right after creating the profile (before replay steps at all)
     // would silently miss every hit-test.
-    this._renderManualEntry(anchorIdx, this._manualSeries[anchorIdx]);
+    this._renderManualEntry(anchorIdx, this._manualSeries[id]);
   }
 
   /**
@@ -912,17 +923,17 @@ export class DynamicVWAPEngine {
    * Returns the removed anchor's bar index, or null if there are none left.
    */
   undoManualAnchor() {
-    const anchorIdx = this._manualOrder.pop();
-    if (anchorIdx === undefined) return null;
-    if (anchorIdx?.fan) {                    // a whole Alt+. fan is one undo step
-      this._removeFan(anchorIdx.fan);
-      this._manualFans = this._manualFans.filter(f => f !== anchorIdx.fan);
-      return anchorIdx.fan.anchors[0];
+    const last = this._manualOrder.pop();
+    if (last === undefined) return null;
+    if (last?.fan) {                         // a whole fan is one undo step
+      this._removeFan(last.fan);
+      this._manualFans = this._manualFans.filter(f => f !== last.fan);
+      return last.fan.anchors[0];
     }
-    const entry = this._manualSeries[anchorIdx];
+    const entry = this._manualSeries[last];
     if (entry) this._removeManualEntry(entry);
-    delete this._manualSeries[anchorIdx];
-    return anchorIdx;
+    delete this._manualSeries[last];
+    return entry ? entry.anchorIdx : null;
   }
 
   /** Bars a centered swing window of size `window` spans before / after its
@@ -1824,8 +1835,8 @@ export class DynamicVWAPEngine {
     }
 
     // ── Manual (click-placed) anchors ─────────────────────────────────────
-    for (const [anchorIdxStr, entry] of Object.entries(this._manualSeries)) {
-      this._renderManualEntry(parseInt(anchorIdxStr, 10), entry);
+    for (const entry of Object.values(this._manualSeries)) {
+      this._renderManualEntry(entry.anchorIdx, entry);
     }
     for (const fan of this._manualFans) this._renderFan(fan);
   }
@@ -1905,34 +1916,30 @@ export class DynamicVWAPEngine {
    * the click didn't land on any profile.
    */
   cycleProfileModeAt(barIdx, price) {
-    const anchorIdx = this._profileAnchorAt(barIdx, price);
-    if (anchorIdx == null) return false;
-    const entry = this._manualSeries[anchorIdx];
+    const id = this._profileAnchorAt(barIdx, price);
+    if (id == null) return false;
+    const entry = this._manualSeries[id];
     entry.vpMode = (entry.vpMode + 1) % VP_MODE_COUNT;
     const lvn = entry.vpMode === VP_MODE_LVN;
     entry.vwap.applyOptions({ color: lvn ? C_MANUAL_WITH_PROFILE_LVN : C_MANUAL_WITH_PROFILE });
     entry.otherSide?.line?.applyOptions({ color: lvn ? C_OTHERSIDE_LVN : C_OTHERSIDE });
-    this._renderManualEntry(anchorIdx, entry);
+    this._renderManualEntry(entry.anchorIdx, entry);
     return true;
   }
 
   /** Topmost manual profile whose last-drawn bounds contain (barIdx, price),
-   * as its anchor index, or null — bounds are populated at creation too
+   * as its anchor id, or null — bounds are populated at creation too
    * (via _createManualAnchor), so this works even before the next reveal().
    *
    * Walks this._manualOrder back-to-front (most-recently-placed first),
-   * NOT Object.entries(this._manualSeries) — that object is keyed by bar
-   * index, and plain-object key iteration always sorts integer-like keys
-   * in ascending numeric order regardless of insertion order, so it would
-   * always resolve an overlap in favor of the earliest-anchored profile
-   * instead of whichever one is actually on top. */
+   * so an overlap resolves in favor of whichever profile is actually on top. */
   _profileAnchorAt(barIdx, price) {
     for (let i = this._manualOrder.length - 1; i >= 0; i--) {
-      const anchorIdx = this._manualOrder[i];
-      const entry = this._manualSeries[anchorIdx];
+      const id = this._manualOrder[i];
+      const entry = this._manualSeries[id];
       if (!entry || !entry.profile || !entry._profileBounds) continue;
       const b = entry._profileBounds;
-      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) return anchorIdx;
+      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) return id;
     }
     return null;
   }
