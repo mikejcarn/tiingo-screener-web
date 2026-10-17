@@ -410,7 +410,8 @@ function _wireControls() {
     // '.' (anywhere else) finalizes it: a plain '.' draws a ranged aVWAP
     // between the two points, Shift+. also draws stdev bands, Alt+. a fan
     // across the range — same modifiers, same meaning, as a normal tap; a
-    // second ',' pairs a Volume Profile (below). (Not '/' — that's already bound app-wide to toggleTheme in
+    // second ',' pairs a Volume Profile (below), Shift+K colors the candles
+    // in the range only. (Not '/' — that's already bound app-wide to toggleTheme in
     // browse.js, which would fire on the same keypress.)
     if (e.code === 'Comma' && !e.altKey) {
       if (_lastChartX == null) return;
@@ -584,9 +585,20 @@ function _wireKeys() {
     if (e.key === 'Backspace') { e.preventDefault(); _setAutoFit(!autoFit); }
     // Shift+K — cycle live candle coloring (standard → σ distance from the
     // latest Shift+. aVWAP → relative volume → standard).
-    if (e.key === 'K' && !ctrl && !e.altKey) {
+    // After ',' it colors only the marked range (from the ',' candle to the
+    // one under the mouse), each mode computed from that range alone.
+    // Shift+J — the same modes drawn sliced: each candle filled price by
+    // price (see chart.js CandleSlicePrimitive).
+    if ((e.key === 'K' || e.key === 'J') && !ctrl && !e.altKey) {
       e.preventDefault();
-      chart.cycleCandleMode(_lastChartX);
+      const sliced = e.key === 'J';
+      if (_rangeStartIdx != null && _lastChartX != null) {
+        chart.setCandleRangeAtX(_rangeStartIdx, _lastChartX, sliced);
+        _rangeStartIdx = null;
+        chartEl.style.cursor = '';
+      } else {
+        chart.cycleCandleMode(_lastChartX, sliced);
+      }
     }
     // Shift+V — same toggle as the Volume row in the show/hide panel.
     if (e.key === 'V' && !ctrl && !e.altKey) {

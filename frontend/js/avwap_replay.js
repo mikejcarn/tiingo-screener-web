@@ -104,8 +104,8 @@ const C_MANUAL = 'rgba(255,193,7,0.95)';
 // would otherwise take ~100ms+ to repaint on every pan/zoom.
 // Clicking a fan cycles FAN_MODES: amber (weighted) → peak red / valley teal,
 // in-between grey (weighted, min/max aVWAPs highlighted) → every line grey at
-// one flat FAN_FLAT_ALPHA, 1px, with only the min/max aVWAPs in color →
-// amber.
+// one flat FAN_FLAT_ALPHA, 1px, with only the min/max aVWAPs in color,
+// plus the fan's average aVWAP in amber → amber.
 const C_MANUAL_RGB          = '255,193,7';
 const C_PEAK_RGB            = '239,83,80';
 const C_VALLEY_RGB          = '38,166,154';
@@ -116,7 +116,11 @@ const FAN_ALPHA_MIN         = 0.08;   // in-between candles
 const FAN_ALPHA_SWING_MIN   = 0.18;   // the least significant swing
 const FAN_ALPHA_MAX         = 0.8;    // the most significant swing
 const FAN_WIDE_MIN          = 0.75;   // significance at/above which a line is 2px
-const FAN_FLAT_ALPHA        = 0.2;    // every line's opacity in 'flat' mode
+const FAN_FLAT_ALPHA        = 0.3;    // every line's opacity in 'flat' mode
+// 'flat' mode also draws the fan's average aVWAP: at each bar, the mean of
+// every fan line that exists there (anchored at or before it).
+const C_FAN_AVG             = `rgba(${C_MANUAL_RGB},1)`;
+const FAN_AVG_WIDTH         = 2;
 const FAN_MODES             = ['amber', 'pv', 'flat'];
 // In the red/teal coloring, the fan's min/max aVWAPs — anchored at its
 // highest peak and lowest valley — are highlighted in the same colors the
@@ -216,28 +220,21 @@ const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 const MANUAL_VP_LVN_LOCALITY = 0;
 const MANUAL_VP_NODE_WINDOW  = 16;
 // Click-cycle order: normal → LVN → both histograms + both POCs (orange
-// busiest level + indigo deepest LVN) → bars hidden with both POCs → back
-// to normal.
+// busiest level + indigo deepest LVN) → bars hidden (line-only) → edges
+// (HVN / LVN boundaries, see ProfileLinePrimitive) → back to normal.
 const VP_MODE_NORMAL = 0;
 const VP_MODE_LVN    = 1;
 const VP_MODE_BOTH   = 2;
 const VP_MODE_POCS   = 3;
-const VP_MODE_COUNT  = 4;
-// When a profile is paired (',' ','), the vwap line matches the profile's
-// own color instead of the usual amber — they're one visual unit then.
-const C_MANUAL_WITH_PROFILE = `rgba(${VP_RGB_DEFAULT},0.95)`;
-const C_MANUAL_WITH_PROFILE_LVN = `rgba(${VP_RGB_LVN},0.95)`;
-
-// When a profile is paired, a second aVWAP is also anchored at whichever
-// extremum of the range is the "other side" relative to the primary
-// anchor (see _otherSideExtremum) — same orange as the profile/primary
-// line, dotted instead of solid so it still reads as distinct without
-// introducing a third unrelated color.
-const C_OTHERSIDE = `rgba(${VP_RGB_DEFAULT},0.85)`;
-// Bars each side of the anchor used to class it as a peak or valley (see
+const VP_MODE_EDGE   = 4;
+const VP_MODE_COUNT  = 5;
+// When a profile is paired (',' ','), its aVWAP — and a second aVWAP
+// anchored at the range's "other side" extremum (see _otherSideExtremum) —
+// are drawn by ProfileLinePrimitive, coded like the profile's histogram;
+// their chart series stay transparent.
+// Bars after the anchor used to class it as a peak or valley (see
 // _otherSideExtremum).
 const OTHER_SIDE_WINDOW = 10;
-const C_OTHERSIDE_LVN = `rgba(${VP_RGB_LVN},0.85)`;
 
 // Opacity range for multi-config anchor types (currently peaks/valleys). All configs
 // stay solid at the same width — line STYLE is reserved for signifying different data
@@ -348,6 +345,8 @@ class FanPrimitive {
     if (fan.kind === 'vp') return this._drawVp(target, { from, to, toIdx, n, xs, toY, cumPV, cumVol });
     // Style buckets: key -> {style, width, order, path}
     const buckets = new Map();
+    // 'flat' mode: per-bar sum / count of every drawn line, for the average aVWAP.
+    const avg = fan.colorMode === 'flat' ? { sum: new Float64Array(to - from + 1), cnt: new Uint32Array(to - from + 1) } : null;
     fan.anchors.forEach((a, k) => {
       const st = fan.styles[k];
       if (!st || !st.visible || a > to || a > toIdx || fan.confirm[k] > n) return;
@@ -358,12 +357,25 @@ class FanPrimitive {
       for (let i = Math.max(a, from); i <= to; i++) {
         const vol = cumVol[i] - volBase;
         if (!(vol > 0)) continue;
-        const y = toY((cumPV[i] - pvBase) / vol);
+        const v = (cumPV[i] - pvBase) / vol;
+        if (avg) { avg.sum[i - from] += v; avg.cnt[i - from]++; }
+        const y = toY(v);
         const x = xs[i - from];
         if (y == null || Number.isNaN(x)) { pen = false; continue; }
         if (pen) b.path.lineTo(x, y); else { b.path.moveTo(x, y); pen = true; }
       }
     });
+    let avgPath = null;
+    if (avg) {
+      avgPath = new Path2D();
+      let pen = false;
+      for (let i = from; i <= to; i++) {
+        const c = avg.cnt[i - from], x = xs[i - from];
+        const y = c ? toY(avg.sum[i - from] / c) : null;
+        if (y == null || Number.isNaN(x)) { pen = false; continue; }
+        if (pen) avgPath.lineTo(x, y); else { avgPath.moveTo(x, y); pen = true; }
+      }
+    }
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       ctx.save();
       ctx.lineJoin = 'round';
@@ -371,6 +383,11 @@ class FanPrimitive {
         ctx.strokeStyle = b.color;
         ctx.lineWidth = b.width;
         ctx.stroke(b.path);
+      }
+      if (avgPath) {
+        ctx.strokeStyle = C_FAN_AVG;
+        ctx.lineWidth = FAN_AVG_WIDTH;
+        ctx.stroke(avgPath);
       }
       ctx.restore();
     });
@@ -598,32 +615,128 @@ class StdevCloudPrimitive {
   }
 }
 
-// The ',' ',' profile anchor's own aVWAP in the profile's "Both" mode
-// (VP_MODE_BOTH) and its line-only mode (VP_MODE_POCS — histogram hidden,
-// no floating POC lines; segments at the POC's price level drawn yellow,
-// C_PROFILE_LINE_POC, so the POC is marked on the line itself) — and the
-// other-side aVWAP likewise (dotted in the Both mode, solid in line-only): drawn per segment — volume orange where its price level is
-// above half the profile's POC volume, LVN indigo below (the histogram's own
-// split), width PROFILE_LINE_WIDTH_MIN..MAX by node strength at that price —
-// distance from half the POC (thick near the POC for orange, near untraded
-// levels for purple; thin around the midpoint). Its chart series goes
-// transparent in that mode; a series primitive on it does the drawing, from
-// the profile data the engine keeps on the entry (entry._vp, entry._toIdx).
+// The ',' ',' profile anchor's own aVWAP — and its other-side aVWAP — drawn
+// by ProfileLinePrimitive in every profile mode (their chart series stay
+// transparent), per segment, coded like the mode's histogram:
+//   normal (VP_MODE_NORMAL) — volume orange, width PROFILE_LINE_WIDTH_MIN..MAX
+//     and opacity PROFILE_LINE_ALPHA_MIN..0.95 by the level's volume share of
+//     the POC (bold through heavily traded levels);
+//   LVN (VP_MODE_LVN) — indigo, the same scales by 1 − share (bold through
+//     thin / untraded levels);
+//   Both (VP_MODE_BOTH) / line-only (VP_MODE_POCS) — orange above half the
+//     POC's volume, indigo below (the mixed histogram's split), width by node
+//     strength: the level's distance from that midpoint.
+// Wherever a segment crosses one of the mode's peak levels (profilePeakColors)
+// it takes that peak's color instead — the POC yellow, HVN peaks bright
+// orange, LVN troughs electric violet. The histogram itself stays plain.
+//   edges (VP_MODE_EDGE) — the HVN / LVN boundaries: a level's closeness to
+//     half the POC's volume, edge = 1 − |2·share − 1| (the mixed histogram's
+//     2·share − 1 is the HVN share minus the LVN share; it's zero exactly at a
+//     boundary) — its own grayscale profile, not the HVN / LVN colors. Lines
+//     shaded black → white and widened by edge — bright and bold where the
+//     aVWAP sits in an HVN / LVN decision zone, dark and thin inside nodes;
+//     only the POC crossing is highlighted. The histogram's bars are edge
+//     long, plain grey (VolumeProfileSeries' edgeHistogram).
 const PROFILE_LINE_WIDTH_MIN = 1;
 const PROFILE_LINE_WIDTH_MAX = 5;
+const PROFILE_LINE_ALPHA_MIN = 0.35;
 const C_PROFILE_LINE_POC     = 'rgba(255,214,0,1)';
-// Line-only mode: for each HVN / LVN zone (contiguous price levels on one
-// side of half the POC's volume) either aVWAP passes through, a thin level
-// line in the zone's color at the zone's peak — an orange zone's busiest
-// level, a purple zone's deepest trough by the histogram's LVN POC rule (so
-// never the profile's thin top / bottom edge) — from where an aVWAP first reaches it to
-// the range's end, one per zone.
-// Node strength t (0..1) — the zone peak's distance from half the POC's
-// volume, as the mixed histogram measures it (1 at the POC for orange, at an
-// untraded level for purple) — sets the line's opacity
-// PROFILE_ZONE_LINE_ALPHA_MIN..1 and width 1..PROFILE_ZONE_LINE_WIDTH_MAX.
-const PROFILE_ZONE_LINE_ALPHA_MIN = 0.35;
-const PROFILE_ZONE_LINE_WIDTH_MAX = 3;
+const C_PROFILE_PEAK_HVN     = 'rgba(255,190,90,1)';
+const C_PROFILE_PEAK_LVN     = 'rgba(190,40,255,1)';
+const PROFILE_PEAK_WINDOW    = 4;   // levels each side a local peak must top
+// Line-only mode also flattens the mixed histogram into one vertical strip at
+// the profile's left edge (the anchor bar, growing right), spanning its price
+// range: each level a slice in its color, width PROFILE_STRIP_WIDTH_MIN..MAX
+// and opacity PROFILE_STRIP_ALPHA_MIN..1 by node strength; peak levels keep
+// their size but take their peak color.
+const PROFILE_STRIP_WIDTH_MIN = 1;
+const PROFILE_STRIP_WIDTH_MAX = 8;
+const PROFILE_STRIP_ALPHA_MIN = 0.25;
+
+/** Peak levels of a profile for a display mode, as Map(bin → color): the
+ * POC (yellow) always, plus
+ *   'hvn'  — every local maximum: a level at least as busy as everything
+ *            within PROFILE_PEAK_WINDOW levels each side (bright orange);
+ *   'lvn'  — every local minimum, at least as thin, a full node window in
+ *            from the profile's edges (its thin top / bottom aren't troughs),
+ *            plus the deepest trough by the LVN POC rule (electric violet);
+ *   'both' — per HVN / LVN zone (contiguous levels on one side of half the
+ *            POC's volume): an orange zone's local maxima and busiest level,
+ *            an indigo zone's local minima and deepest trough.
+ * Tied runs collapse to their middle. */
+function profilePeakColors(bins, mode) {
+  const n = bins.length, out = new Map();
+  const poc = Math.max(...bins);
+  if (!(poc > 0)) return out;
+  const K = PROFILE_PEAK_WINDOW, W = MANUAL_VP_NODE_WINDOW;
+  const hvnOf = b => mode === 'hvn' ? true : mode === 'lvn' ? false : bins[b] / poc >= 0.5;
+  // zones ('both' only splits the profile; 'hvn' / 'lvn' are one zone each)
+  const zoneOf = new Int32Array(n);
+  let z = 0;
+  for (let b = 1; b < n; b++) { if (hvnOf(b) !== hvnOf(b - 1)) z++; zoneOf[b] = z; }
+  const add = (b, hvn) => out.set(b, bins[b] === poc ? C_PROFILE_LINE_POC : hvn ? C_PROFILE_PEAK_HVN : C_PROFILE_PEAK_LVN);
+  // Local extremes within each zone.
+  const isPk = new Array(n).fill(false);
+  for (let b = 0; b < n; b++) {
+    const hvn = hvnOf(b);
+    if (!hvn && (b < W || b >= n - W)) continue;
+    let ok = true, strict = false;
+    for (let j = Math.max(0, b - K); j <= Math.min(n - 1, b + K) && ok; j++) {
+      if (j === b) continue;
+      if (hvn ? bins[j] > bins[b] : bins[j] < bins[b]) ok = false;
+      else if (bins[j] !== bins[b]) strict = true;
+    }
+    isPk[b] = ok && strict;
+  }
+  for (let b = 0; b < n; b++) {
+    if (!isPk[b]) continue;
+    let e = b;
+    while (e + 1 < n && isPk[e + 1] && bins[e + 1] === bins[b] && zoneOf[e + 1] === zoneOf[b]) e++;
+    add(Math.floor((b + e) / 2), hvnOf(b));
+    b = e;
+  }
+  // Each zone's main peak: orange — its busiest level (middle of a tie);
+  // indigo — its deepest trough by the LVN POC rule (bins equal to their full
+  // centered node window's min, widest run on ties), else its thinnest level
+  // a window in from the edges (else just off them).
+  const trough = new Array(n).fill(false);
+  for (let i = W; i < n - W; i++) {
+    let mn = Infinity;
+    for (let j = i - W; j <= i + W; j++) if (bins[j] < mn) mn = bins[j];
+    trough[i] = bins[i] === mn;
+  }
+  for (let zz = 0; zz <= z; zz++) {
+    let first = -1, last = -1;
+    for (let b = 0; b < n; b++) if (zoneOf[b] === zz) { if (first < 0) first = b; last = b; }
+    if (first < 0) continue;
+    if (hvnOf(first)) {
+      let m = first;
+      for (let b = first; b <= last; b++) if (bins[b] > bins[m]) m = b;
+      let e = m;
+      while (e + 1 <= last && bins[e + 1] === bins[m]) e++;
+      add(Math.floor((m + e) / 2), true);
+      continue;
+    }
+    let best = null;
+    for (let i = first; i <= last; i++) {
+      if (!trough[i]) continue;
+      let j = i;
+      while (j + 1 <= last && trough[j + 1]) j++;
+      if (!best || bins[i] < bins[best[0]] || (bins[i] === bins[best[0]] && j - i > best[1] - best[0])) best = [i, j];
+      i = j;
+    }
+    if (best) { add(Math.floor((best[0] + best[1]) / 2), false); continue; }
+    for (const [lo2, hi2] of [[Math.max(first, W), Math.min(last, n - 1 - W)], [Math.max(first, 1), Math.min(last, n - 2)]]) {
+      let m = null;
+      for (let b = lo2; b <= hi2; b++) if (m == null || bins[b] < bins[m]) m = b;
+      if (m != null) { add(m, false); break; }
+    }
+  }
+  // The POC itself, in every mode.
+  for (let b = 0; b < n; b++) if (bins[b] === poc) { out.set(b, C_PROFILE_LINE_POC); }
+  return out;
+}
+
 class ProfileLinePrimitive {
   constructor(engine, entry) {
     this._engine = engine;
@@ -638,28 +751,41 @@ class ProfileLinePrimitive {
 
   _draw(target) {
     const entry = this._entry, vp = entry._vp, eng = this._engine;
-    const lineOnly = entry.vpMode === VP_MODE_POCS;
-    if (!this._chart || !this._series || !vp || entry._toIdx == null
-        || (entry.vpMode !== VP_MODE_BOTH && !lineOnly)) return;
+    if (!this._chart || !this._series || !vp || entry._toIdx == null) return;
+    const mode = entry.vpMode;
+    const lineOnly = mode === VP_MODE_POCS, split = mode === VP_MODE_BOTH || lineOnly;
     const ts = this._chart.timeScale();
     const range = ts.getVisibleLogicalRange();
     if (!range) return;
     const { lo, bs, bins } = vp;
     const poc = Math.max(...bins);
     if (!(poc > 0)) return;
-    const pocBin = bins.indexOf(poc);
     const toY = priceToYFn(this._series);
     const toIdx = entry._toIdx;
-    // The anchor's aVWAP, plus (dotted) the other-side aVWAP when present.
-    const lines = [{ a: entry.anchorIdx, dotted: false }];
-    // Line-only mode draws it solid too: its zone fills already tie it to
-    // its levels, so the dots aren't needed to tell it apart.
-    if (entry._otherIdx != null) lines.push({ a: entry._otherIdx, dotted: !lineOnly });
+    const peakColor = entry._peaks ?? new Map();
+    const wOf = t => PROFILE_LINE_WIDTH_MIN + (PROFILE_LINE_WIDTH_MAX - PROFILE_LINE_WIDTH_MIN) * t;
+    // Mode coding for a level's volume share of the POC → {color, width}.
+    const styleOf = share => {
+      if (mode === VP_MODE_EDGE) {
+        const t = 1 - Math.min(1, Math.abs(share - 0.5) * 2), g = Math.round(255 * t);
+        return { color: `rgba(${g},${g},${g},0.95)`, width: wOf(t) };
+      }
+      if (split) {
+        return { color: `rgba(${share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},0.95)`,
+                 width: wOf(Math.min(1, Math.abs(share - 0.5) * 2)) };
+      }
+      const t = mode === VP_MODE_LVN ? 1 - share : share;
+      return { color: `rgba(${mode === VP_MODE_LVN ? VP_RGB_LVN : VP_RGB_DEFAULT},${(PROFILE_LINE_ALPHA_MIN + (0.95 - PROFILE_LINE_ALPHA_MIN) * t).toFixed(3)})`,
+               width: wOf(t) };
+    };
+    // The anchor's aVWAP, plus the other-side aVWAP when present.
+    const lines = [entry.anchorIdx];
+    if (entry._otherIdx != null) lines.push(entry._otherIdx);
     const segsOf = a => {
       const from = Math.max(a, Math.floor(range.from) - 1), to = Math.min(toIdx, Math.ceil(range.to) + 1);
       const pvBase = a > 0 ? eng._cumPV[a - 1] : 0, volBase = a > 0 ? eng._cumVol[a - 1] : 0;
       const segs = [];
-      let px = NaN, py = NaN;
+      let px = NaN, py = NaN, pv = NaN;
       for (let i = from; i <= to; i++) {
         const vol = eng._cumVol[i] - volBase;
         const x = ts.logicalToCoordinate(i);
@@ -668,122 +794,48 @@ class ProfileLinePrimitive {
         if (y == null) { px = NaN; continue; }
         if (!Number.isNaN(px)) {
           const b = Math.floor((v - lo) / bs);
-          const share = b >= 0 && b < bins.length ? bins[b] / poc : 0;
-          segs.push({ x0: px, y0: py, x1: x, y1: y,
-                      color: lineOnly && b === pocBin ? C_PROFILE_LINE_POC
-                           : `rgba(${share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},0.95)`,
-                      // width by node strength — distance from half the POC
-                      // (the mixed histogram's bar length), so strong purple
-                      // (very thin) levels are as bold as strong orange ones
-                      width: PROFILE_LINE_WIDTH_MIN + (PROFILE_LINE_WIDTH_MAX - PROFILE_LINE_WIDTH_MIN) * Math.min(1, Math.abs(share - 0.5) * 2) });
+          const st = styleOf(b >= 0 && b < bins.length ? bins[b] / poc : 0);
+          // A peak level anywhere the segment crosses (not just at its end —
+          // a fast-moving aVWAP can jump several levels in one bar); the
+          // POC wins over other peaks.
+          let peak = null;
+          if (peakColor.size) {
+            const bA = Math.max(0, Math.floor((Math.min(v, pv) - lo) / bs));
+            const bB = Math.min(bins.length - 1, Math.floor((Math.max(v, pv) - lo) / bs));
+            for (let k = bA; k <= bB; k++) {
+              const c = peakColor.get(k);
+              if (c) { peak = c; if (c === C_PROFILE_LINE_POC) break; }
+            }
+          }
+          segs.push({ x0: px, y0: py, x1: x, y1: y, color: peak ?? st.color, width: st.width });
         }
-        px = x; py = y;
+        px = x; py = y; pv = v;
       }
       return segs;
     };
-    // Zone level lines (line-only mode): one per HVN / LVN zone that either
-    // aVWAP (main or dotted contra) passes through, at the zone's peak (see
-    // zonePoc below), from the earliest bar either aVWAP reaches
-    // that level — or, if neither touches it exactly, first enters the zone —
-    // to the range's end. One line per zone, no doubles.
-    const zoneLines = [];
-    if (lineOnly) {
-      const zoneOf = new Int32Array(bins.length);
-      // Zone peak: an orange zone's busiest level (ties → the middle of the
-      // tied run); a purple zone's deepest trough (below).
-      const zonePoc = [];                      // zone -> its peak bin
-      const zoneTies = [];                     // zone -> bins tied at the peak
-      let z = -1;
+    // Line-only: the flattened histogram strip at the profile's left edge.
+    const strip = [];
+    const xL = lineOnly ? ts.logicalToCoordinate(entry.anchorIdx) : null;
+    if (xL != null) {
       for (let b = 0; b < bins.length; b++) {
-        const hvn = bins[b] / poc >= 0.5;
-        if (b === 0 || hvn !== (bins[b - 1] / poc >= 0.5)) z++;
-        zoneOf[b] = z;
-        const cur = zonePoc[z];
-        const better = cur == null || (hvn ? bins[b] > bins[cur] : bins[b] < bins[cur]);
-        if (better) { zonePoc[z] = b; zoneTies[z] = [b]; }
-        else if (bins[b] === bins[cur]) zoneTies[z].push(b);
-      }
-      zoneTies.forEach((t, zz) => { zonePoc[zz] = t[Math.floor((t.length - 1) / 2)]; });
-      // Purple zones use the histogram's LVN POC rule (_vpLvnPoc): the
-      // deepest real trough — bins equal to their full centered window's min,
-      // tied runs collapsed to their middle, widest on ties — so a zone at
-      // the profile's thin top / bottom isn't pinned to the range's edge.
-      // No trough in the zone → its thinnest level at least a window in
-      // from the profile's edges (else just off them).
-      {
-        const n = bins.length, W = MANUAL_VP_NODE_WINDOW;
-        const trough = new Array(n).fill(false);
-        for (let i = W; i < n - W; i++) {
-          let mn = Infinity;
-          for (let j = i - W; j <= i + W; j++) if (bins[j] < mn) mn = bins[j];
-          trough[i] = bins[i] === mn;
-        }
-        const best = new Map();                // purple zone -> [runStart, runEnd]
-        for (let i = 0; i < n; i++) {
-          if (!trough[i]) continue;
-          let j = i;
-          while (j + 1 < n && trough[j + 1] && zoneOf[j + 1] === zoneOf[i]) j++;
-          const zz = zoneOf[i], cur = best.get(zz);
-          if (bins[i] / poc < 0.5 &&
-              (!cur || bins[i] < bins[cur[0]] || (bins[i] === bins[cur[0]] && j - i > cur[1] - cur[0]))) best.set(zz, [i, j]);
-          i = j;
-        }
-        for (let zz = 0; zz <= z; zz++) {
-          if (bins[zonePoc[zz]] / poc >= 0.5) continue;        // orange: busiest level stands
-          const run = best.get(zz);
-          if (run) { zonePoc[zz] = Math.floor((run[0] + run[1]) / 2); continue; }
-          for (const [lo2, hi2] of [[W, n - 1 - W], [1, n - 2]]) {
-            let m = null;
-            for (let b = lo2; b <= hi2; b++) if (zoneOf[b] === zz && (m == null || bins[b] < bins[m])) m = b;
-            if (m != null) { zonePoc[zz] = m; break; }
-          }
-        }
-      }
-      const start = new Map();                 // zone -> {exact: bar|null, entry: bar}
-      for (const { a } of lines) {
-        const pvBase = a > 0 ? eng._cumPV[a - 1] : 0, volBase = a > 0 ? eng._cumVol[a - 1] : 0;
-        for (let i = a; i <= toIdx; i++) {
-          const vol = eng._cumVol[i] - volBase;
-          if (!(vol > 0)) continue;
-          const b = Math.floor(((eng._cumPV[i] - pvBase) / vol - lo) / bs);
-          if (b < 0 || b >= bins.length) continue;
-          const zz = zoneOf[b];
-          const st = start.get(zz) ?? { exact: null, entry: i };
-          if (i < st.entry) st.entry = i;
-          if (b === zonePoc[zz] && (st.exact == null || i < st.exact)) st.exact = i;
-          start.set(zz, st);
-        }
-      }
-      const xEnd = ts.logicalToCoordinate(toIdx);
-      for (const [zz, st] of start) {
-        const pb = zonePoc[zz];
-        const share = bins[pb] / poc;
-        const t = Math.min(1, Math.abs(share - 0.5) * 2);
-        const x0 = ts.logicalToCoordinate(st.exact ?? st.entry), y = toY(lo + (pb + 0.5) * bs);
-        if (x0 == null || xEnd == null || y == null) continue;
-        zoneLines.push({ x0, x1: xEnd, y, t,
-                         rgb: share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN,
-                         isPoc: bins[pb] === poc });     // the profile's POC level → yellow line
+        const yA = toY(lo + b * bs), yB = toY(lo + (b + 1) * bs);
+        if (yA == null || yB == null) continue;
+        const t = Math.min(1, Math.abs(bins[b] / poc - 0.5) * 2);
+        strip.push({ x: xL, y: Math.min(yA, yB), h: Math.max(1, Math.abs(yB - yA)),
+                     w: PROFILE_STRIP_WIDTH_MIN + (PROFILE_STRIP_WIDTH_MAX - PROFILE_STRIP_WIDTH_MIN) * t,
+                     color: peakColor.get(b)      // a peak: its own size, special color
+                       ?? `rgba(${bins[b] / poc >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},${(PROFILE_STRIP_ALPHA_MIN + (1 - PROFILE_STRIP_ALPHA_MIN) * t).toFixed(3)})` });
       }
     }
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       ctx.save();
-      for (const zl of zoneLines) {
-        ctx.strokeStyle = zl.isPoc ? C_PROFILE_LINE_POC
-          : `rgba(${zl.rgb},${(PROFILE_ZONE_LINE_ALPHA_MIN + (1 - PROFILE_ZONE_LINE_ALPHA_MIN) * zl.t).toFixed(3)})`;
-        ctx.lineWidth = 1 + (PROFILE_ZONE_LINE_WIDTH_MAX - 1) * zl.t;
-        ctx.beginPath(); ctx.moveTo(zl.x0, zl.y); ctx.lineTo(zl.x1, zl.y); ctx.stroke();
-      }
-      for (const { a, dotted } of lines) {
-        ctx.lineCap = dotted ? 'butt' : 'round';
-        ctx.setLineDash(dotted ? [2, 3] : []);
-        let dist = 0;   // dash offset carried across segments so the dots stay even
+      for (const sl of strip) { ctx.fillStyle = sl.color; ctx.fillRect(sl.x, sl.y, sl.w, sl.h); }
+      ctx.lineCap = 'round';
+      for (const a of lines) {
         for (const sg of segsOf(a)) {
-          ctx.lineDashOffset = -dist;
           ctx.strokeStyle = sg.color;
           ctx.lineWidth = sg.width;
           ctx.beginPath(); ctx.moveTo(sg.x0, sg.y0); ctx.lineTo(sg.x1, sg.y1); ctx.stroke();
-          dist += Math.hypot(sg.x1 - sg.x0, sg.y1 - sg.y0);
         }
       }
       ctx.restore();
@@ -1067,7 +1119,8 @@ export class DynamicVWAPEngine {
    * ranged creation passes fixedEnd=toIdx (stays put at that range forever).
    */
   _createManualAnchor(anchorIdx, toIdx, withStdev, withProfile, fixedEnd) {
-    const vwap = this._series(withProfile ? C_MANUAL_WITH_PROFILE : C_MANUAL, 2, 0);
+    // A profile's aVWAP is drawn by ProfileLinePrimitive (every mode) — its series stays transparent.
+    const vwap = this._series(withProfile ? 'rgba(0,0,0,0)' : C_MANUAL, 2, 0);
     vwap.setData(this._vwapLine(anchorIdx, toIdx));
 
     const bands = [];
@@ -1378,31 +1431,39 @@ export class DynamicVWAPEngine {
    * second aVWAP with a manual anchor's Volume Profile — the swing-high
    * aVWAP complementing a swing-low anchor, or vice versa, so the profile
    * reads with both channel boundaries drawn in, not just the one the user
-   * happened to anchor on. The anchor is classed as a peak or valley by its
-   * neighborhood (see below) and the other side is always the opposite
+   * happened to anchor on. The anchor is classed as a peak or valley by the
+   * bars after it (see below) and the other side is always the opposite
    * extreme: the range's lowest low after a peak, highest high after a
    * valley. Returns { idx, isHigh } or null if the range is too short.
    */
-  /** Other-side dotted aVWAP's series color for the profile's mode —
-   * transparent where ProfileLinePrimitive draws it (Both / line-only). */
+  /** Other-side aVWAP's series color — transparent: ProfileLinePrimitive
+   * draws it, in every profile mode. */
   _otherSideColor(entry) {
-    if (entry.vpMode === VP_MODE_BOTH || entry.vpMode === VP_MODE_POCS) return 'rgba(0,0,0,0)';
-    return entry.vpMode === VP_MODE_LVN ? C_OTHERSIDE_LVN : C_OTHERSIDE;
+    return 'rgba(0,0,0,0)';
   }
 
   _otherSideExtremum(anchorIdx, toIdx) {
     if (toIdx <= anchorIdx) return null;
-    // Which side the anchor is on: a peak if its high stands above more of
-    // its neighbors' highs (OTHER_SIDE_WINDOW bars each side) than its low
-    // stands below their lows; a valley otherwise.
+    // Which side the anchor is on, judged by what price does AFTER it (the
+    // aVWAP and profile both run forward from it, so how price got there —
+    // e.g. a big gap up into the anchor candle — doesn't matter): a peak if
+    // its high stands above more of the next OTHER_SIDE_WINDOW bars' highs
+    // than its low stands below their lows, a valley otherwise; a tie goes
+    // by its close vs those bars' average close. Near the latest bar, with
+    // too few bars after it, the bars before it fill out the window.
     const n = this._highs.length;
-    let peakScore = 0, valleyScore = 0;
-    for (let j = Math.max(0, anchorIdx - OTHER_SIDE_WINDOW); j <= Math.min(n - 1, anchorIdx + OTHER_SIDE_WINDOW); j++) {
+    let jEnd = Math.min(n - 1, anchorIdx + OTHER_SIDE_WINDOW);
+    let jStart = anchorIdx + 1;
+    if (jEnd - anchorIdx < 3) jStart = Math.max(0, anchorIdx - OTHER_SIDE_WINDOW);
+    let peakScore = 0, valleyScore = 0, closeSum = 0, cnt = 0;
+    for (let j = jStart; j <= jEnd; j++) {
       if (j === anchorIdx) continue;
       if (this._highs[j] < this._highs[anchorIdx]) peakScore++;
       if (this._lows[j]  > this._lows[anchorIdx])  valleyScore++;
+      closeSum += this._closes[j]; cnt++;
     }
-    const isPeak = peakScore >= valleyScore;
+    const isPeak = peakScore !== valleyScore ? peakScore > valleyScore
+      : cnt > 0 && this._closes[anchorIdx] >= closeSum / cnt;
     // The other side: the range's lowest low after a peak, highest high
     // after a valley.
     let idx = -1, val = isPeak ? Infinity : -Infinity;
@@ -2115,6 +2176,12 @@ export class DynamicVWAPEngine {
       // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
       entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins } : null;
       entry._toIdx = toIdx;
+      // The mode's peak levels — colored on the aVWAPs (and the line-only strip).
+      // (Edges mode: only the POC.)
+      entry._peaks = !payload ? null
+        : entry.vpMode === VP_MODE_EDGE ? new Map([...profilePeakColors(payload.bins, 'hvn')].filter(([, c]) => c === C_PROFILE_LINE_POC))
+        : profilePeakColors(payload.bins, entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both');
+
       if (!entry.profileLinePrim) {
         entry.profileLinePrim = new ProfileLinePrimitive(this, entry);
         entry.vwap.attachPrimitive(entry.profileLinePrim);
@@ -2124,6 +2191,9 @@ export class DynamicVWAPEngine {
         if (entry.vpMode === VP_MODE_BOTH) {
           payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
           payload.dualHistogram = true;
+        } else if (entry.vpMode === VP_MODE_EDGE) {
+          payload.edgeHistogram = true;   // bars = closeness to an HVN / LVN boundary
+          payload.poc = null;             // its own grey profile — no orange POC line
         } else if (entry.vpMode === VP_MODE_POCS) {
           // Line-only: no histogram and no floating POC lines — the aVWAP
           // (ProfileLinePrimitive) carries the profile, POC marked yellow.
@@ -2163,8 +2233,8 @@ export class DynamicVWAPEngine {
 
   /**
    * Advance a manual anchor's Volume Profile to its next display mode
-   * (normal → LVN → both histograms + both POCs → both POCs with bars
-   * hidden → normal) — used when the
+   * (normal → LVN → both histograms + both POCs → bars hidden (line-only)
+   * → edges → normal) — used when the
    * user clicks directly on a profile. Recolors the paired aVWAP and
    * other-side lines to match (indigo only in LVN mode, where the bars are
    * indigo too; orange otherwise), since profile + lines read as one unit.
@@ -2177,11 +2247,7 @@ export class DynamicVWAPEngine {
     if (id == null) return false;
     const entry = this._manualSeries[id];
     entry.vpMode = (entry.vpMode + 1) % VP_MODE_COUNT;
-    const lvn = entry.vpMode === VP_MODE_LVN;
-    // "Both" mode: the primitive draws the line (per-segment color/width).
-    entry.vwap.applyOptions({ color: entry.vpMode === VP_MODE_BOTH || entry.vpMode === VP_MODE_POCS ? 'rgba(0,0,0,0)'
-      : lvn ? C_MANUAL_WITH_PROFILE_LVN : C_MANUAL_WITH_PROFILE });
-    entry.otherSide?.line?.applyOptions({ color: this._otherSideColor(entry) });
+    // The lines are ProfileLinePrimitive's (series transparent), recoded per mode on render.
     this._renderManualEntry(entry.anchorIdx, entry);
     return true;
   }

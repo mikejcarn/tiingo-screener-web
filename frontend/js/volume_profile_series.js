@@ -14,6 +14,8 @@
  * volume totals, poc/vah/val the Point of Control and Value Area bounds,
  * lvnPoc an optional second, LVN-colored POC drawn alongside poc,
  * dualHistogram (bars style) draws the HVN and LVN histograms together,
+ * edgeHistogram (bars style) draws each level's closeness to an HVN / LVN
+ * boundary instead (see below),
  * hvn/lvn arrays of [lo, hi] High/Low Volume Node price ranges (see
  * volume_profile.py for how all of these are computed).
  */
@@ -60,6 +62,9 @@ const RGB_LVN = RGB_LVN_DEFAULT;
 // array edges rather than going undefined, since every bin needs a usable
 // local reference for a continuous gradient (unlike the discrete HVN/LVN
 // detector, which deliberately excludes edges it can't fully window).
+// edgeHistogram bars — one plain grey; length carries the value.
+const EDGE_HIST_FILL = 'rgba(160,160,160,0.5)';
+
 function _localMinMax(bins, window) {
   const n = bins.length;
   const w = Math.max(0, window | 0);
@@ -99,7 +104,7 @@ export class VolumeProfileRenderer {
     const last  = data.bars[data.bars.length - 1];
     const {
       lo, bs, bins, dir, fillOpacity, poc, lvnPoc, vah, val, hvn, lvn,
-      showHistogram, dualHistogram, directionalColor, barStyle,
+      showHistogram, dualHistogram, edgeHistogram, directionalColor, barStyle,
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
       histogramGrayscale,
     } = first.originalData;
@@ -196,6 +201,18 @@ export class VolumeProfileRenderer {
           ctx.fillStyle = `rgba(${histRgb},${opacity})`;
           ctx.fillRect(x0, top, x1 - x0, Math.max(bottom - top, vr));
         }, lvnEmphasis);
+      } else if (edgeHistogram) {
+        // HVN / LVN boundaries: share = volume / POC volume; the dual
+        // histogram's signed value 2·share − 1 (HVN share minus LVN share) is
+        // zero exactly at a boundary, so e = 1 − |2·share − 1| — 1 at half the
+        // POC's volume, 0 at the POC or an untraded level. Its own profile,
+        // not the HVN / LVN colors: plain grey (EDGE_HIST_FILL) bars, length
+        // e. No VA dimming.
+        ctx.fillStyle = EDGE_HIST_FILL;
+        forEachBin((v, top, bottom) => {
+          const e = 1 - Math.min(1, Math.abs(v / maxBin - 0.5) * 2);
+          if (e > 0) ctx.fillRect(x0, top, e * maxWidth, Math.max(bottom - top, vr));
+        }, true);
       } else if (dualHistogram) {
         // HVN and LVN together as one diverging histogram. Overlaying both
         // from the anchor is mirror-symmetric about half the max width (LVN
