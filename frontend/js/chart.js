@@ -1061,7 +1061,7 @@ export class ChartManager {
     return r;
   }
 
-  /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.'/Shift+., and ',' ',' for the Volume Profile pairing (see replay.js). */
+  /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.'/Shift+., and ',' then '<' for the Volume Profile pairing (see replay.js). */
   createRangedAnchorAtX(startIdx, x, withStdev = false, withProfile = false) {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
@@ -1326,36 +1326,16 @@ export class ChartManager {
     return this._engine.createManualFan(lo, hi, hi, kind);
   }
 
-  /** Click on an aVWAP fan cycles its coloring (amber → peaks/valleys red/teal + grey → major only). Returns true if one was cycled. */
-  cycleFanColorAtXY(x, y) {
-    if (!this._engine || !this._candles || !this._inPricePane(y)) return false;
+  /** A repeat Alt+. / Ctrl+. over a fan's first anchor (or a ranged fan's end) cycles its coloring instead of making another fan. Returns true if one was cycled. */
+  cycleFanAtX(x, kind) {
+    if (!this._engine) return false;
     const barIdx = this.barIndexAtX(x);
-    const price  = this._candles.coordinateToPrice(y);
-    if (barIdx == null || price == null) return false;
-    return this._engine.cycleFanColorAt(barIdx, price);
-  }
-
-  /** Click inside a Shift+. anchor's ±3σ envelope cycles its band display (dashed bands → VP-shaded σ cloud → mixed → σ-distance → bands). Returns true if one was cycled. */
-  cycleStdevModeAtXY(x, y) {
-    if (!this._engine || !this._candles || !this._inPricePane(y)) return false;
-    const barIdx = this.barIndexAtX(x);
-    const price  = this._candles.coordinateToPrice(y);
-    if (barIdx == null || price == null) return false;
-    return this._engine.cycleStdevModeAt(barIdx, price);
+    return barIdx != null && this._engine.cycleFanAt(barIdx, kind);
   }
 
   /** Show/hide the volume pane. */
   setVolumeVisible(visible) {
     this.setPaneVisible(VOLUME_PANE_ID, visible);
-  }
-
-  /** Click at (x, y) cycles a manual anchor's Volume Profile display mode (normal → LVN → both histograms + both POCs → both POCs, bars hidden) if the click landed inside it. Returns true if a profile was cycled. */
-  cycleProfileModeAtXY(x, y) {
-    if (!this._engine || !this._candles || !this._inPricePane(y)) return false;
-    const barIdx = this.barIndexAtX(x);
-    const price  = this._candles.coordinateToPrice(y);
-    if (barIdx == null || price == null) return false;
-    return this._engine.cycleProfileModeAt(barIdx, price);
   }
 
   /** Live price/percent-change measurement box from (x0,y0) to (x1,y1), in #chart-local pixel coords. */
@@ -1605,13 +1585,6 @@ export class ChartManager {
   setPaneVisible(id, visible) {
     if (visible) this._paneHidden.delete(id); else this._paneHidden.add(id);
     this._buildPanes();
-  }
-
-  /** True if (x, y), in #chart-local px, is inside the price pane — clicks
-   * in an oscillator pane below shouldn't be read as price-pane clicks. */
-  _inPricePane(y) {
-    const p = this._chart?.panes()[0];
-    return !p || y < p.getHeight();
   }
 
   setIndicatorVisible(cols, visible) {

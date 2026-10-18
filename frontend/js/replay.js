@@ -6,6 +6,7 @@
  */
 
 import { ChartManager } from './chart.js';
+import { claimCancelKeys } from './help.js';
 
 const API = window.location.origin;
 
@@ -409,19 +410,19 @@ function _wireControls() {
     // start — no click/drag/key-hold needed, just hover there. The next
     // '.' (anywhere else) finalizes it: a plain '.' draws a ranged aVWAP
     // between the two points, Shift+. also draws stdev bands, Alt+. a fan
-    // across the range — same modifiers, same meaning, as a normal tap; a
-    // second ',' pairs a Volume Profile (below), Shift+K colors the candles
-    // in the range only. (Not '/' — that's already bound app-wide to toggleTheme in
+    // across the range — same modifiers, same meaning, as a normal tap;
+    // a second ',' (or '<') pairs a Volume Profile (below), Shift+K
+    // colors the candles in the range only. (Not '/' — that's already bound app-wide to toggleTheme in
     // browse.js, which would fire on the same keypress.)
-    if (e.code === 'Comma' && !e.altKey) {
+    if (e.code === 'Comma' && !e.altKey && !e.shiftKey) {
       if (_lastChartX == null) return;
       const barIdx = chart.barIndexAtX(_lastChartX);
       if (barIdx == null) return;
       if (_rangeStartIdx != null) {
         if (Math.abs(barIdx - _rangeStartIdx) <= 2) {
           // ',' again on (near enough) the same candle — a normal
-          // (non-ranged) anchor + Volume Profile that grows to "now", since
-          // start and end are effectively the same point.
+          // (non-ranged) anchor + Volume Profile that grows to "now" (or,
+          // over an existing one, cycles its mode — same as Shift+M).
           chart.toggleManualAnchorAtX(_lastChartX, false, true);
         } else {
           // ',' on a different candle — a ranged aVWAP + Volume Profile.
@@ -435,6 +436,25 @@ function _wireControls() {
       chartEl.style.cursor = 'crosshair';
       return;
     }
+    // '<' (Shift+,) — the one-key form of ',' ',': aVWAP + Volume Profile
+    // anchored at the hovered candle, growing to "now" (after ',' — across
+    // the marked range instead). '<'
+    // again over its anchor (or a ranged one's end) cycles the profile's
+    // mode, as Shift+K / Shift+J cycle the candle coloring.
+    if ((e.key === '<' || (e.code === 'Comma' && e.shiftKey)) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (_lastChartX == null) return;
+      const barIdx = chart.barIndexAtX(_lastChartX);
+      if (barIdx == null) return;
+      if (_rangeStartIdx != null && Math.abs(barIdx - _rangeStartIdx) > 2) {
+        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, true);
+      } else {
+        chart.toggleManualAnchorAtX(_lastChartX, false, true);
+      }
+      _rangeStartIdx = null;
+      chartEl.style.cursor = '';
+      return;
+    }
     // Alt+. — aVWAP fan: an aVWAP at every candle from the hovered one to
     // the current bar (growing to "now"), weighted by swing significance;
     // after ',' it fans across the marked range instead, every line
@@ -442,6 +462,8 @@ function _wireControls() {
     // Ctrl+. — the same full set as one Volume-Profile-shaded fan: volume
     // orange, each line bright through heavily traded price levels of the
     // span and faint through thin ones (',' first for a range).
+    // Either again over a fan's first anchor (or a ranged fan's end) cycles
+    // its coloring instead of making another.
     if (e.code === 'Period' && (e.altKey || e.ctrlKey || e.metaKey) && !(e.altKey && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       if (_lastChartX == null) return;
@@ -450,7 +472,7 @@ function _wireControls() {
         chart.createRangedFanAtX(_rangeStartIdx, _lastChartX, kind);
         _rangeStartIdx = null;
         chartEl.style.cursor = '';
-      } else {
+      } else if (!chart.cycleFanAtX(_lastChartX, kind)) {
         chart.createFanAtX(_lastChartX, kind);
       }
       return;
@@ -486,12 +508,6 @@ function _wireControls() {
       _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
       return;
     }
-    // A plain click elsewhere (no measurement, no Alt) cycles a manual
-    // Volume Profile's display mode if it landed inside one, else a Shift+.
-    // anchor's σ-band display if inside its ±3σ envelope, else an aVWAP
-    // fan's coloring if it landed on one.
-    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    if (!chart.cycleProfileModeAtXY(cx, cy) && !chart.cycleStdevModeAtXY(cx, cy)) chart.cycleFanColorAtXY(cx, cy);
   });
 
   window.addEventListener('mousemove', (e) => {
@@ -548,6 +564,9 @@ function _wireControls() {
 // ── Keyboard ──────────────────────────────────────────────────
 
 function _wireKeys() {
+  // Shift+X / Ctrl+Z are undo here (below), so the shared cancel keys
+  // (help.js) only act as Escape while something is pending to cancel.
+  claimCancelKeys(() => _measureActive || _rangeStartIdx != null || !!chart?._maxPaneId);
   // Esc with an oscillator pane maximized restores just that pane — capture
   // phase + stopImmediatePropagation so nothing else (measurement cancel,
   // blur, fullscreen) also reacts to the same press.

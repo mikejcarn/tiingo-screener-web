@@ -9,7 +9,8 @@ const _GLOBAL_ROWS = `
   <tr><td><kbd>T</kbd> / <kbd>I</kbd> / <kbd>S</kbd> / <kbd>P</kbd> / <kbd>C</kbd></td><td>Jump to tickers / indicators / scanner / pipeline / chart</td></tr>
   <tr><td><kbd>?</kbd></td><td>Toggle this help panel</td></tr>
   <tr><td><kbd>-</kbd> / <kbd>=</kbd> &nbsp;or&nbsp; <kbd>←</kbd> / <kbd>→</kbd> &nbsp;or&nbsp; <kbd>]</kbd> / <kbd>[</kbd></td><td>Cycle help tabs (in this panel)</td></tr>
-  <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>`;
+  <tr><td><kbd>Escape</kbd></td><td>Close panel / blur any focused input</td></tr>
+  <tr><td>Shift+<kbd>X</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Cancel — the same as Escape (close panel, leave the ticker box or any focused input, clear a search), but never leaves fullscreen. In a text box Shift+<kbd>X</kbd> still types an X, except in the ticker boxes; on the chart, with nothing to cancel, they undo instead</td></tr>`;
 
 // TradingView attribution for the chart library (Lightweight Charts™,
 // Apache 2.0, which asks for a link to tradingview.com on pages using it).
@@ -149,11 +150,11 @@ const _PAGES = [
 
       <tr class="help-section"><td colspan="2">Annotations — growing-to-"now"</td></tr>
       <tr><td><kbd>.</kbd></td><td>Place / remove a manually-anchored VWAP at the hovered candle (amber line, grows to "now", ephemeral)</td></tr>
-      <tr><td>Shift+<kbd>.</kbd></td><td>Same, but also draws +/-1 and +/-2 stdev bands around that anchor (dashed, tightest band most visible). Click inside its ±3σ envelope to cycle: dashed bands → σ-band cloud (a band every 0.1σ out to ±3σ) shaded by the span's Volume Profile in volume orange → same cloud orange above / indigo below half the POC's volume → cloud by σ distance (bright near the aVWAP, fading out; teal below, red above) → dashed bands. Cloud modes keep faint dashed ticks at ±1/±2/±3σ, and the aVWAP line itself follows the mode: orange with width by the Volume Profile at its price (thickest where most volume traded) → orange above / indigo below half the POC's volume → colored by slope (teal sloping up, red sloping down, grey flat)</td></tr>
-      <tr><td>Alt+<kbd>.</kbd></td><td>aVWAP fan — an aVWAP at every candle from the hovered one to the current bar, all growing to "now". Each line is weighted by its swing's significance (the largest swing window its candle is a peak/valley at): major peaks/valleys strong (top ones 2px), minor swings and in-between candles faint. Click the fan to cycle: amber → peaks red / valleys teal / in-between grey (min/max aVWAPs — highest peak, lowest valley — bright red / aqua) → every line grey at one flat opacity, only the min/max aVWAPs in color, plus the fan's average aVWAP (mean of all its lines at each bar) in solid amber → every line colored by its own slope point by point (faint grey where it's flat, shading to teal as it rises and red as it falls, stronger the steeper) → amber. Very long spans thin in-between candles first (peaks/valleys kept) to keep drawing fast. One Shift+<kbd>X</kbd> removes the whole fan</td></tr>
-      <tr><td>Ctrl+<kbd>.</kbd></td><td>Volume-Profile aVWAP fan — the same full aVWAP set, all in volume orange, each line shaded point by point by the span's Volume Profile at that price: bright through heavily traded levels, faint through thin ones (the profile covers the span up to the current bar). Click it to cycle the same modes as a clicked Volume Profile: orange (bright at high-volume levels) → each whole line one color from its anchor candle's close, as the HVN/LVN split candle coloring reads it (orange if that close's level is above half the POC's volume, indigo below, brighter the further from the midpoint, yellow at the POC) → orange above / indigo below half the POC's volume → lines shaded by each bar's own volume (vertical brightness bands — when the volume came in) → orange. One Shift+<kbd>X</kbd> removes it</td></tr>
-      <tr><td>Click a profile</td><td>Cycle that Volume Profile's mode. In every mode the profile's aVWAP and its other-side aVWAP (anchored at the range's opposite extreme) are coded like the histogram, and the mode's peak levels are highlighted on the lines (a line takes the color wherever it crosses that level; the bars stay plain): the POC yellow, HVN peaks bright orange, LVN troughs electric violet. Modes: normal (orange; lines thicker and more opaque where more volume traded; every local volume peak highlighted) → LVN (bars widest at the thinnest price levels, POC on the deepest LVN, indigo; lines thicker through thin levels; every trough highlighted, never the profile's thin top/bottom edge) → both POCs with a combined histogram (orange where a level's volume is above half the POC's, indigo where it's below — longer = further from that midpoint; lines follow the same split, thicker the stronger the node; each orange zone's peaks and each indigo zone's troughs highlighted) → line only: bars hidden, the same lines, and the combined histogram flattened into one vertical strip at the profile's left edge — each level orange/indigo, wider and more opaque the stronger the node, peaks in their colors at their own size → back to normal</td></tr>
-      <tr><td>Shift+<kbd>X</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Undo the most recent in-chart addition — manual aVWAP anchor (bands/profile included), fan, or Shift+<kbd>K</kbd> candle coloring/re-anchor (restores the coloring before it) — repeat to keep undoing, in order</td></tr>
+      <tr><td>Shift+<kbd>.</kbd></td><td>Same, but also draws +/-1 and +/-2 stdev bands around that anchor (dashed, tightest band most visible). Press Shift+<kbd>.</kbd> again over its anchor to cycle: dashed bands → σ-band cloud (a band every 0.1σ out to ±3σ) shaded by the span's Volume Profile in volume orange → same cloud orange above / indigo below half the POC's volume → cloud by σ distance (bright near the aVWAP, fading out; teal below, red above) → off (removed; the next press starts over). Cloud modes keep faint dashed ticks at ±1/±2/±3σ, and the aVWAP line itself follows the mode: orange with width by the Volume Profile at its price (thickest where most volume traded) → orange above / indigo below half the POC's volume → colored by slope (teal sloping up, red sloping down, grey flat)</td></tr>
+      <tr><td>Alt+<kbd>.</kbd></td><td>aVWAP fan — an aVWAP at every candle from the hovered one to the current bar, all growing to "now". Each line is weighted by its swing's significance (the largest swing window its candle is a peak/valley at): major peaks/valleys strong (top ones 2px), minor swings and in-between candles faint. Press Alt+<kbd>.</kbd> again over its first candle to cycle: amber → peaks red / valleys teal / in-between grey (min/max aVWAPs — highest peak, lowest valley — bright red / aqua) → every line grey at one flat opacity, only the min/max aVWAPs in color, plus the fan's average aVWAP (mean of all its lines at each bar) in solid amber → every line colored by its own slope point by point (faint grey where it's flat, shading to teal as it rises and red as it falls, stronger the steeper) → off (removed; the next press starts over). Very long spans thin in-between candles first (peaks/valleys kept) to keep drawing fast. One Shift+<kbd>X</kbd> removes the whole fan</td></tr>
+      <tr><td>Ctrl+<kbd>.</kbd></td><td>Volume-Profile aVWAP fan — the same full aVWAP set, all in volume orange, each line shaded point by point by the span's Volume Profile at that price: bright through heavily traded levels, faint through thin ones (the profile covers the span up to the current bar). Press Ctrl+<kbd>.</kbd> again over its first candle to cycle the same modes as a <kbd>&lt;</kbd> Volume Profile: orange (bright at high-volume levels) → each whole line one color from its anchor candle's close, as the HVN/LVN split candle coloring reads it (orange if that close's level is above half the POC's volume, indigo below, brighter the further from the midpoint, yellow at the POC) → orange above / indigo below half the POC's volume → lines shaded by each bar's own volume (vertical brightness bands — when the volume came in) → off (removed; the next press starts over). One Shift+<kbd>X</kbd> removes it</td></tr>
+      <tr><td><kbd>&lt;</kbd></td><td>aVWAP + Volume Profile anchored at the hovered candle, growing to the current bar — the one-key form of <kbd>,</kbd> <kbd>,</kbd>. Press <kbd>&lt;</kbd> again over its anchor candle to cycle the profile's mode (Shift+<kbd>X</kbd> removes it). In every mode the profile's aVWAP and its other-side aVWAP (anchored at the range's opposite extreme) are coded like the histogram, and the mode's peak levels are highlighted on the lines (a line takes the color wherever it crosses that level; the bars stay plain): the POC yellow, HVN peaks bright orange, LVN troughs electric violet. Modes: normal (orange; lines thicker and more opaque where more volume traded; every local volume peak highlighted) → LVN (bars widest at the thinnest price levels, POC on the deepest LVN, indigo; lines thicker through thin levels; every trough highlighted, never the profile's thin top/bottom edge) → both POCs with a combined histogram (orange where a level's volume is above half the POC's, indigo where it's below — longer = further from that midpoint; lines follow the same split, thicker the stronger the node; each orange zone's peaks and each indigo zone's troughs highlighted) → line only: bars hidden, the same lines, and the combined histogram flattened into one vertical strip at the profile's left edge — each level orange/indigo, wider and more opaque the stronger the node, peaks in their colors at their own size → off (removed; the next press starts over)</td></tr>
+      <tr><td>Shift+<kbd>X</kbd> &nbsp;or&nbsp; <kbd>Ctrl+Z</kbd></td><td>Undo the most recent in-chart addition — manual aVWAP anchor (bands/profile included), fan, or Shift+<kbd>K</kbd> candle coloring/re-anchor (restores the coloring before it) — repeat to keep undoing, in order. While a panel, the help, a focused box, a <kbd>,</kbd> range mark, a measurement or a maximized pane is open they cancel that instead, like Escape</td></tr>
 
       <tr class="help-section"><td colspan="2">Annotations — fixed range (two candles)</td></tr>
       <tr><td><kbd>,</kbd></td><td>Mark the hovered candle as a range start (cursor turns into a crosshair); hover the far end, then use one of the rows below to finish it — Escape cancels instead</td></tr>
@@ -162,8 +163,8 @@ const _PAGES = [
       <tr><td><kbd>,</kbd> then Alt+<kbd>.</kbd></td><td>aVWAP fan across the marked range, each line stopping at the range's end</td></tr>
       <tr><td><kbd>,</kbd> then Ctrl+<kbd>.</kbd></td><td>Volume-Profile aVWAP fan across the marked range (profile of the range), each line stopping at its end</td></tr>
       <tr><td><kbd>,</kbd> then Shift+<kbd>K</kbd></td><td>Candle coloring over the marked range only: each mode is computed from that range alone (σ from an aVWAP anchored at its start and ending at its end, relative volume vs the range's average, the HVN / LVN split from the range's own Volume Profile); candles outside it stay standard. Starts at σ; Shift+<kbd>K</kbd> with the mouse inside the range (or off the chart) keeps cycling it, over a candle outside it re-anchors there without a range</td></tr>
-      <tr><td><kbd>,</kbd> then <kbd>,</kbd>, same candle</td><td>aVWAP + Volume Profile at that candle, growing to "now" (line recolors to match the profile)</td></tr>
-      <tr><td><kbd>,</kbd> then <kbd>,</kbd>, different candle</td><td>Fixed-range aVWAP + Volume Profile between the two candles. Both profile kinds also draw an other-side aVWAP from the range's opposite extreme: its lowest low when the anchor is a peak, its highest high when it's a valley — judged by the bars after the anchor, so a gap-up candle that price then holds above counts as a valley</td></tr>
+      <tr><td><kbd>,</kbd> then <kbd>,</kbd>, same candle</td><td>aVWAP + Volume Profile at that candle, growing to "now" — the same as <kbd>&lt;</kbd>; over an existing one it cycles its mode</td></tr>
+      <tr><td><kbd>,</kbd> then <kbd>,</kbd> (or <kbd>&lt;</kbd>), different candle</td><td>Fixed-range aVWAP + Volume Profile between the two candles; <kbd>&lt;</kbd> again over either end cycles its mode. Both profile kinds also draw an other-side aVWAP from the range's opposite extreme: its lowest low when the anchor is a peak, its highest high when it's a valley — judged by the bars after the anchor, so a gap-up candle that price then holds above counts as a valley</td></tr>
 
       <tr class="help-section"><td colspan="2">Measurement</td></tr>
       <tr><td>Alt+Click &nbsp;or&nbsp; Alt+Space</td><td>Lock a measurement start point (Alt+Space uses the last mouse position over the chart); move the cursor to explore $ / % change live; repeat either, or press Escape, to dismiss</td></tr>
@@ -262,8 +263,47 @@ function _toggle(startIdx) {
   else _show(startIdx);
 }
 
+// Alternate cancel keys: Ctrl+Z and Shift+X act as Escape on every page —
+// Escape itself also leaves fullscreen and is grabbed by the browser in
+// other ways, these never are. The press is swallowed and a synthetic
+// Escape keydown is sent to the focused element instead, so every page's
+// own Escape handling runs unchanged. In a text box Shift+X keeps typing an
+// X unless the box is marked data-x-cancels (the ticker boxes — tickers
+// are uppercased anyway). A page that binds the keys itself (the chart's
+// undo) calls claimCancelKeys(check): they then cancel only when something
+// is open or focused, or check() says something is pending, and otherwise
+// pass through to the page.
+const _cancelChecks = [];
+let _cancelKeysClaimed = false;
+export function claimCancelKeys(check) { _cancelKeysClaimed = true; if (check) _cancelChecks.push(check); }
+
+function _isCancelKey(e) {
+  if (e.altKey) return false;
+  if (e.key === 'X' && !e.ctrlKey && !e.metaKey) return true;
+  return (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z';
+}
+
+function _wireCancelKeys() {
+  window.addEventListener('keydown', (e) => {
+    if (!_isCancelKey(e)) return;
+    const el = document.activeElement;
+    const field = el && el !== document.body && el.matches('input, select, textarea, [contenteditable]');
+    const text = field && (el.matches('textarea, [contenteditable]')
+      || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'range', 'color', 'file'].includes(el.type)));
+    if (text && e.key === 'X' && !el.hasAttribute('data-x-cancels')) return;   // typing an X
+    const pending = field || isHelpVisible() || !!document.querySelector('[id$="-panel"].open')
+      || _cancelChecks.some(f => f());
+    if (_cancelKeysClaimed && !pending) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    (el || document.body).dispatchEvent(new KeyboardEvent('keydown',
+      { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+  }, true);
+}
+
 export function initHelp(currentPage) {
   _createOverlay();
+  _wireCancelKeys();
 
   const pageIdx = _PAGES.findIndex(p => p.id === currentPage);
   if (pageIdx >= 0) _activeIdx = pageIdx;

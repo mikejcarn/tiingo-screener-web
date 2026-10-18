@@ -157,7 +157,7 @@ const FAN_VP_GAMMA        = 2;
 const FAN_VP_LEVELS       = 20;
 const FAN_VP_POINT_BUDGET = 250000;
 // Clicking a 'vp' fan cycles FAN_VP_MODES — the in-chart Volume Profile's own
-// modes (click a profile) applied to the fan: 'hvn' volume orange, bright
+// modes ('<') applied to the fan: 'hvn' volume orange, bright
 // through heavily traded levels → 'anchor' each WHOLE line one color, from
 // its anchor candle's close as the HVN / LVN split candle coloring reads it:
 // orange if that close's level is above half the POC's volume, indigo below,
@@ -219,7 +219,7 @@ const FAN_SLOPE_STYLES = [C_SLOPE_UP, C_SLOPE_DOWN].map(to_ =>
     return `rgba(${rgb.join(',')},${(FAN_SLOPE_ALPHA_MIN + (FAN_SLOPE_ALPHA_MAX - FAN_SLOPE_ALPHA_MIN) * t).toFixed(3)})`;
   }));
 
-// ',' ',' also pairs a Volume Profile with a manual anchor — fixed, sensible
+// ',' ',' (or '<') also pairs a Volume Profile with a manual anchor — fixed, sensible
 // defaults rather than exposing the full configurable-indicator param set,
 // since this tool is deliberately parameter-free (press a key, get a
 // result). Reuses VolumeProfileSeries for rendering, so it looks identical
@@ -242,7 +242,7 @@ const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 // same ~8%-per-side reach as the indicator's own 2-of-24 default.
 const MANUAL_VP_LVN_LOCALITY = 0;
 const MANUAL_VP_NODE_WINDOW  = 16;
-// Click-cycle order: normal → LVN → both histograms + both POCs (orange
+// '<' cycle order: normal → LVN → both histograms + both POCs (orange
 // busiest level + indigo deepest LVN) → bars hidden (line-only) → back to
 // normal.
 const VP_MODE_NORMAL = 0;
@@ -250,7 +250,7 @@ const VP_MODE_LVN    = 1;
 const VP_MODE_BOTH   = 2;
 const VP_MODE_POCS   = 3;
 const VP_MODE_COUNT  = 4;
-// When a profile is paired (',' ','), its aVWAP — and a second aVWAP
+// When a profile is paired ('<'), its aVWAP — and a second aVWAP
 // anchored at the range's "other side" extremum (see _otherSideExtremum) —
 // are drawn by ProfileLinePrimitive, coded like the profile's histogram;
 // their chart series stay transparent.
@@ -668,7 +668,7 @@ class StdevCloudPrimitive {
   }
 }
 
-// The ',' ',' profile anchor's own aVWAP — and its other-side aVWAP — drawn
+// The '<' profile anchor's own aVWAP — and its other-side aVWAP — drawn
 // by ProfileLinePrimitive in every profile mode (their chart series stay
 // transparent), per segment, coded like the mode's histogram:
 //   normal (VP_MODE_NORMAL) — volume orange, width PROFILE_LINE_WIDTH_MIN..MAX
@@ -916,7 +916,7 @@ export class DynamicVWAPEngine {
     this._pmmPools = [];
     // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
     // Manual anchors by unique id ('m1', 'm2', ...) — not by bar index, so
-    // different kinds (plain '.', Shift+. stdev, ',' ',' profile) can share
+    // different kinds (plain '.', Shift+. stdev, '<' profile) can share
     // a candle. Each entry carries its own anchorIdx and kind.
     this._manualSeries = {};
     this._manualSeq    = 0;
@@ -1098,7 +1098,7 @@ export class DynamicVWAPEngine {
    * bars of barIdx (the closest one) — hovering the exact bar you placed an
    * anchor on is brittle at typical zoom (a few px per bar), so removal looks
    * anchors up loosely. Only the same kind: a Shift+. tap never removes a
-   * ',' ',' profile anchor on that candle (or vice versa), so both can sit
+   * '<' profile anchor on that candle (or vice versa), so both can sit
    * on one candle.
    */
   _nearestManualAnchor(barIdx, kind, tolerance = 2) {
@@ -1111,6 +1111,31 @@ export class DynamicVWAPEngine {
     return best;
   }
 
+  /** The manual entry of `kind` whose anchor — or, for a ranged one, its
+   * end — is closest to barIdx within `tolerance` bars (newest on a tie),
+   * or null: what a repeat key press over it cycles. */
+  _manualEntryAt(barIdx, kind, tolerance = 2) {
+    let best = null, bestDist = Infinity;
+    for (const id of this._manualOrder) {
+      const entry = typeof id === 'string' ? this._manualSeries[id] : null;
+      if (!entry || entry.kind !== kind) continue;
+      const dist = Math.min(Math.abs(entry.anchorIdx - barIdx),
+        entry.fixedEnd != null ? Math.abs(entry.fixedEnd - barIdx) : Infinity);
+      if (dist <= tolerance && dist <= bestDist) { best = entry; bestDist = dist; }
+    }
+    return best;
+  }
+
+  /** Remove a manual entry and its undo step. */
+  _dropManualEntry(entry) {
+    const id = Object.keys(this._manualSeries).find(k => this._manualSeries[k] === entry);
+    if (id == null) return;
+    this._removeManualEntry(entry);
+    delete this._manualSeries[id];
+    const i = this._manualOrder.indexOf(id);
+    if (i !== -1) this._manualOrder.splice(i, 1);
+  }
+
   static _manualKind(withStdev, withProfile) {
     return withProfile ? 'profile' : withStdev ? 'stdev' : 'plain';
   }
@@ -1118,14 +1143,28 @@ export class DynamicVWAPEngine {
   /**
    * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to
    * toIdx. withStdev also draws vwap +/- k*stdev bands (Shift+.) around it —
-   * see _vwapStdevBands. withProfile (',' ',') also pairs a Volume Profile
+   * see _vwapStdevBands. withProfile (',' ',' or '<') also pairs a Volume Profile
    * with it, same anchor-to-toIdx span, removed together as one unit.
    * Returns true if an anchor was added, false if an existing one of the
    * same kind (plain / bands / profile) was removed.
    */
   toggleManualAnchor(anchorIdx, toIdx, withStdev = false, withProfile = false) {
     if (anchorIdx == null || anchorIdx < 0 || anchorIdx >= this._bars.length) return null;
-    const existing = this._nearestManualAnchor(anchorIdx, DynamicVWAPEngine._manualKind(withStdev, withProfile));
+    const kind = DynamicVWAPEngine._manualKind(withStdev, withProfile);
+    // A repeat press of the key that made a bands / profile anchor, over its
+    // anchor (or a ranged one's end), cycles its display mode, and past the
+    // last mode removes it — as Shift+K / Shift+J cycle the candle coloring
+    // back to standard. The next press starts the cycle over.
+    if (kind !== 'plain') {
+      const entry = this._manualEntryAt(anchorIdx, kind);
+      if (entry) {
+        const next = kind === 'profile' ? this._cycleProfileMode(entry) : this._cycleStdevMode(entry);
+        if (next) return 'cycled';
+        this._dropManualEntry(entry);
+        return false;
+      }
+    }
+    const existing = this._nearestManualAnchor(anchorIdx, kind);
     if (existing != null) {
       this._removeManualEntry(this._manualSeries[existing]);
       delete this._manualSeries[existing];
@@ -1202,10 +1241,6 @@ export class DynamicVWAPEngine {
       otherSide: withProfile ? {} : null,
     };
     this._manualOrder.push(id);
-    // Populate _profileBounds (for cycleProfileModeAt's click hit-test)
-    // immediately — otherwise it stays unset until the next reveal(), so a
-    // click right after creating the profile (before replay steps at all)
-    // would silently miss every hit-test.
     this._renderManualEntry(anchorIdx, this._manualSeries[id]);
   }
 
@@ -1306,7 +1341,7 @@ export class DynamicVWAPEngine {
       if (c.kind === 'valley' && (minI < 0 || this._lows[c.idx]  < this._lows[cands[minI].idx]))  minI = i;
     });
     const fan = {
-      kind, fixedEnd, colorMode: kind === 'vp' ? 'hvn' : 'amber', maxI, minI, sig, vp: null,
+      kind, fixedEnd, lo, colorMode: kind === 'vp' ? 'hvn' : 'amber', maxI, minI, sig, vp: null,
       anchors: cands.map(c => c.idx),
       kinds:   cands.map(c => c.kind),
       confirm: cands.map(c => c.idx),
@@ -1367,8 +1402,8 @@ export class DynamicVWAPEngine {
 
   /** Bring a fan to the current replay bar: its end bar, the carrier line
    * (the fan's oldest anchor — appended one point per forward step, rebuilt
-   * otherwise) and the click hit-test's bounding box (_bounds, extended
-   * incrementally on forward steps). Drawing itself is FanPrimitive's. */
+   * otherwise) and its bounding box (_bounds, extended incrementally on
+   * forward steps). Drawing itself is FanPrimitive's. */
   _renderFan(fan) {
     const n = this._lastN;
     const toIdx = fan.fixedEnd != null ? Math.min(fan.fixedEnd, n) : n;
@@ -1423,21 +1458,38 @@ export class DynamicVWAPEngine {
     try { this._chart.removeSeries(fan.carrier); } catch (_) {}
   }
 
-  /** Click on a fan: advance it to the next of FAN_MODES (amber → red/teal
-   * weighted → grey flat → slope-colored → amber). Topmost (most recently placed) fan whose
-   * drawn area contains the click. Returns true if a fan was cycled. */
-  cycleFanColorAt(barIdx, price) {
-    for (let i = this._manualFans.length - 1; i >= 0; i--) {
-      const fan = this._manualFans[i], b = fan._bounds;
-      if (!b) continue;
-      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) {
-        const modes = fan.kind === 'vp' ? FAN_VP_MODES : FAN_MODES;
-        fan.colorMode = modes[(modes.indexOf(fan.colorMode) + 1) % modes.length];
-        this._applyFanColors(fan);
-        return true;
-      }
+  /** The fan of `kind` whose first anchor — or, for a ranged one, its end —
+   * is closest to barIdx within `tolerance` bars (newest on a tie), or null. */
+  _fanAt(barIdx, kind, tolerance = 2) {
+    let best = null, bestDist = Infinity;
+    for (const fan of this._manualFans) {
+      if (fan.kind !== kind) continue;
+      const dist = Math.min(Math.abs(fan.lo - barIdx),
+        fan.fixedEnd != null ? Math.abs(fan.fixedEnd - barIdx) : Infinity);
+      if (dist <= tolerance && dist <= bestDist) { best = fan; bestDist = dist; }
     }
-    return false;
+    return best;
+  }
+
+  /** A repeat Alt+. / Ctrl+. over a fan's first anchor (or a ranged fan's
+   * end): advance it to the next of FAN_MODES (amber → red/teal weighted →
+   * grey flat → slope-colored) or FAN_VP_MODES, and past the last removes
+   * it. Returns true if a fan was cycled or removed. */
+  cycleFanAt(barIdx, kind) {
+    const fan = this._fanAt(barIdx, kind);
+    if (!fan) return false;
+    const modes = fan.kind === 'vp' ? FAN_VP_MODES : FAN_MODES;
+    const next = modes.indexOf(fan.colorMode) + 1;
+    if (next >= modes.length) {
+      // Past the last mode: the fan goes away (and its undo step with it).
+      this._removeFan(fan);
+      this._manualFans = this._manualFans.filter(f => f !== fan);
+      this._manualOrder = this._manualOrder.filter(o => o?.fan !== fan);
+      return true;
+    }
+    fan.colorMode = modes[next];
+    this._applyFanColors(fan);
+    return true;
   }
 
   // ── PMM greedy extrema ────────────────────────────────────────────────────
@@ -2035,27 +2087,20 @@ export class DynamicVWAPEngine {
     return toIdx >= e.anchorIdx ? this._stdevCloudData(e.anchorIdx, toIdx) : null;
   }
 
-  /** Click inside a Shift+. anchor's ±STDEV_CLOUD_K σ envelope: advance it
-   * to the next of STDEV_CLOUD_MODES (the dashed ±1/±2σ band series show
-   * only in 'bands'). Topmost (most recently placed) anchor first. Returns
-   * true if one was cycled. */
-  cycleStdevModeAt(barIdx, price) {
-    for (let i = this._manualOrder.length - 1; i >= 0; i--) {
-      const entry = this._manualSeries[this._manualOrder[i]];
-      const c = entry?.cloud;
-      if (!c || barIdx < c.from || barIdx > c.to) continue;
-      const v = c.vwap[barIdx - c.from], d = c.sd[barIdx - c.from];
-      if (Number.isNaN(v) || Number.isNaN(d) || Math.abs(price - v) > STDEV_CLOUD_K * d) continue;
-      entry.stdevMode = STDEV_CLOUD_MODES[(STDEV_CLOUD_MODES.indexOf(entry.stdevMode) + 1) % STDEV_CLOUD_MODES.length];
-      const showBands = entry.stdevMode === 'bands';
-      for (const b of entry.bands) { b.upper.applyOptions({ visible: showBands }); b.lower.applyOptions({ visible: showBands }); }
-      // Cloud modes draw the aVWAP line themselves (per-segment color/width);
-      // its series stays (price scale, hit-test data) but goes transparent.
-      entry.vwap.applyOptions({ color: showBands ? C_MANUAL : 'rgba(0,0,0,0)' });
-      entry.cloudPrim.update();
-      return true;
-    }
-    return false;
+  /** A repeat Shift+. over a bands anchor: advance it to the next of
+   * STDEV_CLOUD_MODES (the dashed ±1/±2σ band series show only in 'bands');
+   * false past the last (the caller removes it). */
+  _cycleStdevMode(entry) {
+    const next = STDEV_CLOUD_MODES.indexOf(entry.stdevMode) + 1;
+    if (next >= STDEV_CLOUD_MODES.length) return false;
+    entry.stdevMode = STDEV_CLOUD_MODES[next];
+    const showBands = entry.stdevMode === 'bands';
+    for (const b of entry.bands) { b.upper.applyOptions({ visible: showBands }); b.lower.applyOptions({ visible: showBands }); }
+    // Cloud modes draw the aVWAP line themselves (per-segment color/width);
+    // its series stays (price scale, data) but goes transparent.
+    entry.vwap.applyOptions({ color: showBands ? C_MANUAL : 'rgba(0,0,0,0)' });
+    entry.cloudPrim?.update();
+    return true;
   }
 
   // ── Reveal ────────────────────────────────────────────────────────────────
@@ -2203,8 +2248,8 @@ export class DynamicVWAPEngine {
         entry.bands[i].upper.setData(bandData[i].upper);
         entry.bands[i].lower.setData(bandData[i].lower);
       }
-      // σ-band cloud (Shift+. click modes): per-bar aVWAP / σ arrays and the
-      // span's Volume Profile, for StdevCloudPrimitive and the click hit-test.
+      // σ-band cloud (Shift+. repeat-press modes): per-bar aVWAP / σ arrays and the
+      // span's Volume Profile, for StdevCloudPrimitive.
       if (!entry.cloudPrim) {
         entry.cloudPrim = new StdevCloudPrimitive(this, entry);
         entry.vwap.attachPrimitive(entry.cloudPrim);
@@ -2236,19 +2281,11 @@ export class DynamicVWAPEngine {
           payload.showHistogram = false;
           payload.poc = null;
         }
-        // Bounding box for cycleProfileModeAt's click hit-test — bars span
-        // this price range even while hidden in VP_MODE_POCS (aVWAP/POC stay
-        // clickable there even while the bars themselves are hidden).
-        entry._profileBounds = {
-          loBar: anchorIdx, hiBar: toIdx,
-          priceLo: payload.lo, priceHi: payload.lo + payload.bins.length * payload.bs,
-        };
         const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
         const endTime   = (this._bars[toIdx].Date     || this._bars[toIdx].date     || '').slice(0, 10);
         entry.profile.setData([{ time: startTime, ...payload }, { time: endTime, ...payload }]);
       } else {
         entry.profile.setData([]);
-        entry._profileBounds = null;
       }
     }
     if (entry.otherSide) {
@@ -2267,42 +2304,14 @@ export class DynamicVWAPEngine {
     }
   }
 
-  /**
-   * Advance a manual anchor's Volume Profile to its next display mode
-   * (normal → LVN → both histograms + both POCs → bars hidden (line-only)
-   * → normal) — used when the
-   * user clicks directly on a profile. Recolors the paired aVWAP and
-   * other-side lines to match (indigo only in LVN mode, where the bars are
-   * indigo too; orange otherwise), since profile + lines read as one unit.
-   * Hit-tests barIdx/price against each profile's last-drawn bounding box
-   * (see _profileAnchorAt). Returns true if a profile was cycled, false if
-   * the click didn't land on any profile.
-   */
-  cycleProfileModeAt(barIdx, price) {
-    const id = this._profileAnchorAt(barIdx, price);
-    if (id == null) return false;
-    const entry = this._manualSeries[id];
-    entry.vpMode = (entry.vpMode + 1) % VP_MODE_COUNT;
-    // The lines are ProfileLinePrimitive's (series transparent), recoded per mode on render.
+  /** A repeat '<' over a profile's anchor (or a ranged one's end):
+   * advance it to its next display mode (normal → LVN → both → line-only);
+   * false past the last (the caller removes it). Its aVWAP and other-side lines are recoded to match on render. */
+  _cycleProfileMode(entry) {
+    if (entry.vpMode + 1 >= VP_MODE_COUNT) return false;
+    entry.vpMode++;
     this._renderManualEntry(entry.anchorIdx, entry);
     return true;
-  }
-
-  /** Topmost manual profile whose last-drawn bounds contain (barIdx, price),
-   * as its anchor id, or null — bounds are populated at creation too
-   * (via _createManualAnchor), so this works even before the next reveal().
-   *
-   * Walks this._manualOrder back-to-front (most-recently-placed first),
-   * so an overlap resolves in favor of whichever profile is actually on top. */
-  _profileAnchorAt(barIdx, price) {
-    for (let i = this._manualOrder.length - 1; i >= 0; i--) {
-      const id = this._manualOrder[i];
-      const entry = this._manualSeries[id];
-      if (!entry || !entry.profile || !entry._profileBounds) continue;
-      const b = entry._profileBounds;
-      if (barIdx >= b.loBar && barIdx <= b.hiBar && price >= b.priceLo && price <= b.priceHi) return id;
-    }
-    return null;
   }
 
   // ── Show/hide a generic anchor-pool kind (e.g. 'avwap_max', 'avwap_min') ──
