@@ -105,7 +105,8 @@ const C_MANUAL = 'rgba(255,193,7,0.95)';
 // Clicking a fan cycles FAN_MODES: amber (weighted) → peak red / valley teal,
 // in-between grey (weighted, min/max aVWAPs highlighted) → every line grey at
 // one flat FAN_FLAT_ALPHA, 1px, with only the min/max aVWAPs in color,
-// plus the fan's average aVWAP in amber → amber.
+// plus the fan's average aVWAP in amber → every line colored point by point
+// by its own slope (grey flat, teal rising, red falling) → amber.
 const C_MANUAL_RGB          = '255,193,7';
 const C_PEAK_RGB            = '239,83,80';
 const C_VALLEY_RGB          = '38,166,154';
@@ -121,7 +122,17 @@ const FAN_FLAT_ALPHA        = 0.3;    // every line's opacity in 'flat' mode
 // every fan line that exists there (anchored at or before it).
 const C_FAN_AVG             = `rgba(${C_MANUAL_RGB},1)`;
 const FAN_AVG_WIDTH         = 2;
-const FAN_MODES             = ['amber', 'pv', 'flat'];
+// 'slope' mode: each 1px segment by the line's slope into that bar, in ATR
+// per bar (ATR FAN_SLOPE_ATR): grey and faint when flat, shading to teal
+// rising / red falling and more opaque as it steepens, full at
+// FAN_SLOPE_SCALE. Quantized to FAN_SLOPE_LEVELS steps each way so the fan
+// strokes in a few batches.
+const FAN_SLOPE_ATR         = 14;
+const FAN_SLOPE_SCALE       = 0.1;
+const FAN_SLOPE_LEVELS      = 8;
+const FAN_SLOPE_ALPHA_MIN   = 0.15;
+const FAN_SLOPE_ALPHA_MAX   = 0.6;
+const FAN_MODES             = ['amber', 'pv', 'flat', 'slope'];
 // In the red/teal coloring, the fan's min/max aVWAPs — anchored at its
 // highest peak and lowest valley — are highlighted in the same colors the
 // aVWAP Min|Max lines use (avwap_max / avwap_min below), and wider.
@@ -137,9 +148,9 @@ const FAN_MODES             = ['amber', 'pv', 'flat'];
 const FAN_VP_BINS         = 100;
 // Every segment at a level that traded at all gets at least FAN_VP_ALPHA_FLOOR
 // (the line stays visible there) and the shading adds up to FAN_VP_ALPHA_MAX
-// on top; only a level with truly zero volume is left out, in the modes where
-// it would be the faintest ('hvn' — in 'lvn'/'both' a zero-volume level is
-// the brightest).
+// on top; only a level with truly zero volume is left out, in the mode where
+// it would be the faintest ('hvn' — in 'both' a zero-volume level is the
+// brightest).
 const FAN_VP_ALPHA_FLOOR  = 0.1;
 const FAN_VP_ALPHA_MAX    = 0.45;
 const FAN_VP_GAMMA        = 2;
@@ -147,14 +158,19 @@ const FAN_VP_LEVELS       = 20;
 const FAN_VP_POINT_BUDGET = 250000;
 // Clicking a 'vp' fan cycles FAN_VP_MODES — the in-chart Volume Profile's own
 // modes (click a profile) applied to the fan: 'hvn' volume orange, bright
-// through heavily traded levels → 'lvn' indigo, bright through THIN levels →
+// through heavily traded levels → 'anchor' each WHOLE line one color, from
+// its anchor candle's close as the HVN / LVN split candle coloring reads it:
+// orange if that close's level is above half the POC's volume, indigo below,
+// brighter the further from the midpoint, the POC yellow (C_FAN_ANCHOR_POC)
+// — do lines launched from busy vs thin prices behave differently? →
 // 'both' orange where a level's volume is above half the POC's, indigo where
 // below, brighter the further from that midpoint → 'barvol' every line shaded
 // by each BAR's own volume instead (time, not price: at bar i all lines take
 // bar i's shade, so the volume histogram reads as vertical bands across the
 // fan — bar volume / the span's FAN_BARVOL_PCTL percentile, capped at 1, so
 // one spike doesn't flatten the rest) → 'hvn'.
-const FAN_VP_MODES        = ['hvn', 'lvn', 'both', 'barvol'];
+const FAN_VP_MODES        = ['hvn', 'anchor', 'both', 'barvol'];
+const C_FAN_ANCHOR_POC    = 'rgba(255,214,0,0.9)';
 const FAN_BARVOL_PCTL     = 0.95;
 const C_FAN_MAX      = 'rgba(255,0,0,1.0)';
 const C_FAN_MIN      = 'rgba(0,255,255,0.85)';
@@ -195,6 +211,13 @@ const AVWAP_SLOPE_PCTL   = 0.95;
 const C_SLOPE_FLAT       = [150, 150, 150];
 const C_SLOPE_UP         = [38, 166, 154];
 const C_SLOPE_DOWN       = [239, 83, 80];
+// The Alt+. fan's 'slope' mode styles (see FAN_SLOPE_*): [up, down][level].
+const FAN_SLOPE_STYLES = [C_SLOPE_UP, C_SLOPE_DOWN].map(to_ =>
+  Array.from({ length: FAN_SLOPE_LEVELS + 1 }, (_, k) => {
+    const t = k / FAN_SLOPE_LEVELS;
+    const rgb = C_SLOPE_FLAT.map((f, q) => Math.round(f + (to_[q] - f) * t));
+    return `rgba(${rgb.join(',')},${(FAN_SLOPE_ALPHA_MIN + (FAN_SLOPE_ALPHA_MAX - FAN_SLOPE_ALPHA_MIN) * t).toFixed(3)})`;
+  }));
 
 // ',' ',' also pairs a Volume Profile with a manual anchor — fixed, sensible
 // defaults rather than exposing the full configurable-indicator param set,
@@ -220,14 +243,13 @@ const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 const MANUAL_VP_LVN_LOCALITY = 0;
 const MANUAL_VP_NODE_WINDOW  = 16;
 // Click-cycle order: normal → LVN → both histograms + both POCs (orange
-// busiest level + indigo deepest LVN) → bars hidden (line-only) → edges
-// (HVN / LVN boundaries, see ProfileLinePrimitive) → back to normal.
+// busiest level + indigo deepest LVN) → bars hidden (line-only) → back to
+// normal.
 const VP_MODE_NORMAL = 0;
 const VP_MODE_LVN    = 1;
 const VP_MODE_BOTH   = 2;
 const VP_MODE_POCS   = 3;
-const VP_MODE_EDGE   = 4;
-const VP_MODE_COUNT  = 5;
+const VP_MODE_COUNT  = 4;
 // When a profile is paired (',' ','), its aVWAP — and a second aVWAP
 // anchored at the range's "other side" extremum (see _otherSideExtremum) —
 // are drawn by ProfileLinePrimitive, coded like the profile's histogram;
@@ -347,13 +369,20 @@ class FanPrimitive {
     const buckets = new Map();
     // 'flat' mode: per-bar sum / count of every drawn line, for the average aVWAP.
     const avg = fan.colorMode === 'flat' ? { sum: new Float64Array(to - from + 1), cnt: new Uint32Array(to - from + 1) } : null;
+    // 'slope' mode: a path per direction and level (see FAN_SLOPE_*).
+    const slope = fan.colorMode === 'slope'
+      ? { paths: FAN_SLOPE_STYLES.map(lvls => lvls.map(() => new Path2D())), atr: eng._getAtr(FAN_SLOPE_ATR) }
+      : null;
     fan.anchors.forEach((a, k) => {
       const st = fan.styles[k];
       if (!st || !st.visible || a > to || a > toIdx || fan.confirm[k] > n) return;
-      let b = buckets.get(st.key);
-      if (!b) { b = { color: st.color, width: st.width, order: st.order, path: new Path2D() }; buckets.set(st.key, b); }
+      let b = null;
+      if (!slope) {
+        b = buckets.get(st.key);
+        if (!b) { b = { color: st.color, width: st.width, order: st.order, path: new Path2D() }; buckets.set(st.key, b); }
+      }
       const pvBase = a > 0 ? cumPV[a - 1] : 0, volBase = a > 0 ? cumVol[a - 1] : 0;
-      let pen = false;
+      let pen = false, px = 0, py = 0, pv = 0;
       for (let i = Math.max(a, from); i <= to; i++) {
         const vol = cumVol[i] - volBase;
         if (!(vol > 0)) continue;
@@ -362,7 +391,14 @@ class FanPrimitive {
         const y = toY(v);
         const x = xs[i - from];
         if (y == null || Number.isNaN(x)) { pen = false; continue; }
-        if (pen) b.path.lineTo(x, y); else { b.path.moveTo(x, y); pen = true; }
+        if (slope) {
+          if (pen) {
+            const atr = slope.atr[i], t = atr > 0 ? Math.min(1, Math.abs(v - pv) / atr / FAN_SLOPE_SCALE) : 0;
+            const path = slope.paths[v >= pv ? 0 : 1][Math.round(t * FAN_SLOPE_LEVELS)];
+            path.moveTo(px, py); path.lineTo(x, y);
+          }
+          px = x; py = y; pv = v; pen = true;
+        } else if (pen) b.path.lineTo(x, y); else { b.path.moveTo(x, y); pen = true; }
       }
     });
     let avgPath = null;
@@ -383,6 +419,13 @@ class FanPrimitive {
         ctx.strokeStyle = b.color;
         ctx.lineWidth = b.width;
         ctx.stroke(b.path);
+      }
+      if (slope) {
+        ctx.lineWidth = 1;
+        // Faintest first, so steep segments draw over flat ones.
+        for (let k = 0; k <= FAN_SLOPE_LEVELS; k++) for (let d = 0; d < 2; d++) {
+          ctx.strokeStyle = FAN_SLOPE_STYLES[d][k]; ctx.stroke(slope.paths[d][k]);
+        }
       }
       if (avgPath) {
         ctx.strokeStyle = C_FAN_AVG;
@@ -417,18 +460,26 @@ class FanPrimitive {
       for (let i = from; i <= to; i++) barLv[i - from] = Math.min(FAN_VP_LEVELS - 1, Math.floor(Math.min(1, vols[i] / ref) * FAN_VP_LEVELS));
     }
     const lv = t => Math.min(FAN_VP_LEVELS - 1, Math.max(0, Math.floor(t * FAN_VP_LEVELS)));
+    const pocPath = new Path2D();   // 'anchor': lines anchored at a POC-level close
+    // 'anchor': one path per line, from its anchor candle's close level.
+    const binOf = price => Math.min(nb - 1, Math.max(0, Math.floor((price - priceMin) / binSize)));
+    const anchorPath = a => {
+      const b = binOf(this._engine._closes[a]), s = bins[b] / maxBin;
+      if (bins[b] === maxBin) return pocPath;
+      return s >= 0.5 ? orange[lv((s - 0.5) * 2)] : indigo[lv((0.5 - s) * 2)];
+    };
     const pathOf = (price, i) => {
       if (mode === 'barvol') return orange[barLv[i - from]];
       const b = Math.min(nb - 1, Math.max(0, Math.floor((price - priceMin) / binSize)));
       const s = bins[b] / maxBin;
       if (mode === 'hvn' && !(bins[b] > 0)) return zero;
-      if (mode === 'lvn') return indigo[lv(1 - s)];
       if (mode === 'both') return s >= 0.5 ? orange[lv((s - 0.5) * 2)] : indigo[lv((0.5 - s) * 2)];
       return orange[lv(s)];
     };
     fan.anchors.forEach((a, k) => {
       if (a > to || a > toIdx || fan.confirm[k] > n) return;
       const pvBase = a > 0 ? cumPV[a - 1] : 0, volBase = a > 0 ? cumVol[a - 1] : 0;
+      const linePath = mode === 'anchor' ? anchorPath(a) : null;
       let px = NaN, py = NaN;
       for (let i = Math.max(a, from); i <= to; i++) {
         const vol = cumVol[i] - volBase;
@@ -437,7 +488,7 @@ class FanPrimitive {
         const x = xs[i - from], y = toY(price);
         if (y == null || Number.isNaN(x)) { px = NaN; continue; }
         if (!Number.isNaN(px)) {
-          const path = pathOf(price, i);
+          const path = linePath ?? pathOf(price, i);
           path.moveTo(px, py); path.lineTo(x, y);
         }
         px = x; py = y;
@@ -454,6 +505,8 @@ class FanPrimitive {
           ctx.stroke(path);
         });
       }
+      ctx.strokeStyle = C_FAN_ANCHOR_POC;
+      ctx.stroke(pocPath);
       ctx.restore();
     });
   }
@@ -629,14 +682,6 @@ class StdevCloudPrimitive {
 // Wherever a segment crosses one of the mode's peak levels (profilePeakColors)
 // it takes that peak's color instead — the POC yellow, HVN peaks bright
 // orange, LVN troughs electric violet. The histogram itself stays plain.
-//   edges (VP_MODE_EDGE) — the HVN / LVN boundaries: a level's closeness to
-//     half the POC's volume, edge = 1 − |2·share − 1| (the mixed histogram's
-//     2·share − 1 is the HVN share minus the LVN share; it's zero exactly at a
-//     boundary) — its own grayscale profile, not the HVN / LVN colors. Lines
-//     shaded black → white and widened by edge — bright and bold where the
-//     aVWAP sits in an HVN / LVN decision zone, dark and thin inside nodes;
-//     only the POC crossing is highlighted. The histogram's bars are edge
-//     long, plain grey (VolumeProfileSeries' edgeHistogram).
 const PROFILE_LINE_WIDTH_MIN = 1;
 const PROFILE_LINE_WIDTH_MAX = 5;
 const PROFILE_LINE_ALPHA_MIN = 0.35;
@@ -766,10 +811,6 @@ class ProfileLinePrimitive {
     const wOf = t => PROFILE_LINE_WIDTH_MIN + (PROFILE_LINE_WIDTH_MAX - PROFILE_LINE_WIDTH_MIN) * t;
     // Mode coding for a level's volume share of the POC → {color, width}.
     const styleOf = share => {
-      if (mode === VP_MODE_EDGE) {
-        const t = 1 - Math.min(1, Math.abs(share - 0.5) * 2), g = Math.round(255 * t);
-        return { color: `rgba(${g},${g},${g},0.95)`, width: wOf(t) };
-      }
       if (split) {
         return { color: `rgba(${share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},0.95)`,
                  width: wOf(Math.min(1, Math.abs(share - 0.5) * 2)) };
@@ -1383,7 +1424,7 @@ export class DynamicVWAPEngine {
   }
 
   /** Click on a fan: advance it to the next of FAN_MODES (amber → red/teal
-   * weighted → red/teal flat → amber). Topmost (most recently placed) fan whose
+   * weighted → grey flat → slope-colored → amber). Topmost (most recently placed) fan whose
    * drawn area contains the click. Returns true if a fan was cycled. */
   cycleFanColorAt(barIdx, price) {
     for (let i = this._manualFans.length - 1; i >= 0; i--) {
@@ -2177,10 +2218,8 @@ export class DynamicVWAPEngine {
       entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins } : null;
       entry._toIdx = toIdx;
       // The mode's peak levels — colored on the aVWAPs (and the line-only strip).
-      // (Edges mode: only the POC.)
-      entry._peaks = !payload ? null
-        : entry.vpMode === VP_MODE_EDGE ? new Map([...profilePeakColors(payload.bins, 'hvn')].filter(([, c]) => c === C_PROFILE_LINE_POC))
-        : profilePeakColors(payload.bins, entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both');
+      entry._peaks = payload ? profilePeakColors(payload.bins,
+        entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both') : null;
 
       if (!entry.profileLinePrim) {
         entry.profileLinePrim = new ProfileLinePrimitive(this, entry);
@@ -2191,9 +2230,6 @@ export class DynamicVWAPEngine {
         if (entry.vpMode === VP_MODE_BOTH) {
           payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
           payload.dualHistogram = true;
-        } else if (entry.vpMode === VP_MODE_EDGE) {
-          payload.edgeHistogram = true;   // bars = closeness to an HVN / LVN boundary
-          payload.poc = null;             // its own grey profile — no orange POC line
         } else if (entry.vpMode === VP_MODE_POCS) {
           // Line-only: no histogram and no floating POC lines — the aVWAP
           // (ProfileLinePrimitive) carries the profile, POC marked yellow.
@@ -2234,7 +2270,7 @@ export class DynamicVWAPEngine {
   /**
    * Advance a manual anchor's Volume Profile to its next display mode
    * (normal → LVN → both histograms + both POCs → bars hidden (line-only)
-   * → edges → normal) — used when the
+   * → normal) — used when the
    * user clicks directly on a profile. Recolors the paired aVWAP and
    * other-side lines to match (indigo only in LVN mode, where the bars are
    * indigo too; orange otherwise), since profile + lines read as one unit.

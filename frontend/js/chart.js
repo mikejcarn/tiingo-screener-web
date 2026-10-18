@@ -68,7 +68,7 @@ const C_DOWN = 'rgba(239,83,80,1)';
 //              transparency (CANDLE_VOL_ALPHA_MIN) as ratio → 0; above it it brightens to full volume orange at
 //              CANDLE_RELVOL_FULL×. Black only for a bar with genuinely zero
 //              volume. Candles before the anchor stay standard.
-const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit', 'vpedge'];
+const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit'];
 // 'vpsplit' — the Volume Profile's "Both" split on the candles: the close's
 // level vs half the range POC's volume — orange (HVN side) above, LVN indigo
 // below, opacity rising with distance from that midpoint (CANDLE_SPLIT_ALPHA_MIN
@@ -79,14 +79,6 @@ const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit', 'vpedge']
 const CANDLE_VP_BINS      = 100;
 const CANDLE_SPLIT_ALPHA_MIN = 0.2;
 const CANDLE_SPLIT_EDGE_ALPHA = 0.85;
-// 'vpedge' — the Volume Profile's HVN / LVN decision zones (the profile's
-// "edges" mode) on the candles: the close's level's closeness to half the
-// POC's volume, e = 1 − |2·share − 1|. White body, opacity
-// CANDLE_EDGE_ALPHA_MIN → 1 by e (brightest at a boundary, faint at the POC
-// or an untraded level); border and wick a steady grey (C_CANDLE_EDGE_LINE)
-// so every candle stays visible. No POC highlight — white / grey only.
-const CANDLE_EDGE_ALPHA_MIN = 0.08;
-const C_CANDLE_EDGE_LINE    = 'rgba(150,150,150,0.85)';
 const C_CANDLE_POC        = 'rgba(255,214,0,1)';
 const CANDLE_SIGMA_FULL   = 2.5;
 const CANDLE_RELVOL_FULL  = 2.5;
@@ -108,11 +100,23 @@ const lerpRgb = (a, b, t) => `rgb(${a.map((x, q) => Math.round(x + (b[q] - x) * 
 // candle is drawn as a conventional body box (open → close, body width) and
 // thin wicks (CANDLE_SLICE_WICK_MIN..MAX px), both colored one pixel row at
 // a time by that exact price's value in the mode (σ: the price's distance
-// from the bar's aVWAP; HVN / LVN split and edges: that price level's value
+// from the bar's aVWAP; HVN / LVN split: that price level's value
 // in a finer, CANDLE_SLICE_BINS-level profile). The library's own candle is
-// fully transparent there. 'relvol' is a per-bar number with no per-price
-// breakdown, so it stays whole-candle.
+// fully transparent there. 'relvol' has no per-price breakdown, so sliced it
+// becomes a time × price volume heatmap behind the candles instead:
+// over the range (anchor → end) and its price span (CANDLE_HEAT_BINS levels),
+// each bar's volume spread evenly over its own high → low (the Volume
+// Profile's assumption), accumulated bar by bar with a CANDLE_HEAT_HALFLIFE
+// bar half-life — heat builds where price keeps trading and cools where it
+// left, so each column is a recency-weighted profile up to that bar. Volume
+// orange, opacity CANDLE_HEAT_ALPHA × (heat / the range's hottest cell) ^
+// CANDLE_HEAT_GAMMA. The candles on top keep the whole-candle relvol
+// coloring — each bar's own volume vs the range average.
 const CANDLE_SLICE_BINS     = 300;
+const CANDLE_HEAT_BINS      = 100;
+const CANDLE_HEAT_HALFLIFE  = 20;
+const CANDLE_HEAT_ALPHA     = 0.75;
+const CANDLE_HEAT_GAMMA     = 0.7;
 const CANDLE_SLICE_WICK_MIN = 1;
 const CANDLE_SLICE_WICK_MAX = 2;
 
@@ -126,6 +130,39 @@ function _candleBodyWidth(barSpacing, pr) {
 /** Draws the Shift+J slices under the candle series (zOrder 'bottom'), from
  * the ChartManager's current _candleSlice = { from, to, colorAt(i, price) }. */
 class CandleSlicePrimitive {
+  /** Sliced 'relvol': the time × price volume heatmap (see CANDLE_HEAT_*) —
+   * h.heat[(i − h.from) · nb + level], normalized 0..1. Each visible column
+   * is drawn as runs of equal (quantized) opacity. */
+  _drawHeat(target, h) {
+    const ts = this._chart.timeScale(), series = this._series, nb = h.nb;
+    const range = ts.getVisibleLogicalRange();
+    if (!range) return;
+    const from = Math.max(h.from, Math.floor(range.from) - 1), to = Math.min(h.to, Math.ceil(range.to) + 1);
+    const half = ts.options().barSpacing / 2;
+    const ys = new Float64Array(nb + 1);
+    for (let k = 0; k <= nb; k++) ys[k] = series.priceToCoordinate(h.priceMin + k * h.binSize) ?? NaN;
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      for (let i = from; i <= to; i++) {
+        const x = ts.logicalToCoordinate(i);
+        if (x == null) continue;
+        const base = (i - h.from) * nb;
+        let runStart = 0, runA = -1;
+        for (let k = 0; k <= nb; k++) {
+          const a = k < nb ? Math.round(CANDLE_HEAT_ALPHA * Math.pow(h.heat[base + k], CANDLE_HEAT_GAMMA) * 50) / 50 : -1;
+          if (a === runA) continue;
+          if (runA > 0) {
+            const yA = ys[runStart], yB = ys[k];
+            if (!Number.isNaN(yA) && !Number.isNaN(yB)) {
+              ctx.fillStyle = `rgba(${RGB_VOLUME},${runA})`;
+              ctx.fillRect(x - half, Math.min(yA, yB), half * 2, Math.abs(yB - yA));
+            }
+          }
+          runStart = k; runA = a;
+        }
+      }
+    });
+  }
+
   constructor(cm) {
     this._cm = cm;
     const renderer = { draw: target => this._draw(target) };
@@ -137,7 +174,9 @@ class CandleSlicePrimitive {
   update() { this._request?.(); }
 
   _draw(target) {
-    const cm = this._cm, sl = cm._candleSliced ? cm._candleSlice : null;
+    const cm = this._cm;
+    if (cm._candleSliced && cm._candleHeat && this._chart && this._series) return this._drawHeat(target, cm._candleHeat);
+    const sl = cm._candleSliced ? cm._candleSlice : null;
     if (!sl || !this._chart || !this._series) return;
     const ts = this._chart.timeScale(), range = ts.getVisibleLogicalRange();
     if (!range) return;
@@ -316,6 +355,7 @@ export class ChartManager {
     this._candleEndIdx = null;        // ranged coloring's end bar (',' then Shift+K), null = to the current bar
     this._candleSliced = false;       // Shift+J: per-price slices instead of whole candles
     this._candleSlice  = null;        // { from, to, colorAt } for CandleSlicePrimitive
+    this._candleHeat   = null;        // sliced 'relvol' heatmap data, see CANDLE_HEAT_*
     this._volCum      = null;         // cumulative volume, built per load (range averages for 'relvol')
     this._measureEl          = null;  // live drag-measure overlay box
     this._measureLabelEl     = null;
@@ -1138,6 +1178,7 @@ export class ChartManager {
     const top = this._candleEndIdx != null ? Math.min(this._candleEndIdx, n) : n;
     // Shift+J slices: set below per mode when sliced (CandleSlicePrimitive).
     this._candleSlice = null;
+    this._candleHeat = null;
     // A profile-based slice colorer: price → its level in a CANDLE_SLICE_BINS
     // profile of [a, top] → levelColor(share of the POC, is the POC).
     const vpSlices = (a, levelColor) => {
@@ -1199,24 +1240,6 @@ export class ChartManager {
         return { fill: body, edge, wick: edge };
       };
     }
-    if (this._candleMode === 'vpedge') {
-      const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
-      if (a == null || a > n || !this._engine) return null;
-      if (this._candleSliced) vpSlices(a, sh =>
-        `rgba(255,255,255,${(CANDLE_EDGE_ALPHA_MIN + (1 - CANDLE_EDGE_ALPHA_MIN) * (1 - Math.min(1, Math.abs(sh - 0.5) * 2))).toFixed(3)})`);
-      const vp = this._engine._vpHistogram(a, top, CANDLE_VP_BINS);
-      if (!vp) return null;
-      const { priceMin, binSize, bins } = vp;
-      const poc = Math.max(...bins);
-      if (!(poc > 0)) return null;
-      return (i, e) => {
-        if (i < a || i > top) return null;
-        const bin = Math.min(bins.length - 1, Math.max(0, Math.floor((e.close - priceMin) / binSize)));
-        const edgeT = 1 - Math.min(1, Math.abs(bins[bin] / poc - 0.5) * 2);   // closeness to a boundary
-        const fill = `rgba(255,255,255,${(CANDLE_EDGE_ALPHA_MIN + (1 - CANDLE_EDGE_ALPHA_MIN) * edgeT).toFixed(3)})`;
-        return { fill, edge: C_CANDLE_EDGE_LINE, wick: C_CANDLE_EDGE_LINE };
-      };
-    }
     if (this._candleMode === 'relvol') {
       const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
       if (a == null || a > n) return null;
@@ -1226,6 +1249,37 @@ export class ChartManager {
       }
       const avg = (this._volCum[top] - (a > 0 ? this._volCum[a - 1] : 0)) / (top - a + 1);
       if (!(avg > 0)) return null;
+      if (this._candleSliced) {
+        // Time × price heatmap behind the candles (see CANDLE_HEAT_*).
+        const nb = CANDLE_HEAT_BINS, cols = top - a + 1;
+        let pLo = Infinity, pHi = -Infinity;
+        for (let i = a; i <= top; i++) {
+          const b = this._bars[i];
+          pLo = Math.min(pLo, b.Low ?? b.low); pHi = Math.max(pHi, b.High ?? b.high);
+        }
+        if (!(pHi > pLo)) return null;
+        const bs = (pHi - pLo) / nb, decay = Math.pow(0.5, 1 / CANDLE_HEAT_HALFLIFE);
+        const heat = new Float32Array(cols * nb);
+        let max = 0;
+        for (let i = a; i <= top; i++) {
+          const b = this._bars[i], c = i - a, base = c * nb;
+          if (c > 0) for (let k = 0; k < nb; k++) heat[base + k] = heat[base - nb + k] * decay;
+          const lo = b.Low ?? b.low, hi = b.High ?? b.high, vol = b.Volume ?? b.volume ?? 0;
+          const k0 = Math.min(nb - 1, Math.max(0, Math.floor((lo - pLo) / bs)));
+          const k1 = Math.min(nb - 1, Math.max(0, Math.floor((hi - pLo) / bs)));
+          if (k1 === k0 || !(hi > lo)) heat[base + k0] += vol;
+          else for (let k = k0; k <= k1; k++) {   // even spread, by overlap with each level
+            const ov = Math.min(hi, pLo + (k + 1) * bs) - Math.max(lo, pLo + k * bs);
+            if (ov > 0) heat[base + k] += vol * ov / (hi - lo);
+          }
+          for (let k = 0; k < nb; k++) if (heat[base + k] > max) max = heat[base + k];
+        }
+        if (!(max > 0)) return null;
+        for (let q = 0; q < heat.length; q++) heat[q] /= max;
+        this._candleHeat = { from: a, to: top, priceMin: pLo, binSize: bs, nb, heat };
+        // The candles themselves keep the whole-candle relvol coloring below —
+        // each bar's own volume on top of the accumulated heat.
+      }
       return (i, e) => {
         if (i < a || i > top) return null;
         const b = this._bars[i];
