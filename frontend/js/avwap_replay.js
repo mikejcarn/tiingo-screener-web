@@ -243,13 +243,14 @@ const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 const MANUAL_VP_LVN_LOCALITY = 0;
 const MANUAL_VP_NODE_WINDOW  = 16;
 // '<' cycle order: normal → LVN → both histograms + both POCs (orange
-// busiest level + indigo deepest LVN) → bars hidden (line-only) → back to
-// normal.
-const VP_MODE_NORMAL = 0;
-const VP_MODE_LVN    = 1;
-const VP_MODE_BOTH   = 2;
-const VP_MODE_POCS   = 3;
-const VP_MODE_COUNT  = 4;
+// busiest level + indigo deepest LVN) → connected: no histogram at all, the
+// aVWAP and other-side aVWAP carry the profile, joined at the right end by a
+// connector coded like the histogram → off.
+const VP_MODE_NORMAL  = 0;
+const VP_MODE_LVN     = 1;
+const VP_MODE_BOTH    = 2;
+const VP_MODE_CONNECT = 3;
+const VP_MODE_COUNT   = 4;
 // When a profile is paired ('<'), its aVWAP — and a second aVWAP
 // anchored at the range's "other side" extremum (see _otherSideExtremum) —
 // are drawn by ProfileLinePrimitive, coded like the profile's histogram;
@@ -670,33 +671,34 @@ class StdevCloudPrimitive {
 
 // The '<' profile anchor's own aVWAP — and its other-side aVWAP — drawn
 // by ProfileLinePrimitive in every profile mode (their chart series stay
-// transparent), per segment, coded like the mode's histogram:
-//   normal (VP_MODE_NORMAL) — volume orange, width PROFILE_LINE_WIDTH_MIN..MAX
-//     and opacity PROFILE_LINE_ALPHA_MIN..0.95 by the level's volume share of
-//     the POC (bold through heavily traded levels);
-//   LVN (VP_MODE_LVN) — indigo, the same scales by 1 − share (bold through
-//     thin / untraded levels);
-//   Both (VP_MODE_BOTH) / line-only (VP_MODE_POCS) — orange above half the
-//     POC's volume, indigo below (the mixed histogram's split), width by node
-//     strength: the level's distance from that midpoint.
-// Wherever a segment crosses one of the mode's peak levels (profilePeakColors)
-// it takes that peak's color instead — the POC yellow, HVN peaks bright
-// orange, LVN troughs electric violet. The histogram itself stays plain.
-const PROFILE_LINE_WIDTH_MIN = 1;
-const PROFILE_LINE_WIDTH_MAX = 5;
-const PROFILE_LINE_ALPHA_MIN = 0.35;
+// transparent) as a filled ribbon: at each point its thickness is the
+// histogram bar at that price, the mode's bar length scaled so the longest
+// bar is PROFILE_RIBBON_MAX px (never under PROFILE_RIBBON_MIN, so the line
+// stays continuous). The ribbon steps wherever the line crosses a level
+// boundary, so the histogram's shape is stamped onto the line:
+//   normal (VP_MODE_NORMAL) — volume orange, thickness by the level's volume
+//     share of the POC;
+//   LVN (VP_MODE_LVN) — indigo, by 1 − share (thick through thin levels);
+//   Both (VP_MODE_BOTH) / connected (VP_MODE_CONNECT) —
+//     orange above half the
+//     POC's volume, indigo below (the mixed histogram's split), thickness by
+//     node strength: the level's distance from that midpoint.
+// Stretches through one of the mode's peak levels (profilePeakColors) take
+// that peak's color instead — the POC yellow, HVN peaks bright orange, LVN
+// troughs electric violet. The histogram itself stays plain.
+const PROFILE_RIBBON_MAX     = 16;
+const PROFILE_RIBBON_MIN     = 1;
+const PROFILE_RIBBON_ALPHA   = 0.8;
+// Connected mode: each aVWAP starts at its anchor candle's wick
+// tip — the low for a valley anchor, the high for a peak (the other-side
+// aVWAP's anchor is the range's extreme, so its tip is that extreme) —
+// instead of mid-candle, so the shape reaches the range's full extent; at
+// the end bar a vertical ribbon joins the two aVWAPs' ends. Both are coded
+// like the lines (a centered histogram of the levels they pass through).
 const C_PROFILE_LINE_POC     = 'rgba(255,214,0,1)';
 const C_PROFILE_PEAK_HVN     = 'rgba(255,190,90,1)';
 const C_PROFILE_PEAK_LVN     = 'rgba(190,40,255,1)';
 const PROFILE_PEAK_WINDOW    = 4;   // levels each side a local peak must top
-// Line-only mode also flattens the mixed histogram into one vertical strip at
-// the profile's left edge (the anchor bar, growing right), spanning its price
-// range: each level a slice in its color, width PROFILE_STRIP_WIDTH_MIN..MAX
-// and opacity PROFILE_STRIP_ALPHA_MIN..1 by node strength; peak levels keep
-// their size but take their peak color.
-const PROFILE_STRIP_WIDTH_MIN = 1;
-const PROFILE_STRIP_WIDTH_MAX = 8;
-const PROFILE_STRIP_ALPHA_MIN = 0.25;
 
 /** Peak levels of a profile for a display mode, as Map(bin → color): the
  * POC (yellow) always, plus
@@ -798,7 +800,7 @@ class ProfileLinePrimitive {
     const entry = this._entry, vp = entry._vp, eng = this._engine;
     if (!this._chart || !this._series || !vp || entry._toIdx == null) return;
     const mode = entry.vpMode;
-    const lineOnly = mode === VP_MODE_POCS, split = mode === VP_MODE_BOTH || lineOnly;
+    const split = mode >= VP_MODE_BOTH, joined = mode === VP_MODE_CONNECT;
     const ts = this._chart.timeScale();
     const range = ts.getVisibleLogicalRange();
     if (!range) return;
@@ -808,75 +810,124 @@ class ProfileLinePrimitive {
     const toY = priceToYFn(this._series);
     const toIdx = entry._toIdx;
     const peakColor = entry._peaks ?? new Map();
-    const wOf = t => PROFILE_LINE_WIDTH_MIN + (PROFILE_LINE_WIDTH_MAX - PROFILE_LINE_WIDTH_MIN) * t;
-    // Mode coding for a level's volume share of the POC → {color, width}.
-    const styleOf = share => {
-      if (split) {
-        return { color: `rgba(${share >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},0.95)`,
-                 width: wOf(Math.min(1, Math.abs(share - 0.5) * 2)) };
-      }
-      const t = mode === VP_MODE_LVN ? 1 - share : share;
-      return { color: `rgba(${mode === VP_MODE_LVN ? VP_RGB_LVN : VP_RGB_DEFAULT},${(PROFILE_LINE_ALPHA_MIN + (0.95 - PROFILE_LINE_ALPHA_MIN) * t).toFixed(3)})`,
-               width: wOf(t) };
+    const nb = bins.length;
+    const binOf = v => Math.floor((v - lo) / bs);
+    // Mode coding for a level → {color, width} (see PROFILE_RIBBON_*).
+    const C_HVN = `rgba(${VP_RGB_DEFAULT},${PROFILE_RIBBON_ALPHA})`, C_LVN = `rgba(${VP_RGB_LVN},${PROFILE_RIBBON_ALPHA})`;
+    const styleOf = b => {
+      const share = b >= 0 && b < nb ? bins[b] / poc : 0;
+      const t = split ? Math.min(1, Math.abs(share - 0.5) * 2) : mode === VP_MODE_LVN ? 1 - share : share;
+      const color = (b >= 0 && b < nb && peakColor.get(b))
+        || (split ? (share >= 0.5 ? C_HVN : C_LVN) : mode === VP_MODE_LVN ? C_LVN : C_HVN);
+      return { color, w: Math.max(PROFILE_RIBBON_MIN, PROFILE_RIBBON_MAX * t) };
     };
     // The anchor's aVWAP, plus the other-side aVWAP when present.
     const lines = [entry.anchorIdx];
     if (entry._otherIdx != null) lines.push(entry._otherIdx);
-    const segsOf = a => {
+    // One aVWAP's visible stretch as unbroken polylines of bar points {x, y, v}.
+    const vwapAt = (a, i) => {
+      const vol = eng._cumVol[i] - (a > 0 ? eng._cumVol[a - 1] : 0);
+      return vol > 0 ? (eng._cumPV[i] - (a > 0 ? eng._cumPV[a - 1] : 0)) / vol : NaN;
+    };
+    const polysOf = (a, tip) => {
       const from = Math.max(a, Math.floor(range.from) - 1), to = Math.min(toIdx, Math.ceil(range.to) + 1);
       const pvBase = a > 0 ? eng._cumPV[a - 1] : 0, volBase = a > 0 ? eng._cumVol[a - 1] : 0;
-      const segs = [];
-      let px = NaN, py = NaN, pv = NaN;
+      const polys = [];
+      let cur = null;
       for (let i = from; i <= to; i++) {
         const vol = eng._cumVol[i] - volBase;
         const x = ts.logicalToCoordinate(i);
-        if (!(vol > 0) || x == null) { px = NaN; continue; }
-        const v = (eng._cumPV[i] - pvBase) / vol, y = toY(v);
-        if (y == null) { px = NaN; continue; }
-        if (!Number.isNaN(px)) {
-          const b = Math.floor((v - lo) / bs);
-          const st = styleOf(b >= 0 && b < bins.length ? bins[b] / poc : 0);
-          // A peak level anywhere the segment crosses (not just at its end —
-          // a fast-moving aVWAP can jump several levels in one bar); the
-          // POC wins over other peaks.
-          let peak = null;
-          if (peakColor.size) {
-            const bA = Math.max(0, Math.floor((Math.min(v, pv) - lo) / bs));
-            const bB = Math.min(bins.length - 1, Math.floor((Math.max(v, pv) - lo) / bs));
-            for (let k = bA; k <= bB; k++) {
-              const c = peakColor.get(k);
-              if (c) { peak = c; if (c === C_PROFILE_LINE_POC) break; }
-            }
-          }
-          segs.push({ x0: px, y0: py, x1: x, y1: y, color: peak ?? st.color, width: st.width });
+        const v = vol > 0 ? (eng._cumPV[i] - pvBase) / vol : NaN;
+        const y = Number.isNaN(v) || x == null ? null : toY(v);
+        if (y == null) { cur = null; continue; }
+        if (!cur) {
+          polys.push(cur = []);
+          // Joined modes: start from the anchor candle's wick tip.
+          const yt = i === a && tip != null ? toY(tip) : null;
+          if (yt != null) cur.push({ x, y: yt, v: tip });
         }
-        px = x; py = y; pv = v;
+        cur.push({ x, y, v });
       }
-      return segs;
+      return polys;
     };
-    // Line-only: the flattened histogram strip at the profile's left edge.
-    const strip = [];
-    const xL = lineOnly ? ts.logicalToCoordinate(entry.anchorIdx) : null;
-    if (xL != null) {
-      for (let b = 0; b < bins.length; b++) {
-        const yA = toY(lo + b * bs), yB = toY(lo + (b + 1) * bs);
-        if (yA == null || yB == null) continue;
-        const t = Math.min(1, Math.abs(bins[b] / poc - 0.5) * 2);
-        strip.push({ x: xL, y: Math.min(yA, yB), h: Math.max(1, Math.abs(yB - yA)),
-                     w: PROFILE_STRIP_WIDTH_MIN + (PROFILE_STRIP_WIDTH_MAX - PROFILE_STRIP_WIDTH_MIN) * t,
-                     color: peakColor.get(b)      // a peak: its own size, special color
-                       ?? `rgba(${bins[b] / poc >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},${(PROFILE_STRIP_ALPHA_MIN + (1 - PROFILE_STRIP_ALPHA_MIN) * t).toFixed(3)})` });
+    // Polylines as ribbon polygons, one per run of same-colored stretches.
+    const ribbonsOf = polys => {
+      const runs = [];
+      for (const P of polys) {
+        if (P.length < 2) continue;
+        // Vertex normals: the average of the adjacent segments' unit normals.
+        const segN = [];
+        for (let k = 0; k + 1 < P.length; k++) {
+          const dx = P[k + 1].x - P[k].x, dy = P[k + 1].y - P[k].y, L = Math.hypot(dx, dy) || 1;
+          segN.push([-dy / L, dx / L]);
+        }
+        const vN = P.map((_, k) => {
+          const A = segN[Math.max(0, k - 1)], B = segN[Math.min(segN.length - 1, k)];
+          const nx = A[0] + B[0], ny = A[1] + B[1], L = Math.hypot(nx, ny);
+          return L > 1e-6 ? [nx / L, ny / L] : B;
+        });
+        // Stretches within one level: [{b, p0, p1}], p = {x, y, nx, ny}.
+        const at = (k, t) => {
+          const A = P[k], B = P[k + 1], na = vN[k], nB = vN[k + 1];
+          const nx = na[0] + (nB[0] - na[0]) * t, ny = na[1] + (nB[1] - na[1]) * t, L = Math.hypot(nx, ny) || 1;
+          return { x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t, nx: nx / L, ny: ny / L };
+        };
+        let run = null;
+        const push = (b, p0, p1) => {
+          const st = styleOf(b);
+          if (!run || run.color !== st.color) {
+            run = { color: st.color, top: [], bot: [] };
+            runs.push(run);
+          }
+          for (const p of [p0, p1]) {
+            run.top.push(p.x + p.nx * st.w / 2, p.y + p.ny * st.w / 2);
+            run.bot.push(p.x - p.nx * st.w / 2, p.y - p.ny * st.w / 2);
+          }
+        };
+        for (let k = 0; k + 1 < P.length; k++) {
+          const v0 = P[k].v, v1 = P[k + 1].v;
+          let b = binOf(v0);
+          const bEnd = binOf(v1), dir = bEnd > b ? 1 : -1;
+          let p0 = at(k, 0);
+          while (b !== bEnd) {
+            const edge = lo + (dir > 0 ? b + 1 : b) * bs;    // the boundary being crossed
+            const t = (edge - v0) / (v1 - v0);
+            const p = at(k, t);
+            push(b, p0, p);
+            b += dir; p0 = p;
+          }
+          push(b, p0, at(k, 1));
+        }
+      }
+      return runs;
+    };
+    // Connected: the end-bar connector between the two aVWAPs.
+    let connector = [];
+    const oIdx = entry._otherIdx;
+    // Wick tips (connected mode): the anchor's low if the other side is a
+    // high (a valley anchor), else its high; the other side's own extreme.
+    const tipOf = a => !joined || oIdx == null ? null
+      : a === oIdx ? (entry._otherIsHigh ? eng._highs[a] : eng._lows[a])
+      : (entry._otherIsHigh ? eng._lows[a] : eng._highs[a]);
+    if (joined && oIdx != null) {
+      const xR = ts.logicalToCoordinate(toIdx);
+      const vM = vwapAt(entry.anchorIdx, toIdx), vO = vwapAt(oIdx, toIdx);
+      const yM = Number.isNaN(vM) ? null : toY(vM), yO = Number.isNaN(vO) ? null : toY(vO);
+      if (xR != null && yM != null && yO != null && Math.abs(yM - yO) > 0.5) {
+        connector = [[{ x: xR, y: yM, v: vM }, { x: xR, y: yO, v: vO }]];
       }
     }
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       ctx.save();
-      for (const sl of strip) { ctx.fillStyle = sl.color; ctx.fillRect(sl.x, sl.y, sl.w, sl.h); }
-      ctx.lineCap = 'round';
-      for (const a of lines) {
-        for (const sg of segsOf(a)) {
-          ctx.strokeStyle = sg.color;
-          ctx.lineWidth = sg.width;
-          ctx.beginPath(); ctx.moveTo(sg.x0, sg.y0); ctx.lineTo(sg.x1, sg.y1); ctx.stroke();
+      for (const polys of [...lines.map(a => polysOf(a, tipOf(a))), connector]) {
+        for (const r of ribbonsOf(polys)) {
+          ctx.fillStyle = r.color;
+          ctx.beginPath();
+          ctx.moveTo(r.top[0], r.top[1]);
+          for (let q = 2; q < r.top.length; q += 2) ctx.lineTo(r.top[q], r.top[q + 1]);
+          for (let q = r.bot.length - 2; q >= 0; q -= 2) ctx.lineTo(r.bot[q], r.bot[q + 1]);
+          ctx.closePath();
+          ctx.fill();
         }
       }
       ctx.restore();
@@ -2262,7 +2313,7 @@ export class DynamicVWAPEngine {
       // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
       entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins } : null;
       entry._toIdx = toIdx;
-      // The mode's peak levels — colored on the aVWAPs (and the line-only strip).
+      // The mode's peak levels — colored on the aVWAPs.
       entry._peaks = payload ? profilePeakColors(payload.bins,
         entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both') : null;
 
@@ -2275,9 +2326,9 @@ export class DynamicVWAPEngine {
         if (entry.vpMode === VP_MODE_BOTH) {
           payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
           payload.dualHistogram = true;
-        } else if (entry.vpMode === VP_MODE_POCS) {
-          // Line-only: no histogram and no floating POC lines — the aVWAP
-          // (ProfileLinePrimitive) carries the profile, POC marked yellow.
+        } else if (entry.vpMode === VP_MODE_CONNECT) {
+          // Connected: no histogram and no floating POC lines — the aVWAPs
+          // (ProfileLinePrimitive) carry the profile, POC marked yellow.
           payload.showHistogram = false;
           payload.poc = null;
         }
@@ -2296,6 +2347,7 @@ export class DynamicVWAPEngine {
         }
         entry.otherSide.line.setData(this._vwapLine(ext.idx, toIdx));
         entry._otherIdx = ext.idx;
+        entry._otherIsHigh = ext.isHigh;
       } else {
         entry.otherSide.line?.setData([]);
         entry._otherIdx = null;
