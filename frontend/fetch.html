@@ -138,6 +138,29 @@
             <label>Timeframes</label>
             <div id="tconf-tfs" class="dash-checks"></div>
           </div>
+          <div class="dash-field" title="Which bars indicator runs and scans on this dataset use. Fetching always downloads full history; a window only limits computation. Windowed results are stored separately, so they never overwrite full-history results.">
+            <label>Window</label>
+            <div class="dash-field-right">
+              <select id="tconf-window-mode">
+                <option value="full">Full history</option>
+                <option value="last">Last N bars</option>
+                <option value="range">Date range</option>
+              </select>
+              <span id="tconf-window-last" class="tconf-window-part">
+                <input type="number" id="tconf-window-bars" class="tconf-inp" min="1" step="1" placeholder="300"> bars
+              </span>
+              <span id="tconf-window-range" class="tconf-window-part">
+                <input type="date" id="tconf-window-start" class="tconf-inp" title="From (blank = earliest)"> →
+                <input type="date" id="tconf-window-end" class="tconf-inp" title="To (blank = latest)">
+              </span>
+            </div>
+          </div>
+          <div id="tconf-warmup-field" class="dash-field" title="Extra bars computed before the window so lookback indicators (SMA 200, RSI, MACD …) are formed by its first bar. Blank = auto: 5× the indicator config's longest period, at least 100. Warm-up bars show on the chart before the window.">
+            <label>Warm-up</label>
+            <div class="dash-field-right">
+              <span class="tconf-window-part on"><input type="number" id="tconf-warmup" class="tconf-inp" min="0" step="1" placeholder="auto"> bars</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -185,6 +208,7 @@
         <div id="tconf-run-conf-list" class="run-queue-list"></div>
 
         <div class="ind-run-output-sep">
+          <div id="tconf-run-summary" class="run-summary-line" style="display:none"></div>
           <div id="tconf-output-idle" class="run-output-idle">Queue ticker configs and hit &#9654; Run.</div>
           <div class="ind-overall-section" id="tconf-overall" style="display:none;">
             <div class="ind-overall-header">

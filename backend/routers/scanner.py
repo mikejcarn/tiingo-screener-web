@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.core import database as db
+from backend.core import datasets
 
 router = APIRouter(prefix="/api")
 
@@ -260,7 +261,8 @@ def delete_scan_config(config_id: int):
 
 class RunScanRequest(BaseModel):
     config_id: int
-    scope_ticker_list: Optional[str] = None  # restrict to tickers last fetched under this list name (e.g. from Pipeline)
+    scope_ticker_list: Optional[str] = None  # restrict to this list's tickers (legacy; dataset_id supersedes it)
+    dataset_id: Optional[int] = None         # scan a dataset: its list's tickers, and its window's indicator results
 
 
 def _apply_criteria(df: pd.DataFrame, criteria_name: str, params: dict) -> pd.DataFrame:
@@ -303,6 +305,7 @@ def run_scan(req: RunScanRequest):
         if not cfg:
             raise HTTPException(status_code=404, detail="Scan config not found")
         cfg_name, logic, ind_conf_id, ticker_list = cfg
+        ds = datasets.get_dataset(con, req.dataset_id)
         crit_rows = con.execute(
             "SELECT criteria_name, timeframe, params_json, logic FROM scan_criteria "
             "WHERE config_id=? ORDER BY sort_order, id", (req.config_id,)
@@ -320,17 +323,24 @@ def run_scan(req: RunScanRequest):
     # scope_ticker_list further restricts ind_conf mode to tickers last fetched under
     # that list name (e.g. a Pipeline run scoping the scan to just what it fetched) —
     # only applied in ind_conf mode; tickers-only mode already has its own ticker_list.
+    # A dataset scopes either mode to its list, and ind_conf mode to the
+    # results computed in its window.
+    scope_list = ds['ticker_list'] if ds else req.scope_ticker_list
+    win = ds['win'] if ds else ''
     if ind_conf_id:
-        tickers = db.list_tickers(ind_conf=ind_conf_id, ticker_list=req.scope_ticker_list)
+        tickers = db.list_tickers(ind_conf=ind_conf_id, ticker_list=scope_list, win=win)
     else:
         tickers = db.list_tickers(ticker_list=ticker_list)
+        if ds and ds['ticker_list']:
+            members = set(db.list_tickers(ticker_list=ds['ticker_list']))
+            tickers = [t for t in tickers if t in members]
 
     results = []
     for ticker in tickers:
         # Load DataFrames per timeframe (cache within this ticker)
         dfs: dict[str, pd.DataFrame | None] = {}
         for tf in needed_tfs:
-            dfs[tf] = db.load_indicators(ticker, tf, ind_conf_id) if ind_conf_id else db.load_ohlcv(ticker, tf)
+            dfs[tf] = db.load_indicators(ticker, tf, ind_conf_id, win=win) if ind_conf_id else db.load_ohlcv(ticker, tf)
 
         signals:     dict[str, dict] = {}
         and_passes:  list[bool]      = []
@@ -369,7 +379,8 @@ def run_scan(req: RunScanRequest):
             results.append({"ticker": ticker, "date": latest_date, "signals": signals})
 
     run_id = db.log_scan_run(req.config_id, cfg_name, len(results), len(tickers),
-                              ind_conf_id=ind_conf_id, timeframes=needed_tfs)
+                              ind_conf_id=ind_conf_id, timeframes=needed_tfs,
+                              dataset_id=ds['id'] if ds else None, win=win if ind_conf_id else '')
     if results:
         db.save_scan_results(run_id, results)
     return {"run_id": run_id, "count": len(results), "total": len(tickers), "results": results}

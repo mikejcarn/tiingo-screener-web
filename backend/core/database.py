@@ -12,6 +12,9 @@ DB_PATH = Path(__file__).parent.parent.parent / "data" / "screener.db"
 # — keeps that call fast and bounded regardless of how many rows were deleted.
 _VACUUM_PAGE_LIMIT = 20000
 
+# A list counts as downloaded (used_list_names) once this share of its tickers is in the database.
+LIST_IN_USE_SHARE = 0.5
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ohlcv (
     ticker    TEXT NOT NULL,
@@ -25,13 +28,17 @@ CREATE TABLE IF NOT EXISTS ohlcv (
     PRIMARY KEY (ticker, timeframe, date)
 );
 
+-- win: the bar window the row was computed in ('' = full history, else
+-- 'last:N' / 'range:start:end' — see datasets.py), so windowed test runs of a
+-- config never overwrite its full-history results.
 CREATE TABLE IF NOT EXISTS indicators (
     ticker    TEXT NOT NULL,
     timeframe TEXT NOT NULL,
     ind_conf  INTEGER NOT NULL,
+    win       TEXT NOT NULL DEFAULT '',
     date      TEXT NOT NULL,
     data      TEXT NOT NULL,
-    PRIMARY KEY (ticker, timeframe, ind_conf, date)
+    PRIMARY KEY (ticker, timeframe, ind_conf, win, date)
 );
 
 CREATE TABLE IF NOT EXISTS fetch_log (
@@ -50,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_ind_ticker_tf_conf ON indicators (ticker, timefra
 -- a different leading column and doesn't include date, so that query still
 -- had to fetch each full row (including its multi-KB indicator `data` blob)
 -- just to read date. This one lets the scan skip the table entirely.
-CREATE INDEX IF NOT EXISTS idx_ind_summary_covering ON indicators (ind_conf, ticker, timeframe, date);
+CREATE INDEX IF NOT EXISTS idx_ind_summary_covering ON indicators (ind_conf, ticker, timeframe, win, date);
 
 CREATE TABLE IF NOT EXISTS ind_configs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,13 +128,21 @@ CREATE TABLE IF NOT EXISTS scan_results (
     FOREIGN KEY (run_id) REFERENCES scan_log(id)
 );
 
+-- A ticker config is also a dataset (datasets.py): list + timeframes + a bar
+-- window (window_mode 'full' | 'last' (window_bars) | 'range' (window_start /
+-- window_end)) and warm-up bars (NULL = auto from the indicator config).
 CREATE TABLE IF NOT EXISTS ticker_configs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    ticker_list TEXT,
-    timeframes  TEXT NOT NULL DEFAULT '[]',
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    ticker_list  TEXT,
+    timeframes   TEXT NOT NULL DEFAULT '[]',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT,
+    window_mode  TEXT NOT NULL DEFAULT 'full',
+    window_bars  INTEGER,
+    window_start TEXT,
+    window_end   TEXT,
+    warmup       INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_configs (
@@ -246,6 +261,29 @@ def init_db() -> None:
             ).fetchone()[0] > 0
             con.execute("PRAGMA auto_vacuum = INCREMENTAL")
             needs_vacuum = had_tables
+        # indicators gained the 'win' key column — SQLite can't change a
+        # primary key in place, so rebuild the table once (existing rows are
+        # full-history results, win ''). Must run before SCHEMA, whose
+        # indexes reference win. DROP TABLE takes the old indexes with it.
+        ind_cols = [r[1] for r in con.execute("PRAGMA table_info(indicators)").fetchall()]
+        if ind_cols and 'win' not in ind_cols:
+            print("[database] adding window key to indicators (one-time table rebuild)...")
+            con.executescript("""
+                CREATE TABLE indicators_new (
+                    ticker    TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    ind_conf  INTEGER NOT NULL,
+                    win       TEXT NOT NULL DEFAULT '',
+                    date      TEXT NOT NULL,
+                    data      TEXT NOT NULL,
+                    PRIMARY KEY (ticker, timeframe, ind_conf, win, date)
+                );
+                INSERT INTO indicators_new (ticker, timeframe, ind_conf, win, date, data)
+                    SELECT ticker, timeframe, ind_conf, '', date, data FROM indicators;
+                DROP TABLE indicators;
+                ALTER TABLE indicators_new RENAME TO indicators;
+            """)
+            print("[database] indicators rebuild done")
         con.executescript(SCHEMA)
         # Migrations
         try:
@@ -302,6 +340,19 @@ def init_db() -> None:
             con.execute("ALTER TABLE ind_configs ADD COLUMN updated_at TEXT")
         except Exception:
             pass
+        # Datasets (ticker_configs as datasets — see datasets.py)
+        for _col, _def in (("window_mode", "TEXT NOT NULL DEFAULT 'full'"), ("window_bars", "INTEGER"),
+                           ("window_start", "TEXT"), ("window_end", "TEXT"), ("warmup", "INTEGER")):
+            try:
+                con.execute(f"ALTER TABLE ticker_configs ADD COLUMN {_col} {_def}")
+            except Exception:
+                pass
+        for _tbl, _col, _def in (("scan_log", "dataset_id", "INTEGER"), ("scan_log", "win", "TEXT NOT NULL DEFAULT ''"),
+                                 ("ind_log", "dataset", "TEXT")):
+            try:
+                con.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_col} {_def}")
+            except Exception:
+                pass
         try:
             con.execute("ALTER TABLE scan_criteria ADD COLUMN logic TEXT NOT NULL DEFAULT 'AND'")
         except Exception:
@@ -382,8 +433,12 @@ def load_ohlcv(ticker: str, timeframe: str, end_date: Optional[str] = None) -> O
 
 # ── Indicators ───────────────────────────────────────────────
 
-def upsert_indicators(ticker: str, timeframe: str, ind_conf: int, df: pd.DataFrame) -> int:
-    """Serialize each row's non-OHLCV columns to JSON and store."""
+def upsert_indicators(ticker: str, timeframe: str, ind_conf: int, df: pd.DataFrame,
+                      win: str = '') -> int:
+    """Serialize each row's non-OHLCV columns to JSON and store, under window
+    key `win` ('' = full history). A windowed result replaces that window's
+    previous rows outright — 'last:N' slides as new bars arrive, so stale
+    dates would otherwise linger at its start."""
     ohlcv_cols = {'Date', 'date', 'Open', 'High', 'Low', 'Close', 'Volume',
                   'open', 'high', 'low', 'close', 'volume'}
     rows = []
@@ -392,8 +447,11 @@ def upsert_indicators(ticker: str, timeframe: str, ind_conf: int, df: pd.DataFra
         data = {k: (None if pd.isna(v) else v)
                 for k, v in row.items()
                 if k not in ohlcv_cols and k != 'Date'}
-        rows.append((ticker, timeframe, ind_conf, date, json.dumps(data)))
+        rows.append((ticker, timeframe, ind_conf, win, date, json.dumps(data)))
     with _conn() as con:
+        if win:
+            con.execute("DELETE FROM indicators WHERE ticker=? AND timeframe=? AND ind_conf=? AND win=?",
+                        (ticker, timeframe, ind_conf, win))
         # ON CONFLICT DO UPDATE, not INSERT OR REPLACE — the latter deletes
         # then re-inserts the whole row on a PK conflict (re-running a config
         # on already-computed data, i.e. almost every run), which is exactly
@@ -401,9 +459,9 @@ def upsert_indicators(ticker: str, timeframe: str, ind_conf: int, df: pd.DataFra
         # UPDATE lets SQLite reuse the existing row's space in place instead
         # of freeing it and allocating fresh.
         con.executemany(
-            """INSERT INTO indicators (ticker, timeframe, ind_conf, date, data)
-               VALUES (?,?,?,?,?)
-               ON CONFLICT (ticker, timeframe, ind_conf, date)
+            """INSERT INTO indicators (ticker, timeframe, ind_conf, win, date, data)
+               VALUES (?,?,?,?,?,?)
+               ON CONFLICT (ticker, timeframe, ind_conf, win, date)
                DO UPDATE SET data = excluded.data""",
             rows
         )
@@ -411,14 +469,16 @@ def upsert_indicators(ticker: str, timeframe: str, ind_conf: int, df: pd.DataFra
 
 
 def load_indicators(ticker: str, timeframe: str, ind_conf: int,
-                    end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
-    """Return wide DataFrame: Date + OHLCV + all indicator columns."""
+                    end_date: Optional[str] = None, win: str = '') -> Optional[pd.DataFrame]:
+    """Return wide DataFrame: Date + OHLCV + all indicator columns, for window
+    key `win` ('' = full history). A windowed result covers only its window's
+    bars, so only those are returned."""
     ohlcv_df = load_ohlcv(ticker, timeframe, end_date)
     if ohlcv_df is None:
         return None
 
-    query = "SELECT date, data FROM indicators WHERE ticker=? AND timeframe=? AND ind_conf=?"
-    params: list = [ticker, timeframe, ind_conf]
+    query = "SELECT date, data FROM indicators WHERE ticker=? AND timeframe=? AND ind_conf=? AND win=?"
+    params: list = [ticker, timeframe, ind_conf, win or '']
     if end_date:
         query += " AND date <= ?"
         params.append(end_date)
@@ -434,71 +494,67 @@ def load_indicators(ticker: str, timeframe: str, ind_conf: int,
     ind_df = pd.DataFrame(ind_records)
     ind_df['Date'] = pd.to_datetime(ind_df['Date'])
 
-    merged = pd.merge(ohlcv_df, ind_df, on='Date', how='left')
+    merged = pd.merge(ohlcv_df, ind_df, on='Date', how='inner' if win else 'left')
     return merged
 
 
 # ── Metadata ─────────────────────────────────────────────────
 
+def _ohlcv_tickers(timeframe: Optional[str], min_bars: Optional[int]) -> list[str]:
+    query, params = "SELECT ticker FROM ohlcv", []
+    if timeframe:
+        query += " WHERE timeframe=?"
+        params.append(timeframe)
+    query += " GROUP BY ticker"
+    if min_bars:
+        query += " HAVING COUNT(*) >= ?"
+        params.append(min_bars)
+    with _conn() as con:
+        return [r[0] for r in con.execute(query + " ORDER BY 1", params).fetchall()]
+
+
+def _list_members(ticker_list: str) -> Optional[set]:
+    """A named list's tickers: its CSV (datasets.read_list), or — for a list
+    name with no CSV (deleted file, legacy tag) — the tickers last fetched
+    under that name."""
+    from backend.core import datasets
+    members = datasets.read_list(ticker_list)
+    if members is not None:
+        return set(members)
+    with _conn() as con:
+        return {r[0] for r in con.execute(
+            "SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?", (ticker_list,)).fetchall()}
+
+
 def list_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None,
-                 ind_conf: Optional[int] = None, min_bars: Optional[int] = None) -> list[str]:
-    params: list = []
+                 ind_conf: Optional[int] = None, min_bars: Optional[int] = None,
+                 win: Optional[str] = None) -> list[str]:
+    """Tickers with data, sorted. ticker_list: a list name (members from its
+    CSV — see _list_members), '__all__' / None (everything), or '__single__'
+    (tickers fetched one-off, outside any list). ind_conf: only tickers with
+    computed results for that config (in window `win`, if given; min_bars not
+    applied there)."""
     if ind_conf:
-        # Filter to tickers with computed indicator data for this config (min_bars not applied here)
-        if ticker_list:
-            query = ("SELECT DISTINCT i.ticker FROM indicators i "
-                     "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
-                     "ON i.ticker = fl.ticker WHERE i.ind_conf=?")
-            params = [ticker_list, ind_conf]
-        else:
-            query = "SELECT DISTINCT ticker FROM indicators WHERE ind_conf=?"
-            params = [ind_conf]
+        query, params = "SELECT DISTINCT ticker FROM indicators WHERE ind_conf=?", [ind_conf]
         if timeframe:
             query += " AND timeframe=?"
             params.append(timeframe)
-    elif ticker_list == '__all__':
-        query = "SELECT ticker FROM ohlcv"
-        if timeframe:
-            query += " WHERE timeframe=?"
-            params.append(timeframe)
-        query += " GROUP BY ticker"
-        if min_bars:
-            query += " HAVING COUNT(*) >= ?"
-            params.append(min_bars)
-    elif ticker_list == '__single__':
-        query = ("SELECT o.ticker FROM ohlcv o "
-                 "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list IS NULL) fl "
-                 "ON o.ticker = fl.ticker")
-        if timeframe:
-            query += " WHERE o.timeframe=?"
-            params.append(timeframe)
-        query += " GROUP BY o.ticker"
-        if min_bars:
-            query += " HAVING COUNT(*) >= ?"
-            params.append(min_bars)
-    elif ticker_list:
-        query = ("SELECT o.ticker FROM ohlcv o "
-                 "INNER JOIN (SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list=?) fl "
-                 "ON o.ticker = fl.ticker")
-        params.append(ticker_list)
-        if timeframe:
-            query += " WHERE o.timeframe=?"
-            params.append(timeframe)
-        query += " GROUP BY o.ticker"
-        if min_bars:
-            query += " HAVING COUNT(*) >= ?"
-            params.append(min_bars)
+        if win is not None:
+            query += " AND win=?"
+            params.append(win)
+        with _conn() as con:
+            found = [r[0] for r in con.execute(query + " ORDER BY 1", params).fetchall()]
     else:
-        query = "SELECT ticker FROM ohlcv"
-        if timeframe:
-            query += " WHERE timeframe=?"
-            params.append(timeframe)
-        query += " GROUP BY ticker"
-        if min_bars:
-            query += " HAVING COUNT(*) >= ?"
-            params.append(min_bars)
-    with _conn() as con:
-        return [r[0] for r in con.execute(query + " ORDER BY 1", params).fetchall()]
+        found = _ohlcv_tickers(timeframe, min_bars)
+    if ticker_list and ticker_list != '__all__':
+        if ticker_list == '__single__':
+            with _conn() as con:
+                members = {r[0] for r in con.execute(
+                    "SELECT DISTINCT ticker FROM fetch_log WHERE ticker_list IS NULL").fetchall()}
+        else:
+            members = _list_members(ticker_list)
+        found = [t for t in found if t in members]
+    return found
 
 
 def filter_tickers_min_bars(tickers: list[str], timeframe: str, min_bars: int) -> list[str]:
@@ -516,23 +572,43 @@ def filter_tickers_min_bars(tickers: list[str], timeframe: str, min_bars: int) -
     return [r[0] for r in rows]
 
 
-def list_ticker_lists() -> list[str]:
+def used_list_names() -> list[str]:
+    """The ticker lists you've actually downloaded: tagged in fetch_log
+    (fetched under), or with at least LIST_IN_USE_SHARE of the CSV's tickers
+    in the database. A big CSV that merely shares a few symbols with what you
+    downloaded (NASDAQ, or TSX's cross-listed AAPL / MSFT …) doesn't count —
+    otherwise those tickers would appear to belong to it."""
+    from backend.core import datasets
     with _conn() as con:
-        return [r[0] for r in con.execute(
-            "SELECT DISTINCT ticker_list FROM fetch_log "
-            "WHERE ticker_list IS NOT NULL ORDER BY ticker_list"
-        ).fetchall()]
+        names = {r[0] for r in con.execute(
+            "SELECT DISTINCT ticker_list FROM fetch_log WHERE ticker_list IS NOT NULL").fetchall() if r[0]}
+    have = set(_ohlcv_tickers(None, None))
+    for n in datasets.list_names():
+        members = datasets.read_list(n) or []
+        if members and len(have.intersection(members)) >= LIST_IN_USE_SHARE * len(members):
+            names.add(n)
+    return sorted(names)
+
+
+def list_ticker_lists() -> list[str]:
+    """Names of the lists in use (used_list_names) with at least one downloaded ticker."""
+    have = set(_ohlcv_tickers(None, None))
+    return [n for n in used_list_names() if have.intersection(_list_members(n))]
 
 
 def delete_indicators(ind_conf_id: Optional[int] = None,
                       ticker: Optional[str] = None,
-                      timeframe: Optional[str] = None) -> int:
+                      timeframe: Optional[str] = None,
+                      win: Optional[str] = None) -> int:
+    """Delete matching results; win (if given) narrows to one bar window — it
+    never counts as a filter on its own."""
     conditions, params = [], []
     if ind_conf_id is not None: conditions.append("ind_conf=?");  params.append(ind_conf_id)
     if ticker      is not None: conditions.append("ticker=?");    params.append(ticker)
     if timeframe   is not None: conditions.append("timeframe=?"); params.append(timeframe)
     if not conditions:
         return 0
+    if win is not None: conditions.append("win=?"); params.append(win)
     with _conn() as con:
         cur = con.execute(f"DELETE FROM indicators WHERE {' AND '.join(conditions)}", params)
         deleted = cur.rowcount
@@ -645,24 +721,25 @@ def log_fetch(ticker: str, timeframe: str, last_date: Optional[str],
 
 
 def log_indicator_run(config_id: int, config_name: str, timeframes: list,
-                      tickers: int, errors: int, status: str = 'done') -> None:
+                      tickers: int, errors: int, status: str = 'done',
+                      dataset: Optional[str] = None) -> None:
     from datetime import datetime
     with _conn() as con:
         con.execute(
-            "INSERT INTO ind_log (config_id, config_name, timeframes, tickers, errors, status, ran_at) VALUES (?,?,?,?,?,?,?)",
-            (config_id, config_name, json.dumps(timeframes), tickers, errors, status, datetime.utcnow().isoformat())
+            "INSERT INTO ind_log (config_id, config_name, timeframes, tickers, errors, status, ran_at, dataset) VALUES (?,?,?,?,?,?,?,?)",
+            (config_id, config_name, json.dumps(timeframes), tickers, errors, status, datetime.utcnow().isoformat(), dataset)
         )
 
 
 def get_indicator_history(limit: int = 30) -> list:
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, config_id, config_name, timeframes, tickers, errors, status, ran_at FROM ind_log ORDER BY ran_at DESC LIMIT ?",
+            "SELECT id, config_id, config_name, timeframes, tickers, errors, status, ran_at, dataset FROM ind_log ORDER BY ran_at DESC LIMIT ?",
             (limit,)
         ).fetchall()
     return [
         {'id': r[0], 'config_id': r[1], 'config_name': r[2], 'timeframes': json.loads(r[3]),
-         'tickers': r[4], 'errors': r[5], 'status': r[6], 'ran_at': r[7][:10]}
+         'tickers': r[4], 'errors': r[5], 'status': r[6], 'ran_at': r[7][:10], 'dataset': r[8] or ''}
         for r in rows
     ]
 
@@ -678,14 +755,15 @@ def clear_indicator_history() -> None:
 
 
 def log_scan_run(config_id: int, config_name: str, matched: int, total: int,
-                 ind_conf_id: Optional[int] = None, timeframes: list = None) -> int:
+                 ind_conf_id: Optional[int] = None, timeframes: list = None,
+                 dataset_id: Optional[int] = None, win: str = '') -> int:
     from datetime import datetime
     with _conn() as con:
         cur = con.execute(
-            "INSERT INTO scan_log (config_id, config_name, matched, total, ran_at, ind_conf_id, timeframes) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO scan_log (config_id, config_name, matched, total, ran_at, ind_conf_id, timeframes, dataset_id, win) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (config_id, config_name, matched, total, datetime.utcnow().isoformat(),
-             ind_conf_id, json.dumps(timeframes or []))
+             ind_conf_id, json.dumps(timeframes or []), dataset_id, win or '')
         )
         return cur.lastrowid
 
@@ -702,12 +780,14 @@ def save_scan_results(run_id: int, results: list) -> None:
 def get_scan_runs(limit: int = 50) -> list:
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, config_id, config_name, matched, total, ran_at, ind_conf_id, timeframes "
-            "FROM scan_log ORDER BY ran_at DESC LIMIT ?", (limit,)
+            "SELECT s.id, s.config_id, s.config_name, s.matched, s.total, s.ran_at, s.ind_conf_id, s.timeframes, "
+            "s.dataset_id, s.win, t.name FROM scan_log s LEFT JOIN ticker_configs t ON t.id = s.dataset_id "
+            "ORDER BY s.ran_at DESC LIMIT ?", (limit,)
         ).fetchall()
     return [{'id': r[0], 'config_id': r[1], 'config_name': r[2], 'matched': r[3],
              'total': r[4], 'ran_at': r[5][:16].replace('T', ' '),
-             'ind_conf_id': r[6], 'timeframes': json.loads(r[7] or '[]')} for r in rows]
+             'ind_conf_id': r[6], 'timeframes': json.loads(r[7] or '[]'),
+             'dataset_id': r[8], 'win': r[9] or '', 'dataset': r[10] or ''} for r in rows]
 
 
 def get_scan_run_tickers(run_id: int, timeframe: Optional[str] = None,

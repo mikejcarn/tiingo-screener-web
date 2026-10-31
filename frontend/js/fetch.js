@@ -1,3 +1,4 @@
+import { rqState, rqStatusHtml, showRunSummary, hideRunSummary } from './run_queue_ui.js';
 import { initHelp } from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
 import { api } from './api.js';
@@ -407,7 +408,8 @@ function _renderList() {
     const name = document.createElement('div');
     name.className = 'ind-config-name'; name.textContent = cfg.name;
     const sub = document.createElement('div');
-    sub.className = 'ind-config-date'; sub.textContent = cfg.updated_at ? cfg.updated_at.slice(0, 10) : '';
+    sub.className = 'ind-config-date';
+    sub.textContent = [cfg.updated_at ? cfg.updated_at.slice(0, 10) : '', cfg.win ? cfg.window_label : ''].filter(Boolean).join(' · ');
     info.append(name, sub);
     const qBtn = document.createElement('button');
     qBtn.className = 'ind-queue-btn' + (queued ? ' queued' : '');
@@ -474,6 +476,31 @@ function _populateTconfEditorFields(cfg) {
   _updateTconfListCount();
   _syncTconfTfChecks(cfg.timeframes);
   _setTconfTfFocus(-1);
+  document.getElementById('tconf-window-mode').value  = cfg.window_mode || 'full';
+  document.getElementById('tconf-window-bars').value  = cfg.window_bars ?? '';
+  document.getElementById('tconf-window-start').value = cfg.window_start || '';
+  document.getElementById('tconf-window-end').value   = cfg.window_end || '';
+  document.getElementById('tconf-warmup').value       = cfg.warmup ?? '';
+  _syncTconfWindowParts();
+}
+
+// Show the inputs for the selected window mode; warm-up only matters for a window.
+function _syncTconfWindowParts() {
+  const mode = document.getElementById('tconf-window-mode').value;
+  document.getElementById('tconf-window-last').classList.toggle('on', mode === 'last');
+  document.getElementById('tconf-window-range').classList.toggle('on', mode === 'range');
+  document.getElementById('tconf-warmup-field').style.display = mode === 'full' ? 'none' : '';
+}
+
+function _tconfWindowBody() {
+  const num = id => { const v = parseInt(document.getElementById(id).value, 10); return Number.isFinite(v) ? v : null; };
+  return {
+    window_mode:  document.getElementById('tconf-window-mode').value,
+    window_bars:  num('tconf-window-bars'),
+    window_start: document.getElementById('tconf-window-start').value || null,
+    window_end:   document.getElementById('tconf-window-end').value || null,
+    warmup:       num('tconf-warmup'),
+  };
 }
 
 function _renderTconfDates(cfg) {
@@ -523,13 +550,14 @@ async function _saveTconf() {
     name: document.getElementById('tconf-name').value.trim() || 'Unnamed',
     ticker_list: document.getElementById('tconf-ticker-list').value || null,
     timeframes: _getTconfCheckedTfs(),
+    ..._tconfWindowBody(),
   };
   const btn = document.getElementById('btn-save-tconf');
   try {
     const saved = await api.put(`/api/ticker-configs/${_activeId}`, body);
     _dirty = false;
     const item = _configs.find(c => c.id === _activeId);
-    if (item) Object.assign(item, body, { updated_at: saved.updated_at });
+    if (item) Object.assign(item, body, { updated_at: saved.updated_at, win: saved.win, window_label: saved.window_label });
     _renderList();
     btn.textContent = 'Saved ✓';
     btn.classList.add('ind-btn-save-ok');
@@ -554,24 +582,8 @@ function _renderRunConfigs() {
   }
   el.innerHTML = queued.map((c, i) => {
     const r = _runResults[c.id];
-    let statusHtml = '';
-    if (r) {
-      if (r.status === 'pending') {
-        statusHtml = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
-      } else if (r.status === 'running') {
-        const pct = r.total > 0 ? (r.done / r.total * 100) : 0;
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:${pct}%"></div></div>
-                      <div class="rq-info"><span class="rq-state rq-running">fetching…</span><span class="rq-count">${r.done} / ${r.total || '?'}</span></div>`;
-      } else if (r.status === 'done') {
-        const hasErr = r.errors > 0;
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill ${hasErr ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
-                      <div class="rq-info"><span class="rq-state ${hasErr ? 'rq-errors' : 'rq-done'}">${hasErr ? `✗ ${r.errors} error${r.errors !== 1 ? 's' : ''}` : '✓ done'}</span><span class="rq-count">${r.done} / ${r.total}</span></div>`;
-      } else if (r.status === 'error') {
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-errors" style="width:100%"></div></div>
-                      <div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(r.error || 'error')}</span></div>`;
-      }
-    }
-    return `<div class="run-queue-item">
+    const statusHtml = rqStatusHtml(r?.status === 'running' ? { ...r, label: 'fetching' } : r);
+    return `<div class="run-queue-item" data-state="${rqState(r)}">
       <div class="run-queue-header">
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(c.name)}</span>
@@ -603,6 +615,7 @@ async function _startRun() {
   _runQueueIdx = 0;
   _runResults  = {};
   for (const id of _runQueue) _runResults[id] = { status: 'pending' };
+  hideRunSummary(document.getElementById('tconf-run-summary'));
   document.getElementById('btn-run-tconf').disabled = true;
   _renderRunConfigs();
   await _kickQueueItem();
@@ -638,6 +651,9 @@ async function _afterConfigFinished() {
 }
 
 function _finishQueueRun() {
+  showRunSummary(document.getElementById('tconf-run-summary'), _runQueue.map(id => _runResults[id]));
+  _resetProgressUI();
+  document.getElementById('tconf-output-idle').style.display = 'none';
   _runQueue    = [];
   _runQueueIdx = -1;
   document.getElementById('btn-run-tconf').disabled = false;
@@ -649,6 +665,7 @@ function _finishQueueRun() {
 // Pipeline) — remaining queued configs stay queued so the user can retry.
 function _abortQueue(id, msg) {
   if (_runResults[id]) _runResults[id] = { status: 'error', error: msg };
+  showRunSummary(document.getElementById('tconf-run-summary'), _runQueue.map(q => _runResults[q]));
   _runQueue    = [];
   _runQueueIdx = -1;
   document.getElementById('btn-run-tconf').disabled = false;
@@ -668,6 +685,7 @@ function _clearRun() {
   if (_isRunning()) return;
   _runCheckedIds.clear();
   _runResults = {};
+  hideRunSummary(document.getElementById('tconf-run-summary'));
   _saveRunQueue();
   _renderList();
   _renderRunConfigs();
@@ -804,11 +822,14 @@ function _renderStatsGrouped() {
   const raw = (_statsData && _statsData.stats) || [];
   document.getElementById('stats-summary').innerHTML = '';
 
+  // A ticker can be in several lists (r.lists, from the list CSVs) — grouped
+  // by list, it counts in each of them.
+  const _listsOf = r => (r.lists && r.lists.length) ? r.lists : ['—'];
   const _keyOf = r => {
     switch (_groupBy) {
       case 'ticker':     return r.ticker;
       case 'timeframe':  return r.timeframe;
-      case 'list':       return r.ticker_list || '—';
+      case 'list':       return '—';   // unused — list rows go to every one of their lists below
       case 'bars':       return String(r.rows);
       case 'first_date': return r.first_date || '';
       case 'last_date':  return r.last_date  || '';
@@ -817,8 +838,7 @@ function _renderStatsGrouped() {
   };
 
   const groups = {};
-  for (const r of raw) {
-    const key = _keyOf(r);
+  for (const r of raw) for (const key of (_groupBy === 'list' ? _listsOf(r) : [_keyOf(r)])) {
     if (!groups[key]) groups[key] = {
       bars: 0, tickers: new Set(), timeframes: new Set(), lists: new Set(),
       firstDate: '', lastDate: '', sampleRow: r
@@ -826,7 +846,7 @@ function _renderStatsGrouped() {
     const g = groups[key];
     g.tickers.add(r.ticker);
     g.timeframes.add(r.timeframe);
-    g.lists.add(r.ticker_list || '—');
+    for (const l of _listsOf(r)) g.lists.add(l);
     g.bars += r.rows;
     if (!g.firstDate || (r.first_date && r.first_date < g.firstDate)) g.firstDate = r.first_date;
     if (!g.lastDate  || (r.last_date  && r.last_date  > g.lastDate))  g.lastDate  = r.last_date;
@@ -893,7 +913,7 @@ function _renderStatsGrouped() {
     switch (col) {
       case 'ticker':     return `<span class="ind-db-dim-link">${g.tickers.size}</span>`;
       case 'timeframe':  return `<span class="ind-db-dim-link">${[...g.timeframes].sort().join(', ')}</span>`;
-      case 'list':       return `<span class="ind-db-dim-link">${g.lists.size === 1 ? _esc([...g.lists][0]) : g.lists.size}</span>`;
+      case 'list':       return `<span class="ind-db-dim-link" title="${_esc([...g.lists].sort().join(', '))}">${g.lists.size <= 3 ? _esc([...g.lists].sort().join(', ')) : g.lists.size}</span>`;
       case 'bars':       return `<span class="ind-db-dim-link">${_fmtBars(g.bars)}</span>`;
       case 'first_date': return `<span class="ind-db-dim-link">${g.firstDate || '—'}</span>`;
       case 'last_date':  return `<span class="ind-db-dim-link">${g.lastDate  || '—'}</span>`;
@@ -922,7 +942,10 @@ function _renderStatsGrouped() {
 
     tr.querySelector('.tbl-del-btn').addEventListener('click', async e => {
       e.stopPropagation();
-      if (!confirm('Delete data for this group?')) return;
+      const msg = _groupBy === 'list'
+        ? `Delete data for list "${key}"? Tickers that are also in another list are kept.`
+        : 'Delete data for this group?';
+      if (!confirm(msg)) return;
       await _deleteStatsGroup(key, g);
       _loadStats();
     });
@@ -938,8 +961,20 @@ async function _deleteStatsGroup(key, g) {
     await api.del(`/api/data/ohlcv/ticker/${encodeURIComponent(key)}`);
   } else if (_groupBy === 'timeframe') {
     await api.del(`/api/data/ohlcv/timeframe/${encodeURIComponent(key)}`);
-  } else if (_groupBy === 'list' && key !== '—') {
-    await api.del(`/api/data/ohlcv/list/${encodeURIComponent(key)}`);
+  } else if (_groupBy === 'list') {
+    // Only the tickers no other list shares — deleting Test_10 mustn't take
+    // AAPL out from under Test_30.
+    const raw = (_statsData && _statsData.stats) || [];
+    const listsOf = r => (r.lists && r.lists.length) ? r.lists : ['—'];
+    const own = raw.filter(r => { const ls = listsOf(r); return ls.length === 1 && ls[0] === key; });
+    if (!own.length) {
+      const shared = new Set(raw.filter(r => listsOf(r).includes(key)).map(r => r.ticker));
+      alert(`Nothing deleted — all ${shared.size} ticker${shared.size !== 1 ? 's' : ''} in "${key}" ${shared.size !== 1 ? 'are' : 'is'} also in another list (${[...shared].sort().join(', ')}). Delete them by ticker instead if you really want them gone.`);
+      return;
+    }
+    await Promise.all(own.map(r =>
+      api.del(`/api/data/ohlcv/ticker-tf?${qs({ ticker: r.ticker, timeframe: r.timeframe })}`)
+    ));
   } else {
     const raw = (_statsData && _statsData.stats) || [];
     const matching = raw.filter(r => {
@@ -947,7 +982,6 @@ async function _deleteStatsGroup(key, g) {
         case 'bars':       return String(r.rows)         === key;
         case 'first_date': return (r.first_date || '')   === key;
         case 'last_date':  return (r.last_date  || '')   === key;
-        case 'list':       return (r.ticker_list || '—') === key;
         default:           return false;
       }
     });
@@ -1228,6 +1262,9 @@ function _wireTconfButtons() {
   });
   document.getElementById('tconf-name').addEventListener('input', () => { _dirty = true; });
   document.getElementById('tconf-ticker-list').addEventListener('change', () => { _updateTconfListCount(); _dirty = true; });
+  document.getElementById('tconf-window-mode').addEventListener('change', () => { _syncTconfWindowParts(); _dirty = true; });
+  for (const id of ['tconf-window-bars', 'tconf-window-start', 'tconf-window-end', 'tconf-warmup'])
+    document.getElementById(id).addEventListener('input', () => { _dirty = true; });
   document.addEventListener('click', e => {
     const inWrap = document.getElementById('tconf-ticker-list-wrap').contains(e.target);
     const inDd   = document.getElementById('tconf-ticker-list-dd').contains(e.target);
@@ -1429,7 +1466,8 @@ async function _poll() {
     const mapped = state.status === 'running' ? 'running' : state.status === 'done' ? 'done' : 'error';
     _runResults[_activeId] = {
       status: mapped, done: state.done, total: state.total, errors: state.errors,
-      error: mapped === 'error' ? state.status : undefined,
+      current: state.current, error: mapped === 'error' ? state.status : undefined,
+      at: mapped === 'done' ? Date.now() : undefined,
     };
     _renderRunConfigs();
   }

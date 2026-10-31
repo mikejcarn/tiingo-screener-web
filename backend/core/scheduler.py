@@ -136,7 +136,7 @@ async def run_pipeline_scheduled(config_id: int) -> None:
     bg2 = BackgroundTasks()
     try:
         indicators_router.compute_indicators_batch(
-            indicators_router.BatchIndicatorsRequest(config_id=ind_conf_id, ticker_list=ticker_list), bg2
+            indicators_router.BatchIndicatorsRequest(config_id=ind_conf_id, dataset_id=ticker_conf_id), bg2
         )
     except HTTPException:
         _log("error", fetch_tickers=fetch_tickers, fetch_errors=fetch_errors)
@@ -157,7 +157,7 @@ async def run_pipeline_scheduled(config_id: int) -> None:
     try:
         data = await run_in_threadpool(
             scanner_router.run_scan,
-            scanner_router.RunScanRequest(config_id=scan_config_id, scope_ticker_list=ticker_list),
+            scanner_router.RunScanRequest(config_id=scan_config_id, dataset_id=ticker_conf_id),
         )
     except HTTPException:
         _log("error", fetch_tickers=fetch_tickers, fetch_errors=fetch_errors,

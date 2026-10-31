@@ -67,7 +67,7 @@ app.include_router(flags_router)
 # ---------------------------------------------------------------------------
 
 @app.websocket("/ws/replay/{ticker}/{timeframe}/{ind_conf}")
-async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf: int):
+async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf: int, win: str = ''):
     """
     Stream indicator data bar-by-bar for the replay view.
 
@@ -85,7 +85,8 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         await websocket.close()
         return
 
-    df = db.load_indicators(ticker.upper(), tf, ind_conf)
+    # win: a dataset's bar window (?win=last:300) — that window's results.
+    df = db.load_indicators(ticker.upper(), tf, ind_conf, win=win)
     if df is None:
         # Fall back to raw OHLCV if no indicators computed yet
         df = db.load_ohlcv(ticker.upper(), tf)
@@ -119,6 +120,7 @@ async def ws_replay(websocket: WebSocket, ticker: str, timeframe: str, ind_conf:
         "ticker": ticker.upper(),
         "timeframe": tf,
         "ind_conf": ind_conf,
+        "win": win,
         "total": len(records),
         "columns": columns,
         "styles": styles,

@@ -32,6 +32,7 @@
  * run whatever's queued on a clock even with no browser open, so the ▶
  * toggle writes through to the server on every change.
  */
+import { rqState, rqStatusHtml, showRunSummary, hideRunSummary } from './run_queue_ui.js';
 import { api }       from './api.js';
 import { initHelp }  from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
@@ -285,24 +286,15 @@ function _renderRunConfigs() {
   }
   el.innerHTML = queued.map((c, i) => {
     const result = _runResults[c.id];
-    let statusHtml = '';
-    if (result) {
-      if (result.status === 'pending') {
-        statusHtml = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
-      } else if (result.status === 'running') {
-        const label = { fetch: 'fetching…', indicators: 'computing…', scan: 'scanning…' }[result.stage] || 'running…';
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:100%"></div></div>
-                      <div class="rq-info"><span class="rq-state rq-running">${label}</span></div>`;
-      } else if (result.status === 'done') {
-        const countText = result.scanTotal != null ? `${result.scanMatched} / ${result.scanTotal} matched` : 'indicators computed';
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-done" style="width:100%"></div></div>
-                      <div class="rq-info"><span class="rq-state rq-done">✓ done</span><span class="rq-count">${_esc(countText)}</span></div>`;
-      } else if (result.status === 'error') {
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-errors" style="width:100%"></div></div>
-                      <div class="rq-info"><span class="rq-state rq-errors">✗ ${_esc(result.error || 'error')}</span></div>`;
-      }
+    let shown = result;
+    if (result?.status === 'running') {
+      // Stage label; the stage's own ticker progress while a fetch / indicators job reports one.
+      shown = { ...result, label: { fetch: 'fetching', indicators: 'computing', scan: 'scanning' }[result.stage] || 'running' };
+    } else if (result?.status === 'done') {
+      shown = { ...result, countText: result.scanTotal != null ? `${result.scanMatched} / ${result.scanTotal} matched` : 'indicators computed' };
     }
-    return `<div class="run-queue-item">
+    const statusHtml = rqStatusHtml(shown);
+    return `<div class="run-queue-item" data-state="${rqState(result)}">
       <div class="run-queue-header">
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(c.name)}</span>
@@ -528,6 +520,7 @@ async function _startRun() {
   _runQueueIdx = 0;
   _runResults  = {};
   for (const id of _runQueue) _runResults[id] = { status: 'pending' };
+  hideRunSummary(document.getElementById('pipeline-run-summary'));
   _fetchSigCache = new Map();
   document.getElementById('btn-run-pipeline').disabled = true;
   _renderRunConfigs();
@@ -564,6 +557,8 @@ async function _afterPipelineFinished() {
 }
 
 function _finishQueueRun() {
+  showRunSummary(document.getElementById('pipeline-run-summary'), _runQueue.map(id => _runResults[id]),
+    { noun: 'pipeline', noTickers: true });
   _runQueue    = [];
   _runQueueIdx = -1;
   document.getElementById('btn-run-pipeline').disabled = false;
@@ -576,6 +571,8 @@ function _finishQueueRun() {
 // user can inspect the error and hit Run again once it's fixed.
 function _abortQueue(id, msg) {
   if (_runResults[id]) _runResults[id] = { status: 'error', error: msg };
+  showRunSummary(document.getElementById('pipeline-run-summary'), _runQueue.map(q => _runResults[q]),
+    { noun: 'pipeline', noTickers: true });
   _runQueue    = [];
   _runQueueIdx = -1;
   document.getElementById('btn-run-pipeline').disabled = false;
@@ -586,6 +583,7 @@ function _clearRun() {
   if (_isRunning()) return;
   _runCheckedIds.clear();
   _runResults = {};
+  hideRunSummary(document.getElementById('pipeline-run-summary'));
   api.post('/api/pipeline-configs/clear-queue').catch(() => {});
   _renderList();
   _renderRunConfigs();
@@ -639,12 +637,12 @@ async function _kickFetchStage() {
 
 async function _kickIndStage(indConfId) {
   _setStage(1);
-  _runResults[_activeId] = { ..._runResults[_activeId], status: 'running', stage: 'indicators' };
+  _runResults[_activeId] = { status: 'running', stage: 'indicators' };   // fresh — the last stage's counts don't carry over
   _renderRunConfigs();
   const cfg = _configs.find(c => c.id === _activeId);
   const tickerConf = _resolveTickerConfig(cfg);
   try {
-    await api.post('/api/indicators/batch', { config_id: indConfId, ticker_list: tickerConf?.ticker_list });
+    await api.post('/api/indicators/batch', { config_id: indConfId, dataset_id: tickerConf?.id ?? null });
   } catch (err) {
     _failRun(err.message || 'Failed to start indicators job');
     return;
@@ -654,7 +652,7 @@ async function _kickIndStage(indConfId) {
 
 async function _kickScanStage() {
   _setStage(2);
-  _runResults[_activeId] = { ..._runResults[_activeId], status: 'running', stage: 'scan' };
+  _runResults[_activeId] = { status: 'running', stage: 'scan' };   // fresh — the last stage's counts don't carry over
   _renderRunConfigs();
   const cfg = _configs.find(c => c.id === _activeId);
   const tickerConf = _resolveTickerConfig(cfg);
@@ -662,7 +660,7 @@ async function _kickScanStage() {
   document.getElementById('pipeline-output-idle').style.display = '';
   document.getElementById('pipeline-output-idle').textContent = 'Running scan…';
   try {
-    const data = await api.post('/api/scan/run', { config_id: cfg.scan_config_id, scope_ticker_list: tickerConf?.ticker_list });
+    const data = await api.post('/api/scan/run', { config_id: cfg.scan_config_id, dataset_id: tickerConf?.id ?? null });
     _lastResults = data.results || [];
     _renderResults(data);
     document.querySelectorAll('.pipeline-stage-chip').forEach(c => { c.classList.remove('active', 'errored'); c.classList.add('done'); });
@@ -673,7 +671,7 @@ async function _kickScanStage() {
       ind_tickers: _indSummary.tickers, ind_errors: _indSummary.errors,
       scan_run_id: data.run_id,
     });
-    _runResults[_activeId] = { status: 'done', scanMatched: data.count, scanTotal: data.total };
+    _runResults[_activeId] = { status: 'done', scanMatched: data.count, scanTotal: data.total, at: Date.now() };
     _renderRunConfigs();
     await _loadHistory();
     await _afterPipelineFinished();
@@ -699,7 +697,7 @@ async function _finishWithoutScan() {
     ind_tickers: _indSummary.tickers, ind_errors: _indSummary.errors,
     scan_run_id: null,
   });
-  _runResults[_activeId] = { status: 'done', scanMatched: null, scanTotal: null };
+  _runResults[_activeId] = { status: 'done', scanMatched: null, scanTotal: null, at: Date.now() };
   _renderRunConfigs();
   await _loadHistory();
   await _afterPipelineFinished();
@@ -740,6 +738,11 @@ async function _poll(job) {
   const data  = await api.get('/api/jobs/status');
   const state = data[job];
   _updateProgress(state);
+  const r = _runResults[_activeId];
+  if (r?.status === 'running' && state.status === 'running') {
+    _runResults[_activeId] = { ...r, done: state.done, total: state.total, current: state.current };
+    _renderRunConfigs();
+  }
   if (state.status !== 'running') {
     _stopPolling();
     if (state.status === 'done') {

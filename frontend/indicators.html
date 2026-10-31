@@ -92,6 +92,7 @@
         <div class="dash-section-actions">
           <button id="btn-run-refresh" class="dash-btn-sm" title="Refresh run queue">↻</button>
           <button id="btn-run-clear-all" class="dash-btn-sm dash-btn-sm-del" title="Remove all configs from the run queue">Clear All</button>
+          <select id="run-dataset" class="run-dataset-sel" title="Run on: a dataset (ticker config — list, timeframes, bar window) or all downloaded data, full history"></select>
           <button id="btn-compute" class="dash-btn-sm dash-btn-sm-launch" title="Run indicator computation for queued configs (R)">&#9654; Run</button>
           <button id="btn-compute-cancel" class="dash-btn-sm dash-btn-sm-del" style="display:none" title="Cancel the running computation">Cancel</button>
         </div>
@@ -101,6 +102,7 @@
 
         <!-- Output section -->
         <div class="ind-run-output-sep">
+          <div id="comp-run-summary" class="run-summary-line" style="display:none"></div>
           <div id="comp-output-idle" class="run-output-idle">Queue configs and hit &#9654; Run to compute.</div>
 
           <!-- Queue-level bar: Config X / N (only when multiple configs queued) -->

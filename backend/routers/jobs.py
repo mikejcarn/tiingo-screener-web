@@ -279,6 +279,14 @@ def stats():
             GROUP BY timeframe
             ORDER BY timeframe
         """).fetchall()
+    # Every downloaded list (db.used_list_names) whose CSV names the ticker — not
+    # just the one it was last fetched under; that tag is the fallback for a
+    # ticker no such CSV names (a one-off fetch, or a deleted list).
+    from backend.core import datasets
+    member_of: dict[str, list[str]] = {}
+    for name in db.used_list_names():
+        for t in datasets.read_list(name) or []:
+            member_of.setdefault(t, []).append(name)
     return {
         "summary": [
             {"timeframe": r[0], "tickers": r[1], "rows": r[2],
@@ -288,7 +296,8 @@ def stats():
         "stats": [
             {"ticker": r[0], "timeframe": r[1], "rows": r[2],
              "first_date": r[3] or '', "last_date": r[4] or '',
-             "fetched_at": (r[5] or '')[:10], "ticker_list": r[6] or ''}
+             "fetched_at": (r[5] or '')[:10], "ticker_list": r[6] or '',
+             "lists": member_of.get(r[0]) or ([r[6]] if r[6] else [])}
             for r in rows
         ],
     }

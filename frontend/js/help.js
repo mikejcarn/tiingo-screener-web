@@ -39,7 +39,7 @@ const _PAGES = [
       <tr><td><kbd>D</kbd></td><td>Delete ticker config</td></tr>
       <tr><td>▶ button &nbsp;or&nbsp; <kbd>Space</kbd></td><td>Add / remove open config from the run queue</td></tr>
       <tr><td><kbd>R</kbd></td><td>Run queued ticker configs</td></tr>
-      <tr><td colspan="2" style="color:var(--t3);font-size:11px;">A ticker config pairs a ticker list with timeframes to fetch — save it once, reuse it here or from the Pipeline page.</td></tr>
+      <tr><td colspan="2" style="color:var(--t3);font-size:11px;">A ticker config pairs a ticker list with timeframes to fetch — save it once, reuse it here or from the Pipeline page. It is also a <b>dataset</b>: its Window (full history / last N bars / date range) and Warm-up decide which bars indicator runs and scans on it use (pick it beside ▶ Run on the Indicators / Scanner pages, or in the chart's list select). Fetching always downloads full history into the shared database; a ticker belongs to every list whose CSV names it. Windowed results are stored apart from full-history ones, so a test run never overwrites them, and the warm-up bars (computed before the window so lookbacks are formed) show on the chart too.</td></tr>
 
       <tr class="help-section"><td colspan="2">Single Ticker Search</td></tr>
       <tr><td>Type any letter</td><td>Search tickers in the Single Ticker box</td></tr>
@@ -62,7 +62,7 @@ const _PAGES = [
       <tr><td><kbd>N</kbd></td><td>New config</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save config</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete config</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Run queued configs</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run queued configs — on the dataset chosen beside ▶ Run (a ticker config's list, timeframes and bar window), or all downloaded data, full history</td></tr>
       <tr><td><kbd>Shift+Enter</kbd></td><td>Focus config name input</td></tr>
 
       <tr class="help-section"><td colspan="2">Timeframes</td></tr>
@@ -90,7 +90,7 @@ const _PAGES = [
       <tr><td><kbd>Ctrl+S</kbd></td><td>Save scan config</td></tr>
       <tr><td><kbd>D</kbd></td><td>Delete scan config</td></tr>
       <tr><td>▶ button &nbsp;or&nbsp; <kbd>Space</kbd> (no card focused)</td><td>Add / remove open config from the run queue</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Run queued scan configs</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Run queued scan configs — on the dataset chosen beside ▶ Run (its list's tickers, and its window's indicator results), or everything</td></tr>
 
       <tr class="help-section"><td colspan="2">Timeframes</td></tr>
       <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Next / previous timeframe tab (wraps around)</td></tr>

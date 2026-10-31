@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel
 from backend.core import database as db
+from backend.core import datasets
 from backend.core.globals import TIMEFRAME_ALIASES
 
 router = APIRouter(prefix="/api")
@@ -16,15 +17,28 @@ def _resolve_tf(timeframe: str) -> str:
 
 @router.get("/tickers")
 def get_tickers(timeframe: Optional[str] = None, ticker_list: Optional[str] = None,
-                ind_conf: Optional[int] = None, min_bars: Optional[int] = None):
-    """List available tickers, optionally filtered by timeframe, ticker list, ind_conf, and/or min_bars."""
+                ind_conf: Optional[int] = None, min_bars: Optional[int] = None,
+                dataset_id: Optional[int] = None):
+    """List available tickers, optionally filtered by timeframe, ticker list
+    (or a dataset's list), ind_conf, and/or min_bars. Also returns the
+    datasets (ticker configs) for the chart's list select."""
     tf = _resolve_tf(timeframe) if timeframe else None
+    with db._conn() as con:
+        all_ds = datasets.all_datasets(con)
+    if dataset_id:
+        ds = next((d for d in all_ds if d['id'] == dataset_id), None)
+        if ds is None:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        ticker_list = ds['ticker_list'] or '__all__'
     tickers = db.list_tickers(tf, ticker_list, ind_conf, min_bars)
     timeframes = db.list_timeframes()
     confs = db.list_ind_confs_named()
     lists = db.list_ticker_lists()
     has_singles = db.has_single_tickers()
-    return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs, "lists": lists, "has_singles": has_singles}
+    ds_out = [{k: d[k] for k in ('id', 'name', 'ticker_list', 'timeframes', 'win', 'window_label')}
+              for d in all_ds if d['downloaded']]
+    return {"tickers": tickers, "timeframes": timeframes, "ind_confs": confs, "lists": lists,
+            "has_singles": has_singles, "datasets": ds_out}
 
 
 class FilterMinBarsBody(BaseModel):

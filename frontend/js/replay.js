@@ -118,7 +118,8 @@ export function toggleIndicatorVisible(name, visible) {
   else chart.setIndicatorVisible(indicatorColumns[name] || [], visible);
 }
 
-export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
+/** win: a dataset's bar window key ('' = full history) — which stored results to load. */
+export function initReplay(ticker, timeframe, indConf, restoreDate = null, win = '') {
   // Clean up previous instance
   if (ws)    { ws.close(); ws = null; }
   if (chart) { chart.destroy(); }
@@ -142,7 +143,7 @@ export function initReplay(ticker, timeframe, indConf, restoreDate = null) {
   // An oscillator pane's × — same as unticking it in the show/hide panel.
   chart.onPaneClose = id => toggleIndicatorVisible(id, false);
   _setStatus('connecting…');
-  _connectWS(ticker, timeframe, indConf);
+  _connectWS(ticker, timeframe, indConf, win);
   if (!controlsWired) { _wireControls(); controlsWired = true; }
   if (!keysWired)     { _wireKeys();     keysWired     = true; }
 }
@@ -174,9 +175,10 @@ function _resolveIndex(value, fallback) {
 
 // ── WebSocket ─────────────────────────────────────────────────
 
-function _connectWS(ticker, timeframe, indConf) {
+function _connectWS(ticker, timeframe, indConf, win = '') {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url   = `${proto}://${location.host}/ws/replay/${ticker}/${timeframe}/${indConf}`;
+  const url   = `${proto}://${location.host}/ws/replay/${ticker}/${timeframe}/${indConf}`
+    + (win ? `?win=${encodeURIComponent(win)}` : '');
 
   ws = new WebSocket(url);
 

@@ -23,6 +23,12 @@ let _listIdx   = 0;
 let _scanListName = null;  // name of the virtual scan-results list, if present
 let _scanLocked   = false; // true while _applyScanRun is programmatically setting controls
 let _refreshGen   = 0;     // incremented each call; stale async responses are dropped
+// Datasets (ticker configs) with a bar window — listed in the list select as
+// 'ds:<id>' entries; choosing one scopes tickers to its list and loads the
+// results computed in its window (_win, '' = full history).
+let _datasets     = [];
+let _win          = '';
+const DS_PREFIX   = 'ds:';
 
 const FLAG_LIST = '★ Flagged';  // virtual list name for Alt+L flagged-only cycling
 let _listBeforeFlagCycle = null;     // list-select value to restore when Alt+L toggles off
@@ -50,6 +56,8 @@ export async function initBrowse() {
   tickers    = data.tickers    || [];
   timeframes = data.timeframes || [];
   confs      = data.ind_confs  || [];
+  _datasets  = (data.datasets || []).filter(d => d.win);
+  const dsEntries = _datasets.map(d => DS_PREFIX + d.id);
   // Check for scan results stored by the scanner page. This localStorage entry
   // is never invalidated when the underlying DB data changes (e.g. all tickers
   // deleted), so treat it as stale unless at least one of its tickers still
@@ -60,12 +68,12 @@ export async function initBrowse() {
   const _scanStillValid = !!(_scanTickers?.length && _scanTickers.some(t => tickers.includes(t)));
   if (_scanStillValid) {
     _scanListName = `⊕ ${_scanLabel}`;
-    _lists = [_scanListName, 'All', ...(data.lists || [])];
+    _lists = [_scanListName, 'All', ...(data.lists || []), ...dsEntries];
   } else {
     if (_scanTickers?.length) {
       try { localStorage.removeItem('scan_tickers'); localStorage.removeItem('scan_label'); } catch {}
     }
-    _lists = ['All', ...(data.lists || [])];
+    _lists = ['All', ...(data.lists || []), ...dsEntries];
   }
   _buildListSelect();
 
@@ -190,13 +198,13 @@ async function _loadTicker(idx) {
   tickerCount.textContent  = `${tickerIdx + 1} / ${tickers.length}`;
   location.hash            = ticker;
   document.getElementById('ticker-watermark').textContent = ticker;
-  document.getElementById('fs-list').textContent  = listSelect.value || '';
+  document.getElementById('fs-list').textContent  = _listLabel(listSelect.value || '');
   document.getElementById('fs-count').textContent = tickerCount.textContent;
   _updateNavTitles();
   setCurrentTicker(ticker);
 
   // Re-initialise replay, restoring the current date if possible
-  initReplay(ticker, tf, conf, restoreDate);
+  initReplay(ticker, tf, conf, restoreDate, _win);
 }
 
 function _updateNavTitles() {
@@ -211,11 +219,22 @@ function _updateNavTitles() {
   btnNext.title = tickers[nextIdx];
 }
 
+function _datasetOf(listValue) {
+  if (!listValue?.startsWith(DS_PREFIX)) return null;
+  const id = parseInt(listValue.slice(DS_PREFIX.length), 10);
+  return _datasets.find(d => d.id === id) || null;
+}
+
+function _listLabel(listValue) {
+  const ds = _datasetOf(listValue);
+  return ds ? `◆ ${ds.name} · ${ds.window_label}` : listValue;
+}
+
 function _buildListSelect() {
   listSelect.innerHTML = '';
   for (const name of _lists) {
     const opt = document.createElement('option');
-    opt.value = name; opt.textContent = name;
+    opt.value = name; opt.textContent = _listLabel(name);
     listSelect.appendChild(opt);
   }
   listSelect.value = _lists[_listIdx] || 'ALL';
@@ -262,6 +281,8 @@ async function _refreshTickers(preferTicker) {
   const tf   = tfSelect.value;
   const list = listSelect.value;
   _listIdx   = _lists.indexOf(list);
+  const ds   = _datasetOf(list);
+  _win       = ds ? ds.win : '';
   const prev = preferTicker ?? tickers[tickerIdx];
 
   // Virtual scan list (localStorage) — fixed ticker set, but min_bars still
@@ -302,7 +323,8 @@ async function _refreshTickers(preferTicker) {
 
   const params = new URLSearchParams();
   if (tf)             params.set('timeframe', tf);
-  if (list !== 'All') params.set('ticker_list', list);
+  if (ds)                   params.set('dataset_id', String(ds.id));
+  else if (list !== 'All') params.set('ticker_list', list);
   const minBars = parseInt(minBarsInput.value);
   if (minBars > 0)    params.set('min_bars', String(minBars));
 
@@ -331,6 +353,8 @@ async function _loadScanRuns() {
       opt.value = r.id;
       opt.textContent = `${r.config_name} · ${r.ran_at.slice(0, 10)} · ${r.matched}/${r.total}`;
       opt.dataset.indConfId  = r.ind_conf_id || '';
+      opt.dataset.win        = r.win || '';
+      if (r.win) opt.textContent += ` · ◆ ${r.dataset || 'dataset'}`;
       opt.dataset.timeframes = JSON.stringify(r.timeframes || []);
       scanSelect.appendChild(opt);
     }
@@ -364,6 +388,7 @@ async function _applyScanRun() {
     if (!tickers.length) { document.getElementById('chart-empty').style.display = 'flex'; return; }
     document.getElementById('chart-empty').style.display = 'none';
 
+    _win = opt.dataset.win || '';   // a scan of a windowed dataset → its window's results
     _scanLocked = true;
     if (tfs.length) {
       tfSelect.value = tf;

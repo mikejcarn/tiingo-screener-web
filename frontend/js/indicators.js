@@ -1,6 +1,8 @@
 import { initHelp } from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
 import { api } from './api.js';
+import { initDatasetSelect, selectedDatasetId } from './dataset_select.js';
+import { rqApply, showRunSummary, hideRunSummary } from './run_queue_ui.js';
 
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
@@ -154,6 +156,7 @@ function _loadRunQueue() {
 // ── Bootstrap ──────────────────────────────────────────────────
 
 async function init() {
+  initDatasetSelect(document.getElementById('run-dataset'), 'ind_run_dataset');
   _wireDbSummary();
   _wireTooltip();
   await Promise.all([_loadConfigList(), _loadDefaults()]);
@@ -660,6 +663,7 @@ function _wireStaticButtons() {
     if (!_runCheckedIds.size) return;
     _runCheckedIds.clear();
     _runResults = {};
+    hideRunSummary(document.getElementById('comp-run-summary'));
     _saveRunQueue();
     _renderConfigList();
     _renderRunConfigs();
@@ -670,6 +674,9 @@ function _wireStaticButtons() {
     // rows for the in-flight/pending configs never hear about the cancel and stay
     // frozen on stale 'running'/'waiting' status forever (even across a ↻ Refresh,
     // since that just re-renders from this same _runResults).
+    const ran = _runQueue.map(id => _runResults[id]);
+    showRunSummary(document.getElementById('comp-run-summary'), ran, { cancelled: true });
+    document.getElementById('comp-queue-section').style.display = 'none';
     _runQueue    = [];
     _runQueueIdx = -1;
     _runResults  = {};
@@ -731,7 +738,7 @@ async function _renderRunConfigs() {
           </div>`;
         }).join('')
       : '<span class="run-summary-empty">No indicators configured</span>';
-    return `<tr class="run-queue-item">
+    return `<tr class="run-queue-item" data-id="${c.id}">
       <td class="run-queue-td-pos">${i + 1}</td>
       <td class="run-queue-td-name">
         <div class="run-queue-name">${_esc(c.name)}</div>
@@ -1234,31 +1241,8 @@ async function _saveConfig() {
 
 function _updateRunQueueStatus() {
   for (const [idStr, result] of Object.entries(_runResults)) {
-    const el = document.querySelector(`.rq-status[data-id="${idStr}"]`);
-    if (!el) continue;
-    const { status, done = 0, total = 0, errors = 0, current = '' } = result;
-    if (status === 'pending') {
-      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
-    } else if (status === 'running') {
-      const pct = total > 0 ? (done / total * 100) : 0;
-      el.innerHTML =
-        `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:${pct}%"></div></div>
-         <div class="rq-info">
-           <span class="rq-state rq-running">running</span>
-           ${current ? `<span class="rq-current">→ ${_esc(current)}</span>` : ''}
-           <span class="rq-count">${done} / ${total || '?'}</span>
-         </div>`;
-    } else if (status === 'done') {
-      const hasErr = errors > 0;
-      el.innerHTML =
-        `<div class="rq-bar-track"><div class="rq-bar-fill ${hasErr ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
-         <div class="rq-info">
-           <span class="rq-state ${hasErr ? 'rq-errors' : 'rq-done'}">${hasErr ? `✗ ${errors} error${errors !== 1 ? 's' : ''}` : '✓ done'}</span>
-           <span class="rq-count">${done} / ${total}</span>
-         </div>`;
-    } else if (status === 'cancelled') {
-      el.innerHTML = `<div class="rq-info"><span class="rq-state rq-cancelled">cancelled</span></div>`;
-    }
+    rqApply(document.querySelector(`#run-conf-list .run-queue-item[data-id="${idStr}"]`),
+            document.querySelector(`.rq-status[data-id="${idStr}"]`), result);
   }
 }
 
@@ -1268,6 +1252,7 @@ async function _startCompute() {
   _runQueue    = ids;
   _runQueueIdx = 0;
   _runResults  = {};
+  hideRunSummary(document.getElementById('comp-run-summary'));
   await _kickNextQueueItem();
 }
 
@@ -1287,7 +1272,7 @@ async function _kickNextQueueItem() {
   btnCancel.style.display = '';
 
   try {
-    await api.post('/api/indicators/batch', { config_id: configId });
+    await api.post('/api/indicators/batch', { config_id: configId, dataset_id: selectedDatasetId(document.getElementById('run-dataset')) });
   } catch (err) {
     btn.disabled = false;
     btn.textContent = '▶ Run';
@@ -1327,12 +1312,22 @@ async function _poll() {
         _loadHistory();
         await _kickNextQueueItem();
       } else {
+        showRunSummary(document.getElementById('comp-run-summary'), _runQueue.map(id => _runResults[id]));
+        document.getElementById('comp-queue-section').style.display = 'none';   // the summary replaces the queue bar
         _runQueue    = [];
         _runQueueIdx = -1;
         _updateQueueStatus();
         _loadDbSummary(); _loadHistory();
       }
     } else if (state.status === 'cancelled' || state.status === 'error') {
+      const cid = _runQueue[_runQueueIdx];
+      if (cid !== undefined) {
+        _runResults[cid] = state.status === 'error' ? { status: 'error', error: 'failed' } : { status: 'cancelled' };
+        _updateRunQueueStatus();
+      }
+      if (_runQueue.length) showRunSummary(document.getElementById('comp-run-summary'),
+        _runQueue.map(id => _runResults[id]), { cancelled: state.status === 'cancelled' });
+      document.getElementById('comp-queue-section').style.display = 'none';
       _runQueue    = [];
       _runQueueIdx = -1;
       _updateQueueStatus();
@@ -1362,10 +1357,12 @@ function _updateProgress(state) {
   const qPct      = document.getElementById('comp-queue-pct');
   const qConf     = document.getElementById('comp-queue-conf');
 
-  const _updateQueueBar = (active) => {
+  // finished: the current config is complete too (the queue pointer only
+  // advances after this update) — so the last one reads N / N, 100%.
+  const _updateQueueBar = (active, finished = false) => {
     const qTotal = _runQueue.length;
     if (!qSection || qTotal <= 1) { if (qSection) qSection.style.display = 'none'; return; }
-    const qDone  = Math.max(0, _runQueueIdx);
+    const qDone  = Math.max(0, _runQueueIdx) + (finished ? 1 : 0);
     const qp     = Math.round(qDone / qTotal * 100);
     qSection.style.display = '';
     qBar.style.width  = `${qDone / qTotal * 100}%`;
@@ -1402,7 +1399,7 @@ function _updateProgress(state) {
   } else if (state.status === 'running') {
     if (idleEl) idleEl.style.display = 'none';
     _updateQueueBar(true);
-    progress.style.display = '';
+    progress.style.display = 'none';   // the running queue row shows this config's progress
     _setActive(true);
     count.textContent    = `${state.done} / ${state.total || '?'}`;
     pctEl.textContent    = state.total ? `${Math.round(pct)}%` : '…';
@@ -1420,8 +1417,8 @@ function _updateProgress(state) {
     }
   } else if (state.status === 'done') {
     if (idleEl) idleEl.style.display = 'none';
-    _updateQueueBar(false);
-    progress.style.display = '';
+    _updateQueueBar(false, true);
+    progress.style.display = 'none';   // the running queue row shows this config's progress
     _setActive(false);
     count.textContent     = `${state.done} / ${state.total}`;
     pctEl.textContent     = '100%';
@@ -1438,13 +1435,13 @@ function _updateProgress(state) {
     _renderFeed(state.log || []);
     const cidDone = _runQueue[_runQueueIdx];
     if (cidDone !== undefined) {
-      _runResults[cidDone] = { status: 'done', done: state.done, total: state.total, errors: state.errors };
+      _runResults[cidDone] = { status: 'done', done: state.done, total: state.total, errors: state.errors, at: Date.now() };
       _updateRunQueueStatus();
     }
   } else if (state.status === 'cancelled') {
     if (idleEl) idleEl.style.display = 'none';
     _updateQueueBar(false);
-    progress.style.display = '';
+    progress.style.display = 'none';   // the running queue row shows this config's progress
     _setActive(false);
     count.textContent     = `${state.done} / ${state.total}`;
     pctEl.textContent     = `${Math.round(pct)}% — cancelled`;
@@ -1457,7 +1454,7 @@ function _updateProgress(state) {
   } else if (state.status === 'error') {
     if (idleEl) idleEl.style.display = 'none';
     _updateQueueBar(false);
-    progress.style.display = '';
+    progress.style.display = 'none';   // the running queue row shows this config's progress
     _setActive(false);
     count.textContent = 'failed';
     pctEl.textContent = currentEl.textContent = errorsEl.textContent = '';
@@ -1473,6 +1470,10 @@ let _dbGroupBy         = 'config';
 let _indJobRunning     = false;
 let _dbGroupSort       = { col: 'key', dir: 'asc' };
 let _dbSectionConfigId = null;
+let _dbSectionWin      = '';   // bar window of the results shown ('' = full history)
+// A config's results per window are separate groups: "Config · last 300 bars".
+const _confKey = row => row.win ? `${row.config_name} · ${row.window}` : row.config_name;
+const _winsOf  = configId => [...new Set(_dbSummaryData.filter(r => r.config_id === configId).map(r => r.win || ''))].sort();
 let _dbActiveTf        = 'daily';
 let _dbPreviewTicker   = null;
 
@@ -1484,6 +1485,8 @@ function _wireDbSummary() {
   document.getElementById('btn-db-detail-back').addEventListener('click', _closeDbDetail);
   document.getElementById('db-detail-conf-sel').addEventListener('change', async e => {
     _dbSectionConfigId = parseInt(e.target.value);
+    const wins = _winsOf(_dbSectionConfigId);
+    if (!wins.includes(_dbSectionWin)) _dbSectionWin = wins[0] ?? '';
     await _refreshDetailTfs();
     e.target.blur();
   });
@@ -1526,7 +1529,7 @@ function _renderDbSummary() {
   // Group all rows by the active dimension
   const _keyOf = row => {
     switch (_dbGroupBy) {
-      case 'config':     return row.config_name;
+      case 'config':     return _confKey(row);
       case 'ticker':     return row.ticker;
       case 'timeframe':  return row.timeframe;
       case 'rows':       return String(row.rows);
@@ -1544,7 +1547,7 @@ function _renderDbSummary() {
     }
     const g = groups[key];
     g.totalRows += row.rows;
-    g.configs.add(row.config_name);
+    g.configs.add(_confKey(row));
     g.tickers.add(row.ticker);
     g.timeframes.add(row.timeframe);
     if (!g.firstDate || (row.first_date && row.first_date < g.firstDate)) g.firstDate = row.first_date;
@@ -1643,7 +1646,7 @@ function _renderDbSummary() {
       try { await _deleteIndicatorGroup(key, g); } finally { await _loadDbSummary(); }
     });
 
-    tr.addEventListener('click', () => _openDbDetail(g.sampleRow.config_id, g.sampleRow.ticker, g.sampleRow.timeframe));
+    tr.addEventListener('click', () => _openDbDetail(g.sampleRow.config_id, g.sampleRow.ticker, g.sampleRow.timeframe, g.sampleRow.win || ''));
     tbody.appendChild(tr);
   });
 }
@@ -1651,7 +1654,7 @@ function _renderDbSummary() {
 async function _deleteIndicatorGroup(key, g) {
   const qs = p => Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   if (_dbGroupBy === 'config') {
-    await api.del(`/api/indicators/data?${qs({ ind_conf_id: g.sampleRow.config_id })}`);
+    await api.del(`/api/indicators/data?${qs({ ind_conf_id: g.sampleRow.config_id, win: g.sampleRow.win || '' })}`);
   } else if (_dbGroupBy === 'ticker') {
     await api.del(`/api/indicators/data?${qs({ ticker: key })}`);
   } else if (_dbGroupBy === 'timeframe') {
@@ -1664,13 +1667,14 @@ async function _deleteIndicatorGroup(key, g) {
       if (_dbGroupBy === 'last_date')  return (r.last_date  || '') === key;
     });
     await Promise.all(matching.map(r =>
-      api.del(`/api/indicators/data?${qs({ ind_conf_id: r.config_id, ticker: r.ticker, timeframe: r.timeframe })}`)
+      api.del(`/api/indicators/data?${qs({ ind_conf_id: r.config_id, ticker: r.ticker, timeframe: r.timeframe, win: r.win || '' })}`)
     ));
   }
 }
 
-function _openDbDetail(configId, ticker, timeframe) {
+function _openDbDetail(configId, ticker, timeframe, win = '') {
   _dbSectionConfigId = configId;
+  _dbSectionWin      = win;
   _dbActiveTf        = timeframe;
   _dbPreviewTicker   = ticker;
   // Populate config selector with all configs that have data
@@ -1695,7 +1699,7 @@ function _refreshDetailTfs(preferTf, preferTicker) {
   const tfSel = document.getElementById('db-detail-tf-sel');
   const TF_ORDER = ['daily', 'weekly', '1hour', '4hour', '5min'];
   const available = [...new Set(
-    _dbSummaryData.filter(r => r.config_id === _dbSectionConfigId).map(r => r.timeframe)
+    _dbSummaryData.filter(r => r.config_id === _dbSectionConfigId && (r.win || '') === _dbSectionWin).map(r => r.timeframe)
   )].sort((a, b) => {
     const ai = TF_ORDER.indexOf(a), bi = TF_ORDER.indexOf(b);
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
@@ -1718,7 +1722,7 @@ async function _refreshDetailTickers(preferTicker) {
   let tickers = [];
   try {
     const data = await api.get(
-      `/api/indicators/tickers-list?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}`
+      `/api/indicators/tickers-list?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}&win=${encodeURIComponent(_dbSectionWin)}`
     );
     tickers = data.tickers || [];
   } catch {}
@@ -1749,7 +1753,7 @@ async function _loadDbPreview() {
   let data;
   try {
     data = await api.get(
-      `/api/indicators/preview?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}${tickerParam}`
+      `/api/indicators/preview?config_id=${_dbSectionConfigId}&timeframe=${_dbActiveTf}&win=${encodeURIComponent(_dbSectionWin)}${tickerParam}`
     );
   } catch {
     tableEl.innerHTML = '<tr><td style="color:#333;padding:8px 12px;font-size:11px;">Failed to load.</td></tr>';
@@ -1815,7 +1819,7 @@ async function _loadHistory() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="ind-db-td-idx">${i + 1}</td>
-      <td>${_esc(r.config_name)}</td>
+      <td>${_esc(r.config_name)}${r.dataset ? ` <span class="ind-hist-dataset">· ${_esc(r.dataset)}</span>` : ''}</td>
       <td>${r.timeframes.join(', ')}</td>
       <td>${r.tickers}</td>
       <td class="${r.errors > 0 ? 'ind-hist-err' : ''}">${r.errors}</td>

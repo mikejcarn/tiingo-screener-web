@@ -100,6 +100,7 @@
         <div class="ind-db-head-actions">
           <button id="btn-run-refresh" class="dash-btn-sm" title="Refresh configs">↻</button>
           <button id="btn-run-clear" class="dash-btn-sm dash-btn-sm-del" title="Clear run status">Clear All</button>
+          <select id="run-dataset" class="run-dataset-sel" title="Run on: a dataset (ticker config — list, timeframes, bar window) or all downloaded data, full history"></select>
           <button id="btn-run-scan" class="dash-btn-sm dash-btn-sm-launch" title="Run scan (R)">&#9654; Run</button>
         </div>
       </div>
@@ -108,6 +109,7 @@
 
         <!-- Output section -->
         <div class="ind-run-output-sep">
+          <div id="scan-run-summary" class="run-summary-line" style="display:none"></div>
           <div id="scan-output-idle" class="run-output-idle">Queue scan configs and hit &#9654; Run.</div>
           <div class="ind-overall-section" id="scan-overall" style="display:none;">
             <div class="ind-overall-header">

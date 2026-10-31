@@ -1,6 +1,8 @@
 import { api }       from './api.js';
 import { initHelp }  from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
+import { initDatasetSelect, selectedDatasetId } from './dataset_select.js';
+import { rqState, rqStatusHtml, showRunSummary, hideRunSummary } from './run_queue_ui.js';
 
 // ── State ─────────────────────────────────────────────────────
 const _FIXED_TFS = ['daily', 'weekly', '1hour', '4hour', '5min'];
@@ -50,6 +52,7 @@ function _loadRunQueue() {
 
 // ── Init ──────────────────────────────────────────────────────
 (async function init() {
+  initDatasetSelect(document.getElementById('run-dataset'), 'scan_run_dataset');
   initTheme();
   initHelp('scanner');
   const [tickerData, criteriaData, indConfsData] = await Promise.all([
@@ -150,13 +153,13 @@ function _updateNoDataWarning() {
     const show = indConfId && !_confsWithData.has(indConfId);
     warn.style.display = show ? '' : 'none';
   }
-  // Shows which optgroup the current selection belongs to (Indicator Configs vs
-  // Tickers Only) — helps orient users cycling with ;/' or just reading the value,
-  // since "conf:X" vs "list:Y" isn't otherwise obvious from the select alone.
+  // Flags a Tickers Only selection (a ticker list, no indicator config) —
+  // "list:Y" isn't otherwise obvious from the select alone. An indicator
+  // config needs no tag: the field's own label already says so.
   const groupEl = document.getElementById('scan-ind-conf-group');
   if (groupEl) {
     const opt = sel?.selectedOptions?.[0];
-    groupEl.textContent = opt?.parentElement?.tagName === 'OPTGROUP' ? opt.parentElement.label : '';
+    groupEl.textContent = opt?.value?.startsWith('list:') ? opt.parentElement.label : '';
   }
 }
 
@@ -850,28 +853,13 @@ function _renderRunConfigs() {
   }
   el.innerHTML = queued.map((c, i) => {
     const result = _runResults[c.id];
-    let statusHtml = '';
-    if (result) {
-      if (result.status === 'pending') {
-        statusHtml = `<div class="rq-info"><span class="rq-state rq-pending">waiting</span></div>`;
-      } else if (result.status === 'running') {
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill rq-running" style="width:100%"></div></div>
-                      <div class="rq-info"><span class="rq-state rq-running">running…</span></div>`;
-      } else if (result.status === 'done') {
-        statusHtml = `<div class="rq-bar-track"><div class="rq-bar-fill ${result.error ? 'rq-errors' : 'rq-done'}" style="width:100%"></div></div>
-                      <div class="rq-info">
-                        <span class="rq-state ${result.error ? 'rq-errors' : 'rq-done'}">${result.error ? '✗ error' : '✓ done'}</span>
-                        ${!result.error ? `<span class="rq-count">${result.matched} / ${result.total} matched</span>` : ''}
-                      </div>`;
-      }
-    }
-    return `<div class="run-queue-item">
+    return `<div class="run-queue-item" data-state="${rqState(result)}">
       <div class="run-queue-header">
         <span class="run-queue-pos">${i + 1}</span>
         <span class="run-queue-name">${_esc(c.name)}</span>
         <button class="run-queue-remove" data-id="${c.id}"${inRun ? ' disabled' : ''} title="Remove from queue">×</button>
       </div>
-      <div class="rq-status">${statusHtml}</div>
+      <div class="rq-status">${rqStatusHtml(result)}</div>
     </div>`;
   }).join('');
 
@@ -892,43 +880,29 @@ function _updateScanOverall() {
 
   const inRun = _runQueueIdx >= 0 && _runQueueIdx < _runQueue.length;
 
-  if (!inRun && !_scanDone) {
+  if (!inRun) {
+    // Finished (or never run): the summary line (shown by _kickNextQueueItem) replaces the bar.
     overall.style.display = 'none';
-    if (idleEl) idleEl.style.display = '';
+    if (idleEl) idleEl.style.display = _scanDone ? 'none' : '';
     return;
   }
 
   if (idleEl) idleEl.style.display = 'none';
   overall.style.display = '';
 
-  if (inRun) {
-    const total = _runQueue.length;
-    const done  = _runQueueIdx;
-    const pct   = total > 0 ? (done / total * 100) : 0;
-    const conf  = _configs.find(c => c.id === _runQueue[_runQueueIdx]);
-    bar.style.width = `${pct}%`;
-    track.classList.add('active');
-    bar.classList.add('active');
-    meta.classList.add('active');
-    totalEl.textContent  = `Config ${_runQueueIdx + 1} / ${total}`;
-    countEl.textContent  = `${done} / ${total}`;
-    pctEl.textContent    = `${Math.round(pct)}%`;
-    currentEl.textContent= conf?.name ? `→ ${conf.name}` : '';
-    errorsEl.textContent = '';
-  } else {
-    const ids   = Object.keys(_runResults);
-    const total = ids.length;
-    const errs  = ids.filter(id => _runResults[+id]?.error).length;
-    bar.style.width = '100%';
-    track.classList.remove('active');
-    bar.classList.remove('active');
-    meta.classList.remove('active');
-    totalEl.textContent  = `${total} config${total !== 1 ? 's' : ''}`;
-    countEl.textContent  = `${total} / ${total}`;
-    pctEl.textContent    = '100%';
-    currentEl.textContent= '';
-    errorsEl.textContent = errs > 0 ? `✗ ${errs} error${errs !== 1 ? 's' : ''}` : '✓ complete';
-  }
+  const total = _runQueue.length;
+  const done  = _runQueueIdx;
+  const pct   = total > 0 ? (done / total * 100) : 0;
+  const conf  = _configs.find(c => c.id === _runQueue[_runQueueIdx]);
+  bar.style.width = `${pct}%`;
+  track.classList.add('active');
+  bar.classList.add('active');
+  meta.classList.add('active');
+  totalEl.textContent  = `Config ${_runQueueIdx + 1} / ${total}`;
+  countEl.textContent  = `${done} / ${total}`;
+  pctEl.textContent    = `${Math.round(pct)}%`;
+  currentEl.textContent= conf?.name ? `→ ${conf.name}` : '';
+  errorsEl.textContent = '';
 }
 
 async function _startScan() {
@@ -939,6 +913,7 @@ async function _startScan() {
   _runQueueIdx = 0;
   _runResults  = {};
   for (const id of _runQueue) _runResults[id] = { status: 'pending' };
+  hideRunSummary(document.getElementById('scan-run-summary'));
   const btn = document.getElementById('btn-run-scan');
   btn.disabled = true; btn.textContent = '▶ Running…';
   _renderRunConfigs();
@@ -948,6 +923,10 @@ async function _startScan() {
 async function _kickNextQueueItem() {
   if (_runQueueIdx >= _runQueue.length) {
     _scanDone = true;
+    const ran = _runQueue.map(id => _runResults[id]);
+    const matched = ran.reduce((n, r) => n + (r?.matched || 0), 0);
+    showRunSummary(document.getElementById('scan-run-summary'), ran,
+      { noun: 'scan', noTickers: true, extra: `${matched} matched` });
     _runQueue = []; _runQueueIdx = -1;
     const btn = document.getElementById('btn-run-scan');
     btn.disabled = false; btn.textContent = '▶ Run';
@@ -955,17 +934,18 @@ async function _kickNextQueueItem() {
     return;
   }
   const configId = _runQueue[_runQueueIdx];
-  _runResults[configId] = { status: 'running' };
+  _runResults[configId] = { status: 'running', label: 'scanning' };
   _renderRunConfigs();
   try {
     if (_dirty && _activeId === configId) await _saveScan();
-    const data = await api.post('/api/scan/run', { config_id: configId });
+    const data = await api.post('/api/scan/run', { config_id: configId, dataset_id: selectedDatasetId(document.getElementById('run-dataset')) });
     _lastResults = data.results || [];
-    _runResults[configId] = { status: 'done', matched: data.count, total: data.total ?? 0 };
+    _runResults[configId] = { status: 'done', matched: data.count, scanned: data.total ?? 0,
+                              countText: `${data.count} / ${data.total ?? 0} matched`, at: Date.now() };
     _renderResults(data);
     _loadHistory();
   } catch (e) {
-    _runResults[configId] = { status: 'done', error: true };
+    _runResults[configId] = { status: 'error', error: e?.message || 'error' };
   }
   _renderRunConfigs();
   _runQueueIdx++;
@@ -1105,6 +1085,7 @@ function _wireGlobal() {
     _runCheckedIds.clear();
     _runResults = {};
     _scanDone   = false;
+    hideRunSummary(document.getElementById('scan-run-summary'));
     _saveRunQueue();
     _renderList();
     _renderRunConfigs();
