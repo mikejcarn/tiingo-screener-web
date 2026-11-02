@@ -1,4 +1,5 @@
 import { rqState, rqStatusHtml, showRunSummary, hideRunSummary } from './run_queue_ui.js';
+import { runDelete, noteEmpty, fmtCount } from './db_feedback.js';
 import { initHelp } from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
 import { api } from './api.js';
@@ -946,8 +947,16 @@ function _renderStatsGrouped() {
         ? `Delete data for list "${key}"? Tickers that are also in another list are kept.`
         : 'Delete data for this group?';
       if (!confirm(msg)) return;
-      await _deleteStatsGroup(key, g);
-      _loadStats();
+      const label = _groupBy === 'bars' ? _fmtBars(Number(key)) : key;
+      const ok = await runDelete({
+        btn: e.currentTarget, rows: [tr],
+        action: async () => {
+          const res = await _deleteStatsGroup(key, g);
+          if (res?.none) return res.none;
+        },
+        okText: `✓ Deleted ${label} — ${fmtCount(g.tickers.size, 'ticker')}, ${_fmtBars(g.bars)} bars`,
+      });
+      if (ok) _loadStats();
     });
 
     tr.addEventListener('click', () => _openStatsDetail(g.sampleRow.ticker, g.sampleRow.timeframe));
@@ -969,8 +978,7 @@ async function _deleteStatsGroup(key, g) {
     const own = raw.filter(r => { const ls = listsOf(r); return ls.length === 1 && ls[0] === key; });
     if (!own.length) {
       const shared = new Set(raw.filter(r => listsOf(r).includes(key)).map(r => r.ticker));
-      alert(`Nothing deleted — all ${shared.size} ticker${shared.size !== 1 ? 's' : ''} in "${key}" ${shared.size !== 1 ? 'are' : 'is'} also in another list (${[...shared].sort().join(', ')}). Delete them by ticker instead if you really want them gone.`);
-      return;
+      return { none: `Nothing deleted — all ${fmtCount(shared.size, 'ticker')} in "${key}" ${shared.size !== 1 ? 'are' : 'is'} also in another list (${[...shared].sort().join(', ')}); delete by ticker instead` };
     }
     await Promise.all(own.map(r =>
       api.del(`/api/data/ohlcv/ticker-tf?${qs({ ticker: r.ticker, timeframe: r.timeframe })}`)
@@ -1124,8 +1132,11 @@ function _wireHistoryTable() {
     const list     = tr.dataset.list;
     const params   = new URLSearchParams({ session, timeframe });
     if (list) params.set('ticker_list', list);
-    await api.del(`/api/fetch-history/entry?${params}`);
-    _loadHistory();
+    const ok = await runDelete({
+      btn, rows: [tr], action: () => api.del(`/api/fetch-history/entry?${params}`),
+      okText: `✓ Deleted history entry ${session} · ${list || '—'} · ${timeframe}`,
+    });
+    if (ok) _loadHistory();
   });
 }
 
@@ -1218,23 +1229,37 @@ function _wireButtons() {
     if (!btn) return;
     const name = btn.dataset.list;
     if (!confirm(`Delete list "${name}"?`)) return;
-    await api.del(`/api/ticker-lists/${encodeURIComponent(name)}`);
-    _loadTickerLists();
+    const ok = await runDelete({
+      btn, rows: [btn.closest('.ticker-list-row')].filter(Boolean),
+      action: () => api.del(`/api/ticker-lists/${encodeURIComponent(name)}`),
+      okText: `✓ Deleted list "${name}" (its downloaded data is kept)`,
+    });
+    if (ok) _loadTickerLists();
   });
   document.getElementById('btn-history-refresh').addEventListener('click', () => _loadHistory());
-  document.getElementById('btn-history-clear').addEventListener('click', async () => {
+  document.getElementById('btn-history-clear').addEventListener('click', async e => {
     if (!confirm('Clear all fetch history?')) return;
-    await api.del('/api/fetch-history');
-    _loadHistory();
+    const rows = [...document.querySelectorAll('#history-body tr[data-session]')];
+    const text = `✓ Fetch history cleared — ${fmtCount(rows.length, 'entry').replace('entrys', 'entries')}`;
+    const ok = await runDelete({ btn: e.currentTarget, rows, action: () => api.del('/api/fetch-history'), okText: text, emptyText: 'Fetch history is already empty' });
+    if (ok) { await _loadHistory(); noteEmpty(document.getElementById('history-body'), text.slice(2)); }
   });
   _wireHistoryTable();
   _wireStatsDetail();
 
-  document.getElementById('btn-clear-all').addEventListener('click', async () => {
+  document.getElementById('btn-clear-all').addEventListener('click', async e => {
     if (!confirm('Delete ALL data from the database? This includes OHLCV, indicators, and fetch history.')) return;
-    await api.del('/api/data/all');
-    _loadStats();
-    _loadHistory();
+    const raw = (_statsData && _statsData.stats) || [];
+    const tickers = new Set(raw.map(r => r.ticker)).size, bars = raw.reduce((n, r) => n + r.rows, 0);
+    const text = `✓ Database cleared — ${fmtCount(tickers, 'ticker')}, ${_fmtBars(bars)} bars removed`;
+    const ok = await runDelete({
+      btn: e.currentTarget, rows: [...document.querySelectorAll('#stats-body tr.ind-db-summary-row')],
+      action: () => api.del('/api/data/all'), okText: text, emptyText: 'The database is already empty',
+    });
+    if (ok) {
+      await _loadStats(); _loadHistory();
+      noteEmpty(document.getElementById('stats-body'), text.slice(2));
+    }
   });
 
   _initTickerSearch();

@@ -3,6 +3,7 @@ import { initHelp }  from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
 import { initDatasetSelect, selectedDatasetId } from './dataset_select.js';
 import { rqState, rqStatusHtml, showRunSummary, hideRunSummary } from './run_queue_ui.js';
+import { runDelete, cardNotice, cardHeadOf, noteEmpty, fmtCount } from './db_feedback.js';
 
 // ── State ─────────────────────────────────────────────────────
 const _FIXED_TFS = ['daily', 'weekly', '1hour', '4hour', '5min'];
@@ -1047,8 +1048,11 @@ async function _loadHistory() {
     delBtn.title = 'Delete this run and its results';
     delBtn.addEventListener('click', async () => {
       if (!confirm(`Delete run "${r.config_name} · ${r.ran_at}"?`)) return;
-      await api.del(`/api/scan/runs/${r.id}`);
-      _loadHistory();
+      const ok = await runDelete({
+        btn: delBtn, rows: [tr], action: () => api.del(`/api/scan/runs/${r.id}`),
+        okText: `✓ Deleted run "${r.config_name}" · ${r.ran_at}`,
+      });
+      if (ok) _loadHistory();
     });
     tr.querySelector('td:last-child').appendChild(delBtn);
     tbody.appendChild(tr);
@@ -1103,12 +1107,20 @@ function _wireGlobal() {
   document.getElementById('btn-results-refresh').addEventListener('click', () => {
     if (_lastResults) _renderResults({ results: _lastResults, count: _lastResults.length });
   });
-  document.getElementById('btn-results-clear').addEventListener('click', _clearResults);
+  document.getElementById('btn-results-clear').addEventListener('click', e => {
+    const had = _lastResults?.length || 0;
+    _clearResults();
+    _lastResults = null;
+    cardNotice(cardHeadOf(e.currentTarget), had ? `✓ Results cleared — ${fmtCount(had, 'ticker')} (the run stays in history)` : 'No results to clear',
+      had ? 'ok' : 'warn');
+  });
   document.getElementById('btn-history-refresh').addEventListener('click', _loadHistory);
-  document.getElementById('btn-history-clear').addEventListener('click', async () => {
+  document.getElementById('btn-history-clear').addEventListener('click', async e => {
     if (!confirm('Clear all scan history?')) return;
-    await api.del('/api/scan/history');
-    _loadHistory();
+    const rows = [...document.querySelectorAll('#scan-history-body tr')].filter(tr => tr.querySelector('.scan-history-del'));
+    const text = `✓ Scan history cleared — ${fmtCount(rows.length, 'run')}`;
+    const ok = await runDelete({ btn: e.currentTarget, rows, action: () => api.del('/api/scan/history'), okText: text, emptyText: 'Scan history is already empty' });
+    if (ok) { await _loadHistory(); noteEmpty(document.getElementById('scan-history-body'), text.slice(2)); }
   });
   document.getElementById('btn-run-scan').addEventListener('click', _startScan);
   document.getElementById('btn-open-chart').addEventListener('click', () => {

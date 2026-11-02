@@ -3030,3 +3030,28 @@ body.pipeline-page {
   flex-direction: column;
   overflow: hidden;
 }
+
+/* ── Delete feedback (db_feedback.js) ─────────────────────── */
+tr.row-deleting > td { opacity: 0.45; text-decoration: line-through; transition: opacity 0.15s; }
+tr.row-gone > td { opacity: 0 !important; transition: opacity 0.25s; }
+tr.row-gone { transform: scaleY(0.6); transition: transform 0.25s; }
+div.row-deleting { opacity: 0.45; text-decoration: line-through; transition: opacity 0.15s; }
+div.row-gone { opacity: 0 !important; transition: opacity 0.25s; }
+.card-notice {
+  flex: 1;
+  min-width: 0;
+  margin: 0 12px;
+  text-align: right;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s;
+}
+.card-notice.on { opacity: 1; pointer-events: auto; cursor: default; }
+.card-notice[data-kind="ok"]   { color: rgb(var(--teal-rgb)); }
+.card-notice[data-kind="warn"] { color: rgb(230,120,50); cursor: pointer; }

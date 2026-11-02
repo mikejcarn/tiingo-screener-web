@@ -3,6 +3,7 @@ import { initTheme, toggleTheme } from './theme.js';
 import { api } from './api.js';
 import { initDatasetSelect, selectedDatasetId } from './dataset_select.js';
 import { rqApply, showRunSummary, hideRunSummary } from './run_queue_ui.js';
+import { runDelete, cardNotice, cardHeadOf, noteEmpty, fmtCount } from './db_feedback.js';
 
 const ALL_TIMEFRAMES = ['daily', 'weekly', '1hour', '4hour', '5min'];
 
@@ -1161,7 +1162,14 @@ async function _clearResults() {
   if (!_selectedId) return;
   const name = _configData?.name || 'this config';
   if (!confirm(`Clear all computed results for "${name}"? The config will be kept.`)) return;
-  await api.del(`/api/data/indicators/${_selectedId}`);
+  const id = _selectedId;
+  const rows = _dbSummaryData.filter(r => r.config_id === id).reduce((n, r) => n + r.rows, 0);
+  const ok = await runDelete({
+    btn: document.getElementById('btn-clear-results'),
+    action: async () => rows ? api.del(`/api/data/indicators/${id}`) : `No computed results for "${name}" to clear`,
+    okText: `✓ Cleared results for "${name}" — ${fmtCount(rows, 'row')}`,
+  });
+  if (!ok) return;
   _closeDbDetail();
   await _loadDbSummary();
 }
@@ -1172,11 +1180,20 @@ async function _isIndJobRunning() {
 }
 
 async function _dbClearResults() {
-  if (await _isIndJobRunning()) { alert('A compute job is running — wait for it to finish before clearing.'); return; }
+  const btn = document.getElementById('btn-db-clear-results');
+  if (await _isIndJobRunning()) { cardNotice(cardHeadOf(btn), 'A compute job is running — wait for it to finish before clearing', 'warn'); return; }
   if (!confirm('Clear ALL computed indicator results from the database? Configs will be kept.')) return;
-  await api.del('/api/data/indicators');
+  const rows = _dbSummaryData.reduce((n, r) => n + r.rows, 0);
+  const configs = new Set(_dbSummaryData.map(r => r.config_id)).size;
+  const text = `✓ All results cleared — ${fmtCount(rows, 'row')} from ${fmtCount(configs, 'config')}`;
+  const ok = await runDelete({
+    btn, rows: [...document.querySelectorAll('#ind-db-summary-body tr.ind-db-summary-row')],
+    action: () => api.del('/api/data/indicators'), okText: text, emptyText: 'No indicator results to clear',
+  });
+  if (!ok) return;
   _closeDbDetail();
   await _loadDbSummary();
+  noteEmpty(document.getElementById('ind-db-summary-body'), text.slice(2));
 }
 
 async function _deleteConfig() {
@@ -1641,9 +1658,14 @@ function _renderDbSummary() {
 
     tr.querySelector('.ind-db-del-btn').addEventListener('click', async e => {
       e.stopPropagation();
-      if (await _isIndJobRunning()) { alert('A compute job is running — wait for it to finish before deleting.'); return; }
+      const btn = e.currentTarget;
+      if (await _isIndJobRunning()) { cardNotice(cardHeadOf(btn), 'A compute job is running — wait for it to finish before deleting', 'warn'); return; }
       if (!confirm(`Delete indicator data for this group?`)) return;
-      try { await _deleteIndicatorGroup(key, g); } finally { await _loadDbSummary(); }
+      const ok = await runDelete({
+        btn, rows: [tr], action: () => _deleteIndicatorGroup(key, g),
+        okText: `✓ Deleted ${key} — ${fmtCount(g.totalRows, 'row')}`,
+      });
+      if (ok) await _loadDbSummary();
     });
 
     tr.addEventListener('click', () => _openDbDetail(g.sampleRow.config_id, g.sampleRow.ticker, g.sampleRow.timeframe, g.sampleRow.win || ''));
@@ -1826,17 +1848,25 @@ async function _loadHistory() {
       <td>${_esc(r.ran_at)}</td>
       <td><button class="scan-history-del" title="Delete this run">✕</button></td>
     `;
-    tr.querySelector('.scan-history-del').addEventListener('click', async () => {
-      try { await api.del(`/api/indicators/history/${r.id}`); } catch {}
-      await _loadHistory();
+    tr.querySelector('.scan-history-del').addEventListener('click', async e => {
+      const ok = await runDelete({
+        btn: e.currentTarget, rows: [tr], action: () => api.del(`/api/indicators/history/${r.id}`),
+        okText: `✓ Deleted run "${r.config_name}" · ${r.ran_at}`,
+      });
+      if (ok) await _loadHistory();
     });
     tbody.appendChild(tr);
   }
 }
 
 async function _clearHistory() {
-  try { await api.del('/api/indicators/history'); } catch {}
-  await _loadHistory();
+  const rows = [...document.querySelectorAll('#ind-history-body tr')].filter(tr => tr.querySelector('.scan-history-del'));
+  const text = `✓ Run history cleared — ${fmtCount(rows.length, 'run')}`;
+  const ok = await runDelete({
+    btn: document.getElementById('btn-clear-history'), rows,
+    action: () => api.del('/api/indicators/history'), okText: text, emptyText: 'Run history is already empty',
+  });
+  if (ok) { await _loadHistory(); noteEmpty(document.getElementById('ind-history-body'), text.slice(2)); }
 }
 
 

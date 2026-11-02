@@ -33,6 +33,7 @@
  * toggle writes through to the server on every change.
  */
 import { rqState, rqStatusHtml, showRunSummary, hideRunSummary } from './run_queue_ui.js';
+import { runDelete, noteEmpty, fmtCount } from './db_feedback.js';
 import { api }       from './api.js';
 import { initHelp }  from './help.js';
 import { initTheme, toggleTheme } from './theme.js';
@@ -876,8 +877,12 @@ function _renderHistory(rows) {
   `).join('');
   body.querySelectorAll('.scan-history-del').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await api.del(`/api/pipeline/history/${btn.dataset.id}`);
-      _loadHistory();
+      const tr = btn.closest('tr');
+      const ok = await runDelete({
+        btn, rows: [tr], action: () => api.del(`/api/pipeline/history/${btn.dataset.id}`),
+        okText: `✓ Deleted run "${tr.cells[0].textContent}" · ${tr.cells[4].textContent}`,
+      });
+      if (ok) _loadHistory();
     });
   });
 }
@@ -916,10 +921,12 @@ function _wireStatic() {
     if (_lastResults?.length) _openTicker(_lastResults[0].ticker);
   });
   document.getElementById('btn-history-refresh').addEventListener('click', _loadHistory);
-  document.getElementById('btn-history-clear').addEventListener('click', async () => {
+  document.getElementById('btn-history-clear').addEventListener('click', async e => {
     if (!confirm('Clear all pipeline history?')) return;
-    await api.del('/api/pipeline/history');
-    _loadHistory();
+    const rows = [...document.querySelectorAll('#pipeline-history-body tr')].filter(tr => tr.querySelector('.scan-history-del'));
+    const text = `✓ Pipeline history cleared — ${fmtCount(rows.length, 'run')}`;
+    const ok = await runDelete({ btn: e.currentTarget, rows, action: () => api.del('/api/pipeline/history'), okText: text, emptyText: 'Pipeline history is already empty' });
+    if (ok) { await _loadHistory(); noteEmpty(document.getElementById('pipeline-history-body'), text.slice(2)); }
   });
   document.getElementById('pipeline-name').addEventListener('input', () => { _dirty = true; });
   // Blur after picking a value — a stage select opened via Enter/showPicker()

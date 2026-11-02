@@ -122,6 +122,9 @@ const FAN_FLAT_ALPHA        = 0.3;    // every line's opacity in 'flat' mode
 // every fan line that exists there (anchored at or before it).
 const C_FAN_AVG             = `rgba(${C_MANUAL_RGB},1)`;
 const FAN_AVG_WIDTH         = 2;
+const C_FAN_FIRST_ABOVE     = 'rgba(57,255,20,1)';
+const C_FAN_FIRST_BELOW     = 'rgba(255,40,220,1)';
+const FAN_FIRST_WIDTH       = 2.5;
 // 'slope' mode: each 1px segment by the line's slope into that bar, in ATR
 // per bar (ATR FAN_SLOPE_ATR): grey and faint when flat, shading to teal
 // rising / red falling and more opaque as it steepens, full at
@@ -132,7 +135,13 @@ const FAN_SLOPE_SCALE       = 0.1;
 const FAN_SLOPE_LEVELS      = 8;
 const FAN_SLOPE_ALPHA_MIN   = 0.15;
 const FAN_SLOPE_ALPHA_MAX   = 0.6;
-const FAN_MODES             = ['amber', 'pv', 'flat', 'slope'];
+// 'avg' mode: every candle draws its own average aVWAP instead of its
+// aVWAP — from that candle on, at each bar the mean of the aVWAPs anchored
+// at every candle from it up to that bar (what a '<' profile's dotted line
+// is, for its anchor) — colored by slope like 'slope', with the fan's
+// first candle's own average aVWAP on top: neon green where the bar closed
+// above it, magenta where below (the σ candle coloring's extremes).
+const FAN_MODES             = ['amber', 'pv', 'flat', 'slope', 'avg'];
 // In the red/teal coloring, the fan's min/max aVWAPs — anchored at its
 // highest peak and lowest valley — are highlighted in the same colors the
 // aVWAP Min|Max lines use (avwap_max / avwap_min below), and wider.
@@ -371,10 +380,17 @@ class FanPrimitive {
     // 'flat' mode: per-bar sum / count of every drawn line, for the average aVWAP.
     const avg = fan.colorMode === 'flat' ? { sum: new Float64Array(to - from + 1), cnt: new Uint32Array(to - from + 1) } : null;
     // 'slope' mode: a path per direction and level (see FAN_SLOPE_*).
-    const slope = fan.colorMode === 'slope'
+    const slope = fan.colorMode === 'slope' || fan.colorMode === 'avg'
       ? { paths: FAN_SLOPE_STYLES.map(lvls => lvls.map(() => new Path2D())), atr: eng._getAtr(FAN_SLOPE_ATR) }
       : null;
-    fan.anchors.forEach((a, k) => {
+    let firstAvg = null;
+    if (fan.colorMode === 'avg') {
+      // Average aVWAPs, each segment by its slope in ATR per bar (as 'slope').
+      firstAvg = this._avgLines({ from, to, toIdx, n, xs, toY, cumPV, cumVol }, (pv, v, i) => {
+        const atr = slope.atr[i], t = atr > 0 ? Math.min(1, Math.abs(v - pv) / atr / FAN_SLOPE_SCALE) : 0;
+        return slope.paths[v >= pv ? 0 : 1][Math.round(t * FAN_SLOPE_LEVELS)];
+      });
+    } else fan.anchors.forEach((a, k) => {
       const st = fan.styles[k];
       if (!st || !st.visible || a > to || a > toIdx || fan.confirm[k] > n) return;
       let b = null;
@@ -403,7 +419,23 @@ class FanPrimitive {
       }
     });
     let avgPath = null;
-    if (avg) {
+    let firstPaths = null;
+    if (firstAvg) {
+      // The fan's first candle's average aVWAP, over the others — each
+      // segment by whether its bar closed above or below the line.
+      firstPaths = [new Path2D(), new Path2D()];   // above, below
+      let px = NaN, py = NaN;
+      for (let i = from; i <= to; i++) {
+        const v = firstAvg[i - from], x = xs[i - from];
+        const y = Number.isNaN(v) || Number.isNaN(x) ? null : toY(v);
+        if (y == null) { px = NaN; continue; }
+        if (!Number.isNaN(px)) {
+          const path = firstPaths[eng._closes[i] >= v ? 0 : 1];
+          path.moveTo(px, py); path.lineTo(x, y);
+        }
+        px = x; py = y;
+      }
+    } else if (avg) {
       avgPath = new Path2D();
       let pen = false;
       for (let i = from; i <= to; i++) {
@@ -432,6 +464,12 @@ class FanPrimitive {
         ctx.strokeStyle = C_FAN_AVG;
         ctx.lineWidth = FAN_AVG_WIDTH;
         ctx.stroke(avgPath);
+      }
+      if (firstPaths) {
+        ctx.lineWidth = FAN_FIRST_WIDTH;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = C_FAN_FIRST_ABOVE; ctx.stroke(firstPaths[0]);
+        ctx.strokeStyle = C_FAN_FIRST_BELOW; ctx.stroke(firstPaths[1]);
       }
       ctx.restore();
     });
@@ -510,6 +548,42 @@ class FanPrimitive {
       ctx.stroke(pocPath);
       ctx.restore();
     });
+  }
+
+  /** 'avg' mode: every fan anchor c's average aVWAP — at bar i, the mean of
+   * the aVWAPs anchored at every candle c … i (all candles, not only the
+   * fan's drawn anchors). Per bar, one backward pass over the span gives
+   * every candle's sum at once (S_c = S_{c+1} + aVWAP(c, i)), so the cost
+   * matches drawing the fan's own lines. Each segment goes to pathOf(prevValue, value, i).
+   * Returns the first candle's (fan.lo) average aVWAP over [from, to]. */
+  _avgLines({ from, to, toIdx, n, xs, toY, cumPV, cumVol }, pathOf) {
+    const fan = this._fan, lo = fan.lo;
+    const ks = [];
+    fan.anchors.forEach((a, k) => { if (a <= to && a <= toIdx && fan.confirm[k] <= n) ks.push(k); });
+    const first = new Float64Array(to - from + 1).fill(NaN);
+    if (!ks.length) return first;
+    // Drawn anchors by bar, for the backward pass.
+    const kAt = new Int32Array(to - lo + 1).fill(-1);
+    for (const k of ks) kAt[fan.anchors[k] - lo] = k;
+    const K = fan.anchors.length;
+    const px = new Float64Array(K).fill(NaN), py = new Float64Array(K).fill(NaN), pv = new Float64Array(K);
+    for (let i = Math.max(lo, from); i <= to; i++) {
+      const x = xs[i - from];
+      let sum = 0, cnt = 0;
+      for (let c = i; c >= lo; c--) {
+        const vol = cumVol[i] - (c > 0 ? cumVol[c - 1] : 0);
+        if (vol > 0) { sum += (cumPV[i] - (c > 0 ? cumPV[c - 1] : 0)) / vol; cnt++; }
+        const k = kAt[c - lo];
+        if (k < 0) continue;
+        const y = cnt && !Number.isNaN(x) ? toY(sum / cnt) : null;
+        if (y == null) { px[k] = NaN; continue; }
+        const v = sum / cnt;
+        if (!Number.isNaN(px[k])) { const path = pathOf(pv[k], v, i); path.moveTo(px[k], py[k]); path.lineTo(x, y); }
+        px[k] = x; py[k] = y; pv[k] = v;
+      }
+      if (cnt) first[i - from] = sum / cnt;
+    }
+    return first;
   }
 }
 
@@ -699,6 +773,13 @@ const C_PROFILE_LINE_POC     = 'rgba(255,214,0,1)';
 const C_PROFILE_PEAK_HVN     = 'rgba(255,190,90,1)';
 const C_PROFILE_PEAK_LVN     = 'rgba(190,40,255,1)';
 const PROFILE_PEAK_WINDOW    = 4;   // levels each side a local peak must top
+// Every mode also draws the span's average aVWAP as a dotted line: at each
+// bar, the mean of the aVWAPs anchored at every candle from the profile's
+// anchor up to that bar (the Alt+. fan's average, over the same span;
+// for a ranged profile it stops at the range's end like the other lines).
+const C_PROFILE_AVG          = `rgba(${VP_RGB_DEFAULT},1)`;
+const PROFILE_AVG_WIDTH      = 2;
+const PROFILE_AVG_DASH       = [2, 4];
 
 /** Peak levels of a profile for a display mode, as Map(bin → color): the
  * POC (yellow) always, plus
@@ -917,6 +998,20 @@ class ProfileLinePrimitive {
         connector = [[{ x: xR, y: yM, v: vM }, { x: xR, y: yO, v: vO }]];
       }
     }
+    // The span's average aVWAP (see C_PROFILE_AVG), as a dotted polyline.
+    const avg = entry._avg;
+    let avgPath = null;
+    if (avg) {
+      avgPath = new Path2D();
+      let pen = false;
+      const from = Math.max(entry.anchorIdx, Math.floor(range.from) - 1), to = Math.min(toIdx, Math.ceil(range.to) + 1);
+      for (let i = from; i <= to; i++) {
+        const x = ts.logicalToCoordinate(i);
+        const y = Number.isNaN(avg[i]) || x == null ? null : toY(avg[i]);
+        if (y == null) { pen = false; continue; }
+        if (pen) avgPath.lineTo(x, y); else { avgPath.moveTo(x, y); pen = true; }
+      }
+    }
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       ctx.save();
       for (const polys of [...lines.map(a => polysOf(a, tipOf(a))), connector]) {
@@ -929,6 +1024,12 @@ class ProfileLinePrimitive {
           ctx.closePath();
           ctx.fill();
         }
+      }
+      if (avgPath) {
+        ctx.strokeStyle = C_PROFILE_AVG;
+        ctx.lineWidth = PROFILE_AVG_WIDTH;
+        ctx.setLineDash(PROFILE_AVG_DASH);
+        ctx.stroke(avgPath);
       }
       ctx.restore();
     });
@@ -2313,6 +2414,7 @@ export class DynamicVWAPEngine {
       // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
       entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins } : null;
       entry._toIdx = toIdx;
+      this._fillAvgVwap(entry, anchorIdx, toIdx);
       // The mode's peak levels — colored on the aVWAPs.
       entry._peaks = payload ? profilePeakColors(payload.bins,
         entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both') : null;
@@ -2354,6 +2456,26 @@ export class DynamicVWAPEngine {
       }
       entry.profileLinePrim?.update();
     }
+  }
+
+  /** The profile's average aVWAP (see C_PROFILE_AVG) into entry._avg, by bar
+   * index (NaN outside [anchorIdx, toIdx]): at bar i, the mean of the aVWAPs
+   * anchored at anchorIdx … i, each counted equally. A bar's value doesn't
+   * depend on the end bar, so values are cached and only bars past the
+   * computed ones are filled (replay steps forward add one bar each). */
+  _fillAvgVwap(entry, anchorIdx, toIdx) {
+    const N = this._bars.length;
+    if (!entry._avg || entry._avg.length !== N) { entry._avg = new Float64Array(N).fill(NaN); entry._avgTo = anchorIdx - 1; }
+    const avg = entry._avg, cumPV = this._cumPV, cumVol = this._cumVol;
+    for (let i = entry._avgTo + 1; i <= toIdx; i++) {
+      let sum = 0, cnt = 0;
+      for (let a = anchorIdx; a <= i; a++) {
+        const vol = cumVol[i] - (a > 0 ? cumVol[a - 1] : 0);
+        if (vol > 0) { sum += (cumPV[i] - (a > 0 ? cumPV[a - 1] : 0)) / vol; cnt++; }
+      }
+      avg[i] = cnt ? sum / cnt : NaN;
+    }
+    entry._avgTo = Math.max(entry._avgTo, toIdx);
   }
 
   /** A repeat '<' over a profile's anchor (or a ranged one's end):
