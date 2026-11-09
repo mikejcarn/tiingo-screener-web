@@ -254,12 +254,45 @@ const MANUAL_VP_NODE_WINDOW  = 16;
 // '<' cycle order: normal → LVN → both histograms + both POCs (orange
 // busiest level + indigo deepest LVN) → connected: no histogram at all, the
 // aVWAP and other-side aVWAP carry the profile, joined at the right end by a
-// connector coded like the histogram → off.
+// connector coded like the histogram → wick map (see WICK_*) → rejection
+// vs acceptance (see DIFF_*) → off.
 const VP_MODE_NORMAL  = 0;
 const VP_MODE_LVN     = 1;
 const VP_MODE_BOTH    = 2;
 const VP_MODE_CONNECT = 3;
-const VP_MODE_COUNT   = 4;
+const VP_MODE_WICK    = 4;
+const VP_MODE_DIFF    = 5;
+const VP_MODE_COUNT   = 6;
+// Wick map mode: a rejection map over the same levels as the profile. Each
+// bar's upper wick (high down to its body top) and lower wick (low up to its
+// body bottom) carry the bar's volume × that wick's share of its range,
+// spread evenly over the wick's span; the body counts nothing. One off-white
+// bar per level (WICK_RGB): length = all wick weight there, upper + lower.
+// Translucent (WICK_FILL_ALPHA) so candles show through. The volume
+// histogram itself isn't drawn in this mode. The aVWAPs are off-white too,
+// thicker the more wick weight at the level they pass through; local wick
+// peaks (≥ WICK_PEAK_MIN of the largest) pure white (C_WICK_PEAK).
+const WICK_RGB        = '236,232,222';
+const WICK_FILL_ALPHA = 0.3;
+const WICK_PEAK_MIN   = 0.25;
+const C_WICK_LINE     = `rgba(${WICK_RGB},0.8)`;
+const C_WICK_PEAK     = 'rgba(255,255,255,1)';
+// Rejection vs acceptance mode: the wick map's shape against the volume
+// profile's. Each is scaled to its own total (shares of all wick weight /
+// all volume), and a level's bar is the difference D = wick share − volume
+// share. Since wick volume is part of a level's volume, that's exactly
+// D = (level's share of all volume) × (its wick share − the profile's
+// average wick share): positive where price is pushed away more than usual
+// (relative rejection), negative where it holds more than usual (relative
+// acceptance), weighted by how much traded there — thin levels stay near 0.
+// D sums to 0 over the profile; it's also exactly (total body volume / all
+// volume) × (wick share − body share). Only the rejection side is drawn as
+// bars: off-white for D > 0, longest = full width (DIFF_ALPHA); the
+// acceptance side shows on the aVWAPs. The aVWAPs follow: off-white / orange by sign, thicker the
+// larger |D|; each side's local peaks (≥ DIFF_PEAK_MIN of its largest)
+// pure white / bright orange.
+const DIFF_ALPHA    = 0.45;
+const DIFF_PEAK_MIN = 0.25;
 // When a profile is paired ('<'), its aVWAP — and a second aVWAP
 // anchored at the range's "other side" extremum (see _otherSideExtremum) —
 // are drawn by ProfileLinePrimitive, coded like the profile's histogram;
@@ -756,7 +789,12 @@ class StdevCloudPrimitive {
 //   Both (VP_MODE_BOTH) / connected (VP_MODE_CONNECT) —
 //     orange above half the
 //     POC's volume, indigo below (the mixed histogram's split), thickness by
-//     node strength: the level's distance from that midpoint.
+//     node strength: the level's distance from that midpoint;
+//   wick map (VP_MODE_WICK) — off-white, thickness by the level's wick
+//     weight, wick peaks pure white (see WICK_*);
+//   rejection vs acceptance (VP_MODE_DIFF) — off-white where the level is
+//     relatively rejection-heavy, orange where acceptance-heavy, thickness
+//     by the difference's size (see DIFF_*).
 // Stretches through one of the mode's peak levels (profilePeakColors) take
 // that peak's color instead — the POC yellow, HVN peaks bright orange, LVN
 // troughs electric violet. The histogram itself stays plain.
@@ -792,6 +830,48 @@ const PROFILE_AVG_DASH       = [2, 4];
  *            POC's volume): an orange zone's local maxima and busiest level,
  *            an indigo zone's local minima and deepest trough.
  * Tied runs collapse to their middle. */
+/** Wick map peak levels (VP_MODE_WICK), as Map(bin → color): local maxima
+ * of the total wick weight — at least as heavy as everything within
+ * PROFILE_PEAK_WINDOW levels each side, and ≥ WICK_PEAK_MIN of the largest. */
+function wickPeakColors(upper, lower) {
+  const n = upper.length, out = new Map(), K = PROFILE_PEAK_WINDOW;
+  const tot = upper.map((u, b) => u + lower[b]);
+  const top = Math.max(...tot);
+  if (!(top > 0)) return out;
+  for (let b = 0; b < n; b++) {
+    if (tot[b] < WICK_PEAK_MIN * top) continue;
+    let ok = true, strict = false;
+    for (let j = Math.max(0, b - K); j <= Math.min(n - 1, b + K) && ok; j++) {
+      if (j === b) continue;
+      if (tot[j] > tot[b]) ok = false; else if (tot[j] !== tot[b]) strict = true;
+    }
+    if (ok && strict) out.set(b, C_WICK_PEAK);
+  }
+  return out;
+}
+
+/** Rejection vs acceptance peak levels (VP_MODE_DIFF), as Map(bin → color):
+ * local maxima of D (≥ DIFF_PEAK_MIN of the largest D) pure white, local
+ * minima (≤ DIFF_PEAK_MIN of the most negative) bright orange — each at
+ * least as extreme as everything within PROFILE_PEAK_WINDOW levels. */
+function diffPeakColors(D) {
+  const n = D.length, out = new Map(), K = PROFILE_PEAK_WINDOW;
+  for (const [sgn, color] of [[1, C_WICK_PEAK], [-1, C_PROFILE_PEAK_HVN]]) {
+    const v = D.map(d => d * sgn), top = Math.max(...v);
+    if (!(top > 0)) continue;
+    for (let b = 0; b < n; b++) {
+      if (v[b] < DIFF_PEAK_MIN * top) continue;
+      let ok = true, strict = false;
+      for (let j = Math.max(0, b - K); j <= Math.min(n - 1, b + K) && ok; j++) {
+        if (j === b) continue;
+        if (v[j] > v[b]) ok = false; else if (v[j] !== v[b]) strict = true;
+      }
+      if (ok && strict) out.set(b, color);
+    }
+  }
+  return out;
+}
+
 function profilePeakColors(bins, mode) {
   const n = bins.length, out = new Map();
   const poc = Math.max(...bins);
@@ -881,7 +961,7 @@ class ProfileLinePrimitive {
     const entry = this._entry, vp = entry._vp, eng = this._engine;
     if (!this._chart || !this._series || !vp || entry._toIdx == null) return;
     const mode = entry.vpMode;
-    const split = mode >= VP_MODE_BOTH, joined = mode === VP_MODE_CONNECT;
+    const split = mode === VP_MODE_BOTH || mode === VP_MODE_CONNECT, joined = mode === VP_MODE_CONNECT;
     const ts = this._chart.timeScale();
     const range = ts.getVisibleLogicalRange();
     if (!range) return;
@@ -895,7 +975,26 @@ class ProfileLinePrimitive {
     const binOf = v => Math.floor((v - lo) / bs);
     // Mode coding for a level → {color, width} (see PROFILE_RIBBON_*).
     const C_HVN = `rgba(${VP_RGB_DEFAULT},${PROFILE_RIBBON_ALPHA})`, C_LVN = `rgba(${VP_RGB_LVN},${PROFILE_RIBBON_ALPHA})`;
+    const wick = mode === VP_MODE_WICK && vp.upper ? vp : null;
+    let wickMax = 0;
+    if (wick) for (let b = 0; b < nb; b++) wickMax = Math.max(wickMax, wick.upper[b] + wick.lower[b]);
+    const diff = mode === VP_MODE_DIFF && vp.diff ? vp.diff : null;
+    let diffMax = 0;
+    if (diff) for (const d of diff) diffMax = Math.max(diffMax, Math.abs(d));
+    const C_DPOS = `rgba(${WICK_RGB},${PROFILE_RIBBON_ALPHA})`, C_DNEG = `rgba(${VP_RGB_DEFAULT},${PROFILE_RIBBON_ALPHA})`;
     const styleOf = b => {
+      if (diff) {
+        // Rejection vs acceptance: by D's sign, thickness by |D|.
+        const d = b >= 0 && b < nb ? diff[b] : 0;
+        const color = (b >= 0 && b < nb && peakColor.get(b)) || (d > 0 ? C_DPOS : C_DNEG);
+        return { color, w: Math.max(PROFILE_RIBBON_MIN, PROFILE_RIBBON_MAX * (diffMax > 0 ? Math.abs(d) / diffMax : 0)) };
+      }
+      if (wick) {
+        // Wick map: off-white, thickness by the level's wick weight.
+        const t = b >= 0 && b < nb ? wick.upper[b] + wick.lower[b] : 0;
+        const color = (b >= 0 && b < nb && peakColor.get(b)) || C_WICK_LINE;
+        return { color, w: Math.max(PROFILE_RIBBON_MIN, PROFILE_RIBBON_MAX * (wickMax > 0 ? t / wickMax : 0)) };
+      }
       const share = b >= 0 && b < nb ? bins[b] / poc : 0;
       const t = split ? Math.min(1, Math.abs(share - 0.5) * 2) : mode === VP_MODE_LVN ? 1 - share : share;
       const color = (b >= 0 && b < nb && peakColor.get(b))
@@ -1171,6 +1270,55 @@ export class DynamicVWAPEngine {
     return { priceMin, binSize, bins };
   }
 
+  /** Wick map over [anchorIdx, toIdx] on the profile's bins (priceMin,
+   * binSize, numBins from _vpHistogram): { upper, lower, body } per-bin
+   * volume from upper wicks, lower wicks and bodies — see WICK_* / DIFF_*. */
+  _wickHistogram(anchorIdx, toIdx, priceMin, binSize, numBins) {
+    const upper = new Float64Array(numBins), lower = new Float64Array(numBins), body = new Float64Array(numBins);
+    const add = (arr, a, b, w) => {
+      if (!(b > a) || !(w > 0)) return;
+      const b0 = Math.max(0, Math.floor((a - priceMin) / binSize)), b1 = Math.min(numBins - 1, Math.floor((b - priceMin) / binSize));
+      for (let k = b0; k <= b1; k++) {
+        const lo = priceMin + k * binSize, ov = Math.min(lo + binSize, b) - Math.max(lo, a);
+        if (ov > 0) arr[k] += w * ov / (b - a);
+      }
+    };
+    for (let i = anchorIdx; i <= toIdx; i++) {
+      const v = this._volumes[i], h = this._highs[i], l = this._lows[i], rng = h - l;
+      if (!(v > 0) || !(rng > 0)) continue;
+      const top = Math.max(this._opens[i], this._closes[i]), bot = Math.min(this._opens[i], this._closes[i]);
+      add(upper, top, h, v * (h - top) / rng);
+      add(lower, l, bot, v * (bot - l) / rng);
+      add(body, bot, top, v * (top - bot) / rng);
+    }
+    return { upper, lower, body };
+  }
+
+  /** Rejection vs acceptance per level (see DIFF_*) on the given bins:
+   * { total (volume per level), D (wick share − volume share) }. */
+  _rejectionBins(anchorIdx, toIdx, priceMin, binSize, numBins) {
+    const { upper, lower, body } = this._wickHistogram(anchorIdx, toIdx, priceMin, binSize, numBins);
+    let W = 0, V = 0;
+    const wickV = Array.from(upper, (u, b) => u + lower[b]);
+    const total = wickV.map((w, b) => w + body[b]);
+    for (let b = 0; b < numBins; b++) { W += wickV[b]; V += total[b]; }
+    const D = total.map((v, b) => (W > 0 ? wickV[b] / W : 0) - (V > 0 ? v / V : 0));
+    return { total, D };
+  }
+
+  /** Rejection vs acceptance profile of [anchorIdx, toIdx] on numBins levels
+   * over its price range (candle colorings): { priceMin, binSize, D, posMax,
+   * negMax } — the largest positive D and largest |negative| D — or null. */
+  rejectionProfile(anchorIdx, toIdx, numBins) {
+    const hist = this._vpHistogram(anchorIdx, toIdx, numBins);
+    if (!hist) return null;
+    const { priceMin, binSize } = hist;
+    const { D } = this._rejectionBins(anchorIdx, toIdx, priceMin, binSize, numBins);
+    let posMax = 0, negMax = 0;
+    for (const d of D) { if (d > posMax) posMax = d; if (-d > negMax) negMax = -d; }
+    return { priceMin, binSize, D, posMax, negMax };
+  }
+
   /** Point of Control + Value Area bounds — same expand-from-the-peak-bin
    * algorithm as volume_profile.py's own _poc_value_area. */
   _vpPocValueArea(priceMin, binSize, bins, targetPct) {
@@ -1224,10 +1372,30 @@ export class DynamicVWAPEngine {
   /** Build the {lo, bs, bins, ...} payload VolumeProfileSeries expects, or
    * null if there's no real volume in [anchorIdx, toIdx] yet to show. lvn
    * switches it to LVN emphasis (see MANUAL_VP_LVN_LOCALITY). */
-  _vpPayload(anchorIdx, toIdx, lvn = false) {
+  _vpPayload(anchorIdx, toIdx, lvn = false, wick = false, diff = false) {
     const hist = this._vpHistogram(anchorIdx, toIdx, MANUAL_VP_NUM_BINS);
     if (!hist) return null;
     const { priceMin, binSize, bins } = hist;
+    if (diff) {
+      // Rejection vs acceptance (VP_MODE_DIFF): D = wick share − volume share per level.
+      const { total, D } = this._rejectionBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
+      return {
+        lo: priceMin, bs: binSize, bins: total, fillOpacity: MANUAL_VP_FILL_OPACITY,
+        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: null,
+        heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
+        diffBins: D, diffPosRgb: WICK_RGB, diffAlpha: DIFF_ALPHA,
+      };
+    }
+    if (wick) {
+      // Wick map (VP_MODE_WICK): wick bars only — no volume histogram, no POC.
+      const { upper, lower } = this._wickHistogram(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
+      return {
+        lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
+        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: null,
+        heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
+        wickUpper: Array.from(upper), wickLower: Array.from(lower), wickRgb: WICK_RGB, wickAlpha: WICK_FILL_ALPHA,
+      };
+    }
     // Just POC, no Value Area — the dashed VAH/VAL lines and the dimming
     // VolumeProfileSeries applies to bars outside the value area both come
     // from passing vah/val, so omitting them (poc is a plain solid line,
@@ -1903,6 +2071,7 @@ export class DynamicVWAPEngine {
     this._volumes = new Float64Array(N);
     this._typical = new Float64Array(N);
     this._closes  = new Float64Array(N);
+    this._opens   = new Float64Array(N);
     let pv = 0, vol = 0;
     for (let i = 0; i < N; i++) {
       const b = bars[i];
@@ -1911,6 +2080,7 @@ export class DynamicVWAPEngine {
       this._highs[i]   = h;
       this._lows[i]    = l;
       this._closes[i]  = c;
+      this._opens[i]   = b.Open ?? b.open ?? c;
       this._volumes[i] = v;
       this._typical[i] = (h + l + c) / 3;
       pv  += this._typical[i] * v;
@@ -2410,14 +2580,18 @@ export class DynamicVWAPEngine {
       entry.cloudPrim.update();
     }
     if (entry.profile) {
-      const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN);
+      const wick = entry.vpMode === VP_MODE_WICK, diff = entry.vpMode === VP_MODE_DIFF;
+      const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN, wick, diff);
       // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
-      entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins } : null;
+      entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins,
+        upper: payload.wickUpper, lower: payload.wickLower, diff: payload.diffBins } : null;
       entry._toIdx = toIdx;
       this._fillAvgVwap(entry, anchorIdx, toIdx);
       // The mode's peak levels — colored on the aVWAPs.
-      entry._peaks = payload ? profilePeakColors(payload.bins,
-        entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both') : null;
+      entry._peaks = !payload ? null : wick ? wickPeakColors(payload.wickUpper, payload.wickLower)
+        : diff ? diffPeakColors(payload.diffBins)
+        : profilePeakColors(payload.bins,
+          entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both');
 
       if (!entry.profileLinePrim) {
         entry.profileLinePrim = new ProfileLinePrimitive(this, entry);
@@ -2479,7 +2653,7 @@ export class DynamicVWAPEngine {
   }
 
   /** A repeat '<' over a profile's anchor (or a ranged one's end):
-   * advance it to its next display mode (normal → LVN → both → line-only);
+   * advance it to its next display mode (normal → LVN → both → line-only → wick map → rejection vs acceptance);
    * false past the last (the caller removes it). Its aVWAP and other-side lines are recoded to match on render. */
   _cycleProfileMode(entry) {
     if (entry.vpMode + 1 >= VP_MODE_COUNT) return false;

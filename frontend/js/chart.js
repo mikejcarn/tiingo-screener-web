@@ -73,7 +73,7 @@ const C_DOWN = 'rgba(239,83,80,1)';
 //              transparency (CANDLE_VOL_ALPHA_MIN) as ratio → 0; above it it brightens to full volume orange at
 //              CANDLE_RELVOL_FULL×. Black only for a bar with genuinely zero
 //              volume. Candles before the anchor stay standard.
-const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit'];
+const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit', 'reject'];
 // 'vpsplit' — the Volume Profile's "Both" split on the candles: the close's
 // level vs half the range POC's volume — orange (HVN side) above, LVN indigo
 // below, opacity rising with distance from that midpoint (CANDLE_SPLIT_ALPHA_MIN
@@ -85,6 +85,25 @@ const CANDLE_VP_BINS      = 100;
 const CANDLE_SPLIT_ALPHA_MIN = 0.2;
 const CANDLE_SPLIT_EDGE_ALPHA = 0.85;
 const C_CANDLE_POC        = 'rgba(255,214,0,1)';
+// 'reject' — the '<' profile's rejection vs acceptance mode on the candles:
+// the close's level D = its share of the range's wick volume − its share of
+// all volume (avwap_replay.js DIFF_*). Only rejection is highlighted, as in
+// the profile's bars: where D > 0 (price pushed away from that level more
+// than usual) the candle ramps from RGB_REJECT_LO to pure white and from
+// CANDLE_REJECT_ALPHA_MIN to opaque, full at the CANDLE_REJECT_PCTL
+// percentile of the range's positive D (so a few extreme levels don't leave
+// the rest faint); at or below 0 (price held there) it's a dim neutral grey
+// (C_REJECT_NONE). Border and wick in the body's color, at least
+// CANDLE_REJECT_EDGE_ALPHA. Same anchor-to-current range and CANDLE_VP_BINS
+// levels as 'vpsplit'; sliced, each price by its own level in a
+// CANDLE_SLICE_BINS profile.
+const RGB_REJECT_LO          = [120, 120, 120];
+const RGB_REJECT_HI          = [255, 255, 255];
+const CANDLE_REJECT_ALPHA_MIN = 0.35;
+const CANDLE_REJECT_EDGE_ALPHA = 0.8;
+const CANDLE_REJECT_PCTL     = 0.9;
+const C_REJECT_NONE          = 'rgba(80,80,80,0.35)';
+const C_REJECT_NONE_EDGE     = 'rgba(80,80,80,0.7)';
 // 'sigma' colors, [above, below]: base within CANDLE_SIGMA_NEON σ, extreme from it.
 const RGB_SIGMA_BASE      = [[38, 166, 154], [239, 83, 80]];    // teal / red
 const RGB_SIGMA_EXTREME   = [[57, 255, 20], [255, 40, 220]];    // neon green / magenta
@@ -114,7 +133,8 @@ const lerpRgb = (a, b, t) => `rgb(${a.map((x, q) => Math.round(x + (b[q] - x) * 
 // CANDLE_SLICE_BINS profile of the range (anchor → end), volume orange,
 // opacity CANDLE_SLICE_VP_ALPHA_MIN at an untraded level rising linearly to
 // opaque at the POC — the normal profile mode drawn inside the candles,
-// alongside the HVN / LVN split ('vpsplit') of the same profile.
+// alongside the HVN / LVN split ('vpsplit') of the same profile. 'reject'
+// colors each price by its own rejection vs acceptance level likewise.
 const CANDLE_SLICE_BINS     = 300;
 const CANDLE_SLICE_VP_ALPHA_MIN = 0.1;
 const CANDLE_SLICE_WICK_MIN = 1;
@@ -1220,6 +1240,43 @@ export class ChartManager {
         const body = isPoc ? C_CANDLE_POC : `rgba(${rgb},${alpha})`;
         const edge = isPoc ? C_CANDLE_POC : `rgba(${rgb},${CANDLE_SPLIT_EDGE_ALPHA})`;
         return { fill: body, edge, wick: edge };
+      };
+    }
+    if (this._candleMode === 'reject') {
+      const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
+      if (a == null || a > n || !this._engine) return null;
+      // A profile's price → rejection strength t (0..1, CANDLE_REJECT_PCTL-scaled;
+      // -1 for an acceptance level), or null outside the profile.
+      const levelOf = rp => {
+        const pos = rp.D.filter(d => d > 0).sort((x, y) => x - y);
+        const ref = pos.length ? pos[Math.min(pos.length - 1, Math.floor(CANDLE_REJECT_PCTL * (pos.length - 1)))] : 0;
+        return p => {
+          const b = Math.min(rp.D.length - 1, Math.floor((p - rp.priceMin) / rp.binSize));
+          if (b < 0) return null;
+          const d = rp.D[b];
+          return d > 0 && ref > 0 ? Math.min(1, d / ref) : -1;
+        };
+      };
+      const fillOf = t => t < 0 ? C_REJECT_NONE
+        : lerpRgb(RGB_REJECT_LO, RGB_REJECT_HI, t).replace('rgb(', 'rgba(').replace(')', `,${(CANDLE_REJECT_ALPHA_MIN + (1 - CANDLE_REJECT_ALPHA_MIN) * t).toFixed(3)})`);
+      const edgeOf = t => t < 0 ? C_REJECT_NONE_EDGE
+        : lerpRgb(RGB_REJECT_LO, RGB_REJECT_HI, t).replace('rgb(', 'rgba(').replace(')', `,${Math.max(CANDLE_REJECT_EDGE_ALPHA, t).toFixed(3)})`);
+      if (this._candleSliced) {
+        const rp = this._engine.rejectionProfile(a, top, CANDLE_SLICE_BINS);
+        if (rp) {
+          const at = levelOf(rp);
+          this._candleSlice = { from: a, to: top, colorAt: (i, p) => { const t = at(p); return t == null ? null : fillOf(t); } };
+        }
+      }
+      const rp = this._engine.rejectionProfile(a, top, CANDLE_VP_BINS);
+      if (!rp) return null;
+      const at = levelOf(rp);
+      return (i, e) => {
+        if (i < a || i > top) return null;
+        const t = at(e.close);
+        if (t == null) return null;
+        const edge = edgeOf(t);
+        return { fill: fillOf(t), edge, wick: edge };
       };
     }
     if (this._candleMode === 'relvol') {

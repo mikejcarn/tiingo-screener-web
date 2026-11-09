@@ -8,14 +8,18 @@
  * Two data points per profile — { time, lo, bs, bins, dir, fillOpacity, poc,
  * lvnPoc, vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
  * heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality,
- * nodeWindow, histogramGrayscale } at the anchor's start and end bar, same
+ * nodeWindow, histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha, diffBins, diffPosRgb,
+ * diffNegRgb, diffAlpha } at the
+ * anchor's start and end bar, same
  * start/end convention as the other zone series.
  * lo/bs are the histogram's price origin and bin size, bins the per-bin
  * volume totals, poc/vah/val the Point of Control and Value Area bounds,
  * lvnPoc an optional second, LVN-colored POC drawn alongside poc,
  * dualHistogram (bars style) draws the HVN and LVN histograms together,
  * hvn/lvn arrays of [lo, hi] High/Low Volume Node price ranges (see
- * volume_profile.py for how all of these are computed).
+ * volume_profile.py for how all of these are computed). wickUpper /
+ * wickLower (per-bin wick weight, the in-chart profile's wick map mode) draw
+ * one bar per level.
  */
 
 const RGB_BULL    = '38,166,154';
@@ -101,7 +105,8 @@ export class VolumeProfileRenderer {
       lo, bs, bins, dir, fillOpacity, poc, lvnPoc, vah, val, hvn, lvn,
       showHistogram, dualHistogram, directionalColor, barStyle,
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
-      histogramGrayscale,
+      histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha,
+      diffBins, diffPosRgb, diffNegRgb, diffAlpha,
     } = first.originalData;
     if (lo == null || bs == null || !bins || !bins.length) return;
 
@@ -222,6 +227,47 @@ export class VolumeProfileRenderer {
           ctx.fillStyle = `rgba(${histRgb},${baseOpacity * vaFactorOf(inVA)})`;
           ctx.fillRect(x0, top, width, Math.max(bottom - top, vr));
         }, lvnEmphasis);
+      }
+    }
+
+    // Wick map (the in-chart profile's wick mode): per level, one bar of
+    // all its wick weight (upper + lower) in wickRgb from the anchor —
+    // longest = maxWidth.
+    if (wickUpper && wickLower) {
+      let wMax = 0;
+      for (let i = 0; i < bins.length; i++) wMax = Math.max(wMax, wickUpper[i] + wickLower[i]);
+      if (wMax > 0) {
+        ctx.fillStyle = `rgba(${wickRgb ?? RGB_GRAYSCALE},${wickAlpha ?? 0.6})`;
+        for (let i = 0; i < bins.length; i++) {
+          const u = wickUpper[i], d = wickLower[i];
+          if (!(u + d > 0)) continue;
+          const yLo = priceToCoordinate(lo + i * bs), yHi = priceToCoordinate(lo + (i + 1) * bs);
+          if (yLo == null || yHi == null) continue;
+          const top = Math.min(yLo, yHi) * vr, h = Math.max(Math.abs(yLo - yHi) * vr, vr);
+          ctx.fillRect(x0, top, (u + d) / wMax * maxWidth, h);
+        }
+      }
+    }
+
+    // Rejection vs acceptance (the in-chart profile's difference mode): per
+    // level, a signed value drawn from the anchor, longest |value| =
+    // maxWidth — positive bars in diffPosRgb, negative in diffNegRgb; a side
+    // without a color isn't drawn.
+    if (diffBins) {
+      let dMax = 0;
+      for (const d of diffBins) dMax = Math.max(dMax, Math.abs(d));
+      if (dMax > 0) {
+        const a = diffAlpha ?? 0.45;
+        const posFill = diffPosRgb ? `rgba(${diffPosRgb},${a})` : null, negFill = diffNegRgb ? `rgba(${diffNegRgb},${a})` : null;
+        for (let i = 0; i < diffBins.length; i++) {
+          const d = diffBins[i];
+          if (!d || !(d > 0 ? posFill : negFill)) continue;
+          const yLo = priceToCoordinate(lo + i * bs), yHi = priceToCoordinate(lo + (i + 1) * bs);
+          if (yLo == null || yHi == null) continue;
+          const top = Math.min(yLo, yHi) * vr, h = Math.max(Math.abs(yLo - yHi) * vr, vr);
+          ctx.fillStyle = d > 0 ? posFill : negFill;
+          ctx.fillRect(x0, top, Math.abs(d) / dMax * maxWidth, h);
+        }
       }
     }
 
