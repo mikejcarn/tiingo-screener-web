@@ -236,6 +236,10 @@ const FAN_SLOPE_STYLES = [C_SLOPE_UP, C_SLOPE_DOWN].map(to_ =>
 const MANUAL_VP_NUM_BINS       = 200;
 const MANUAL_VP_FILL_OPACITY   = 0.4;
 const MANUAL_VP_VALUE_AREA_PCT = 0.7;
+// Ctrl+, draws the same profile and modes as a heatmap — each level a band
+// across the whole span, its value as opacity, up to MANUAL_HEAT_OPACITY
+// (kept low so candles read through it).
+const MANUAL_HEAT_OPACITY      = 0.5;
 // Clicking a paired profile cycles its display mode (see VP_MODE_*). LVN
 // mode: bars widest at the thinnest levels, POC moved to the deepest LVN,
 // profile + lines recolored indigo; see volume_profile.py's
@@ -1465,9 +1469,11 @@ export class DynamicVWAPEngine {
   }
 
   /** withProfile: false; true / 'vp' — a Volume Profile alone ('<');
-   * 'lines' — the profile-coded aVWAP set alone ('M'). */
+   * 'heat' — the same profile as a heatmap (Ctrl+,); 'lines' — the
+   * profile-coded aVWAP set alone (Shift+M). */
   static _manualKind(withStdev, withProfile) {
-    return withProfile === 'lines' ? 'lines' : withProfile ? 'profile' : withStdev ? 'stdev' : 'plain';
+    return withProfile === 'lines' ? 'lines' : withProfile === 'heat' ? 'heat'
+      : withProfile ? 'profile' : withStdev ? 'stdev' : 'plain';
   }
 
   /**
@@ -1488,7 +1494,7 @@ export class DynamicVWAPEngine {
     if (kind !== 'plain') {
       const entry = this._manualEntryAt(anchorIdx, kind);
       if (entry) {
-        const next = kind === 'profile' || kind === 'lines' ? this._cycleProfileMode(entry) : this._cycleStdevMode(entry);
+        const next = kind === 'profile' || kind === 'heat' || kind === 'lines' ? this._cycleProfileMode(entry) : this._cycleStdevMode(entry);
         if (next) return 'cycled';
         this._dropManualEntry(entry);
         return false;
@@ -1533,7 +1539,7 @@ export class DynamicVWAPEngine {
     // aVWAP, other-side aVWAP and average aVWAP, coded by the range's
     // profile (not drawn) and drawn by ProfileLinePrimitive. Either way the
     // anchor's own series stays transparent.
-    const lines = withProfile === 'lines', vpOnly = !!withProfile && !lines;
+    const lines = withProfile === 'lines', vpOnly = !!withProfile && !lines;   // '<' or Ctrl+, (heatmap)
     const vwap = this._series(withProfile ? 'rgba(0,0,0,0)' : C_MANUAL, 2, 0);
     vwap.setData(this._vwapLine(anchorIdx, toIdx));
 
@@ -1570,7 +1576,7 @@ export class DynamicVWAPEngine {
     const id = `m${++this._manualSeq}`;
     this._manualSeries[id] = {
       anchorIdx, kind: DynamicVWAPEngine._manualKind(withStdev, withProfile),
-      vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL, lines,
+      vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL, lines, heat: withProfile === 'heat',
       stdevMode: 'bands', cloud: null, cloudPrim: null,
       otherSide: lines ? {} : null,
     };
@@ -2625,6 +2631,11 @@ export class DynamicVWAPEngine {
           // (ProfileLinePrimitive) carry the profile, POC marked yellow.
           payload.showHistogram = false;
           payload.poc = null;
+        }
+        if (entry.heat) {
+          // Ctrl+, — the same mode as a heatmap: full-width bands, value as opacity.
+          payload.barStyle = 'heatmap';
+          payload.heatmapOpacity = MANUAL_HEAT_OPACITY;
         }
         const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
         const endTime   = (this._bars[toIdx].Date     || this._bars[toIdx].date     || '').slice(0, 10);

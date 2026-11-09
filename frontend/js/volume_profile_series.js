@@ -196,7 +196,17 @@ export class VolumeProfileRenderer {
         // separate from fillOpacity — bars has width to lean on, heatmap
         // only has opacity) is the ceiling at the emphasized extreme.
         const heatCeiling = heatmapOpacity ?? 0.85;
-        forEachBin((v, top, bottom, inVA, i) => {
+        if (dualHistogram) {
+          // Diverging heatmap (the dual histogram's split as opacity):
+          // orange above half the POC's volume, indigo below, stronger the
+          // further from that midpoint.
+          forEachBin((v, top, bottom, inVA, i) => {
+            const t = intensityOf(v, i, false);
+            const c = t >= 0.5 ? (histogramGrayscale ? RGB_GRAYSCALE : RGB_DEFAULT) : RGB_LVN_DEFAULT;
+            ctx.fillStyle = `rgba(${c},${Math.abs(t - 0.5) * 2 * heatCeiling})`;
+            ctx.fillRect(x0, top, x1 - x0, Math.max(bottom - top, vr));
+          }, true);
+        } else forEachBin((v, top, bottom, inVA, i) => {
           const opacity = intensityOf(v, i) * heatCeiling * vaFactorOf(inVA);
           ctx.fillStyle = `rgba(${histRgb},${opacity})`;
           ctx.fillRect(x0, top, x1 - x0, Math.max(bottom - top, vr));
@@ -237,14 +247,19 @@ export class VolumeProfileRenderer {
       let wMax = 0;
       for (let i = 0; i < bins.length; i++) wMax = Math.max(wMax, wickUpper[i] + wickLower[i]);
       if (wMax > 0) {
-        ctx.fillStyle = `rgba(${wickRgb ?? RGB_GRAYSCALE},${wickAlpha ?? 0.6})`;
+        // Heatmap style: full-width bands, wick weight as opacity.
+        const heat = barStyle === 'heatmap', wRgb = wickRgb ?? RGB_GRAYSCALE;
+        ctx.fillStyle = `rgba(${wRgb},${wickAlpha ?? 0.6})`;
         for (let i = 0; i < bins.length; i++) {
           const u = wickUpper[i], d = wickLower[i];
           if (!(u + d > 0)) continue;
           const yLo = priceToCoordinate(lo + i * bs), yHi = priceToCoordinate(lo + (i + 1) * bs);
           if (yLo == null || yHi == null) continue;
           const top = Math.min(yLo, yHi) * vr, h = Math.max(Math.abs(yLo - yHi) * vr, vr);
-          ctx.fillRect(x0, top, (u + d) / wMax * maxWidth, h);
+          if (heat) {
+            ctx.fillStyle = `rgba(${wRgb},${(u + d) / wMax * (heatmapOpacity ?? 0.85)})`;
+            ctx.fillRect(x0, top, x1 - x0, h);
+          } else ctx.fillRect(x0, top, (u + d) / wMax * maxWidth, h);
         }
       }
     }
@@ -265,6 +280,12 @@ export class VolumeProfileRenderer {
           const yLo = priceToCoordinate(lo + i * bs), yHi = priceToCoordinate(lo + (i + 1) * bs);
           if (yLo == null || yHi == null) continue;
           const top = Math.min(yLo, yHi) * vr, h = Math.max(Math.abs(yLo - yHi) * vr, vr);
+          if (barStyle === 'heatmap') {
+            // Heatmap style: full-width bands, |value| as opacity.
+            ctx.fillStyle = `rgba(${d > 0 ? diffPosRgb : diffNegRgb},${Math.abs(d) / dMax * (heatmapOpacity ?? 0.85)})`;
+            ctx.fillRect(x0, top, x1 - x0, h);
+            continue;
+          }
           ctx.fillStyle = d > 0 ? posFill : negFill;
           ctx.fillRect(x0, top, Math.abs(d) / dMax * maxWidth, h);
         }

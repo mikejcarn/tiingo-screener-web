@@ -416,7 +416,7 @@ function _wireControls() {
     // a second ',' (or '<') pairs a Volume Profile (below), Shift+K
     // colors the candles in the range only. (Not '/' — that's already bound app-wide to toggleTheme in
     // browse.js, which would fire on the same keypress.)
-    if (e.code === 'Comma' && !e.altKey && !e.shiftKey) {
+    if (e.code === 'Comma' && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       if (_lastChartX == null) return;
       const barIdx = chart.barIndexAtX(_lastChartX);
       if (barIdx == null) return;
@@ -452,6 +452,24 @@ function _wireControls() {
         chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, true);
       } else {
         chart.toggleManualAnchorAtX(_lastChartX, false, true);
+      }
+      _rangeStartIdx = null;
+      chartEl.style.cursor = '';
+      return;
+    }
+    // Ctrl+, — the '<' Volume Profile drawn as a heatmap (each level a band
+    // across the span, its value as opacity), same modes; after ',' —
+    // across the marked range. Ctrl+, again over its anchor (or a ranged
+    // one's end) cycles the mode.
+    if (e.code === 'Comma' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      if (_lastChartX == null) return;
+      const barIdx = chart.barIndexAtX(_lastChartX);
+      if (barIdx == null) return;
+      if (_rangeStartIdx != null && Math.abs(barIdx - _rangeStartIdx) > 2) {
+        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, 'heat');
+      } else {
+        chart.toggleManualAnchorAtX(_lastChartX, false, 'heat');
       }
       _rangeStartIdx = null;
       chartEl.style.cursor = '';

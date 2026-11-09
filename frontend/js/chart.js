@@ -1028,7 +1028,7 @@ export class ChartManager {
   }
 
   /** Place/remove a manually-anchored VWAP at the candle under x. withStdev also draws +/- k*stdev bands around it; withProfile also pairs a Volume Profile with it (same anchor, removed together). Returns true (added) / false (removed) / null (out of range). */
-  /** withProfile: true / 'vp' — Volume Profile alone ('<'); 'lines' — its profile-coded aVWAP set alone ('M'). */
+  /** withProfile: true / 'vp' — Volume Profile alone ('<'); 'heat' — as a heatmap (Ctrl+,); 'lines' — its profile-coded aVWAP set alone (Shift+M). */
   toggleManualAnchorAtX(x, withStdev = false, withProfile = false) {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
