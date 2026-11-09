@@ -9,7 +9,7 @@
  * lvnPoc, vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
  * heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality,
  * nodeWindow, histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha, diffBins, diffPosRgb,
- * diffNegRgb, diffAlpha } at the
+ * diffNegRgb, diffAlpha, pocRgb (overrides the POC line's color) } at the
  * anchor's start and end bar, same
  * start/end convention as the other zone series.
  * lo/bs are the histogram's price origin and bin size, bins the per-bin
@@ -106,7 +106,7 @@ export class VolumeProfileRenderer {
       showHistogram, dualHistogram, directionalColor, barStyle,
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
       histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha,
-      diffBins, diffPosRgb, diffNegRgb, diffAlpha,
+      diffBins, diffPosRgb, diffNegRgb, diffAlpha, pocRgb,
     } = first.originalData;
     if (lo == null || bs == null || !bins || !bins.length) return;
 
@@ -335,7 +335,7 @@ export class VolumeProfileRenderer {
       ctx.stroke();
       ctx.restore();
     };
-    if (poc != null) drawPocLine(poc, rgb);
+    if (poc != null) drawPocLine(poc, pocRgb ?? rgb);
     if (lvnPoc != null) drawPocLine(lvnPoc, RGB_LVN_DEFAULT);
   }
 }

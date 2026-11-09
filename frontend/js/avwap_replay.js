@@ -251,7 +251,8 @@ const MANUAL_VP_VALUE_AREA_PCT = 0.7;
 // same ~8%-per-side reach as the indicator's own 2-of-24 default.
 const MANUAL_VP_LVN_LOCALITY = 0;
 const MANUAL_VP_NODE_WINDOW  = 16;
-// '<' cycle order: normal → LVN → both histograms + both POCs (orange
+// '<' (profile alone) and 'M' (its aVWAP set alone) cycle the same modes —
+// '<' skips connected, which has no histogram. Order: normal → LVN → both histograms + both POCs (orange
 // busiest level + indigo deepest LVN) → connected: no histogram at all, the
 // aVWAP and other-side aVWAP carry the profile, joined at the right end by a
 // connector coded like the histogram → wick map (see WICK_*) → rejection
@@ -1376,22 +1377,29 @@ export class DynamicVWAPEngine {
     const hist = this._vpHistogram(anchorIdx, toIdx, MANUAL_VP_NUM_BINS);
     if (!hist) return null;
     const { priceMin, binSize, bins } = hist;
+    // The off-white modes' own POC: the middle of their heaviest level (drawn off-white).
+    const ownPoc = arr => {
+      let m = 0;
+      for (let b = 1; b < arr.length; b++) if (arr[b] > arr[m]) m = b;
+      return arr[m] > 0 ? priceMin + (m + 0.5) * binSize : null;
+    };
     if (diff) {
       // Rejection vs acceptance (VP_MODE_DIFF): D = wick share − volume share per level.
       const { total, D } = this._rejectionBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
       return {
         lo: priceMin, bs: binSize, bins: total, fillOpacity: MANUAL_VP_FILL_OPACITY,
-        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: null,
+        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: ownPoc(D), pocRgb: WICK_RGB,
         heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
         diffBins: D, diffPosRgb: WICK_RGB, diffAlpha: DIFF_ALPHA,
       };
     }
     if (wick) {
-      // Wick map (VP_MODE_WICK): wick bars only — no volume histogram, no POC.
+      // Wick map (VP_MODE_WICK): wick bars and their own POC — no volume histogram.
       const { upper, lower } = this._wickHistogram(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
+      const wickTotal = Array.from(upper, (u, b) => u + lower[b]);
       return {
         lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
-        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: null,
+        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: ownPoc(wickTotal), pocRgb: WICK_RGB,
         heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
         wickUpper: Array.from(upper), wickLower: Array.from(lower), wickRgb: WICK_RGB, wickAlpha: WICK_FILL_ALPHA,
       };
@@ -1456,8 +1464,10 @@ export class DynamicVWAPEngine {
     if (i !== -1) this._manualOrder.splice(i, 1);
   }
 
+  /** withProfile: false; true / 'vp' — a Volume Profile alone ('<');
+   * 'lines' — the profile-coded aVWAP set alone ('M'). */
   static _manualKind(withStdev, withProfile) {
-    return withProfile ? 'profile' : withStdev ? 'stdev' : 'plain';
+    return withProfile === 'lines' ? 'lines' : withProfile ? 'profile' : withStdev ? 'stdev' : 'plain';
   }
 
   /**
@@ -1478,7 +1488,7 @@ export class DynamicVWAPEngine {
     if (kind !== 'plain') {
       const entry = this._manualEntryAt(anchorIdx, kind);
       if (entry) {
-        const next = kind === 'profile' ? this._cycleProfileMode(entry) : this._cycleStdevMode(entry);
+        const next = kind === 'profile' || kind === 'lines' ? this._cycleProfileMode(entry) : this._cycleStdevMode(entry);
         if (next) return 'cycled';
         this._dropManualEntry(entry);
         return false;
@@ -1519,7 +1529,11 @@ export class DynamicVWAPEngine {
    * ranged creation passes fixedEnd=toIdx (stays put at that range forever).
    */
   _createManualAnchor(anchorIdx, toIdx, withStdev, withProfile, fixedEnd) {
-    // A profile's aVWAP is drawn by ProfileLinePrimitive (every mode) — its series stays transparent.
+    // '<' draws the Volume Profile alone; 'M' the aVWAP set alone — its
+    // aVWAP, other-side aVWAP and average aVWAP, coded by the range's
+    // profile (not drawn) and drawn by ProfileLinePrimitive. Either way the
+    // anchor's own series stays transparent.
+    const lines = withProfile === 'lines', vpOnly = !!withProfile && !lines;
     const vwap = this._series(withProfile ? 'rgba(0,0,0,0)' : C_MANUAL, 2, 0);
     vwap.setData(this._vwapLine(anchorIdx, toIdx));
 
@@ -1537,7 +1551,7 @@ export class DynamicVWAPEngine {
     }
 
     let profile = null;
-    if (withProfile) {
+    if (vpOnly) {
       const payload = this._vpPayload(anchorIdx, toIdx);
       if (payload) {
         profile = this._chart.addCustomSeries(new VolumeProfileSeries(), {
@@ -1556,9 +1570,9 @@ export class DynamicVWAPEngine {
     const id = `m${++this._manualSeq}`;
     this._manualSeries[id] = {
       anchorIdx, kind: DynamicVWAPEngine._manualKind(withStdev, withProfile),
-      vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL,
+      vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL, lines,
       stdevMode: 'bands', cloud: null, cloudPrim: null,
-      otherSide: withProfile ? {} : null,
+      otherSide: lines ? {} : null,
     };
     this._manualOrder.push(id);
     this._renderManualEntry(anchorIdx, this._manualSeries[id]);
@@ -2579,26 +2593,30 @@ export class DynamicVWAPEngine {
       entry.cloud = this._stdevCloudData(anchorIdx, toIdx);
       entry.cloudPrim.update();
     }
-    if (entry.profile) {
+    if (entry.profile || entry.lines) {
       const wick = entry.vpMode === VP_MODE_WICK, diff = entry.vpMode === VP_MODE_DIFF;
       const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN, wick, diff);
       // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
       entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins,
         upper: payload.wickUpper, lower: payload.wickLower, diff: payload.diffBins } : null;
       entry._toIdx = toIdx;
-      this._fillAvgVwap(entry, anchorIdx, toIdx);
+      if (entry.lines) this._fillAvgVwap(entry, anchorIdx, toIdx);
       // The mode's peak levels — colored on the aVWAPs.
       entry._peaks = !payload ? null : wick ? wickPeakColors(payload.wickUpper, payload.wickLower)
         : diff ? diffPeakColors(payload.diffBins)
         : profilePeakColors(payload.bins,
           entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both');
 
-      if (!entry.profileLinePrim) {
-        entry.profileLinePrim = new ProfileLinePrimitive(this, entry);
-        entry.vwap.attachPrimitive(entry.profileLinePrim);
+      if (entry.lines) {
+        if (!entry.profileLinePrim) {
+          entry.profileLinePrim = new ProfileLinePrimitive(this, entry);
+          entry.vwap.attachPrimitive(entry.profileLinePrim);
+        }
+        entry.profileLinePrim.update();
       }
-      entry.profileLinePrim.update();
-      if (payload) {
+      if (!entry.profile) {
+        // 'M' lines only — nothing more to draw.
+      } else if (payload) {
         if (entry.vpMode === VP_MODE_BOTH) {
           payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
           payload.dualHistogram = true;
@@ -2652,12 +2670,15 @@ export class DynamicVWAPEngine {
     entry._avgTo = Math.max(entry._avgTo, toIdx);
   }
 
-  /** A repeat '<' over a profile's anchor (or a ranged one's end):
+  /** A repeat '<' / 'M' over a profile's anchor (or a ranged one's end):
    * advance it to its next display mode (normal → LVN → both → line-only → wick map → rejection vs acceptance);
    * false past the last (the caller removes it). Its aVWAP and other-side lines are recoded to match on render. */
   _cycleProfileMode(entry) {
-    if (entry.vpMode + 1 >= VP_MODE_COUNT) return false;
-    entry.vpMode++;
+    // '<' (profile alone) skips connected — that mode is lines only.
+    let next = entry.vpMode + 1;
+    if (!entry.lines && next === VP_MODE_CONNECT) next++;
+    if (next >= VP_MODE_COUNT) return false;
+    entry.vpMode = next;
     this._renderManualEntry(entry.anchorIdx, entry);
     return true;
   }

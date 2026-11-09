@@ -423,11 +423,11 @@ function _wireControls() {
       if (_rangeStartIdx != null) {
         if (Math.abs(barIdx - _rangeStartIdx) <= 2) {
           // ',' again on (near enough) the same candle — a normal
-          // (non-ranged) anchor + Volume Profile that grows to "now" (or,
-          // over an existing one, cycles its mode — same as Shift+M).
+          // (non-ranged) Volume Profile that grows to "now" (or, over an
+          // existing one, cycles its mode — same as '<').
           chart.toggleManualAnchorAtX(_lastChartX, false, true);
         } else {
-          // ',' on a different candle — a ranged aVWAP + Volume Profile.
+          // ',' on a different candle — a ranged Volume Profile.
           chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, true);
         }
         _rangeStartIdx = null;
@@ -438,7 +438,7 @@ function _wireControls() {
       chartEl.style.cursor = 'crosshair';
       return;
     }
-    // '<' (Shift+,) — the one-key form of ',' ',': aVWAP + Volume Profile
+    // '<' (Shift+,) — the one-key form of ',' ',': a Volume Profile
     // anchored at the hovered candle, growing to "now" (after ',' — across
     // the marked range instead). '<'
     // again over its anchor (or a ranged one's end) cycles the profile's
@@ -452,6 +452,25 @@ function _wireControls() {
         chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, true);
       } else {
         chart.toggleManualAnchorAtX(_lastChartX, false, true);
+      }
+      _rangeStartIdx = null;
+      chartEl.style.cursor = '';
+      return;
+    }
+    // Shift+M — the '<' profile's aVWAP set without the profile: the hovered
+    // candle's aVWAP, its other-side aVWAP and the average aVWAP, coded by
+    // that range's Volume Profile (after ',' — across the marked range).
+    // Shift+M again over its anchor (or a ranged one's end) cycles the
+    // coding. (Plain letters start a ticker search — browse.js.)
+    if (e.key === 'M' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (_lastChartX == null) return;
+      const barIdx = chart.barIndexAtX(_lastChartX);
+      if (barIdx == null) return;
+      if (_rangeStartIdx != null && Math.abs(barIdx - _rangeStartIdx) > 2) {
+        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, 'lines');
+      } else {
+        chart.toggleManualAnchorAtX(_lastChartX, false, 'lines');
       }
       _rangeStartIdx = null;
       chartEl.style.cursor = '';
