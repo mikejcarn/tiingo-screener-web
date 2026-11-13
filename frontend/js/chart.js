@@ -25,6 +25,7 @@
  */
 
 import { DynamicVWAPEngine } from './avwap_replay.js';
+import { buildQqemod } from './qqemod.js';
 import { OBZoneSeries } from './ob_zone_series.js';
 import { FVGZoneSeries } from './fvg_zone_series.js';
 import { GapZoneSeries } from './gap_zone_series.js';
@@ -73,7 +74,7 @@ const C_DOWN = 'rgba(239,83,80,1)';
 //              transparency (CANDLE_VOL_ALPHA_MIN) as ratio → 0; above it it brightens to full volume orange at
 //              CANDLE_RELVOL_FULL×. Black only for a bar with genuinely zero
 //              volume. Candles before the anchor stay standard.
-const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit', 'reject', 'rejectdir'];
+const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit', 'reject', 'rejectdir', 'qqemod'];
 // 'vpsplit' — the Volume Profile's "Both" split on the candles: the close's
 // level vs half the range POC's volume — orange (HVN side) above, LVN indigo
 // below, opacity rising with distance from that midpoint (CANDLE_SPLIT_ALPHA_MIN
@@ -115,6 +116,21 @@ const C_REJECT_NONE_EDGE     = 'rgba(80,80,80,0.7)';
 const RGB_REJDIR_ZERO     = [24, 24, 24];
 const RGB_REJDIR_BRIGHT   = [[150, 255, 238], [255, 165, 160]];
 const CANDLE_REJECT_BINS  = 200;
+// 'qqemod' — the candle_colors indicator's QQEMOD coloring (qqemod.js, same
+// defaults), computed in the browser over the whole history (it only looks
+// back) but colored from the anchor on, or over a ',' range, like the
+// others. Filled in
+// its teal / red shades (QQE_FILLS by state), border and wick opaque; no
+// signal → hollow with the normal up / down border. Sliced (Shift+J): each
+// price inside a candle in the state that bar WOULD have had closing there
+// (qqemod.js whatIf) — the color edges inside a candle are the prices where
+// QQEMOD would have flipped; no-signal prices faint grey (C_QQE_SLICE_NONE),
+// the body outlined in the actual close's state; wicks in the opaque shade
+// (C_QQE_WICK_NONE for no signal) so they stay visible.
+const QQE_FILLS = [null, 'rgba(38,166,154,1)', 'rgba(38,166,154,0.75)', 'rgba(38,166,154,0.5)',
+  'rgba(239,83,80,1)', 'rgba(239,83,80,0.75)', 'rgba(239,83,80,0.5)'];
+const C_QQE_SLICE_NONE = 'rgba(110,110,110,0.3)';
+const C_QQE_WICK_NONE  = 'rgba(160,160,160,0.85)';   // sliced wicks at no-signal prices
 // 'sigma' colors, [above, below]: base within CANDLE_SIGMA_NEON σ, extreme from it.
 const RGB_SIGMA_BASE      = [[38, 166, 154], [239, 83, 80]];    // teal / red
 const RGB_SIGMA_EXTREME   = [[57, 255, 20], [255, 40, 220]];    // neon green / magenta
@@ -460,6 +476,7 @@ export class ChartManager {
   load(bars, styles = {}, panes = []) {
     this._bars = bars;
     this._volCum = null;
+    this._qqe = null;   // 'qqemod' candle state, built on first use per load
     this._candleRefIdx = null;   // σ-mode anchor bar — bars changed, drop it
     this._candleEndIdx = null;   // ranged coloring's end bar (',' then Shift+K)
     this._removeCandleRefLine();
@@ -1324,6 +1341,29 @@ export class ChartManager {
         if (t == null) return null;
         const c = colorOf(t, e.close >= e.open);
         return { fill: c, edge: c, wick: c };
+      };
+    }
+    if (this._candleMode === 'qqemod') {
+      if (!this._qqe) this._qqe = buildQqemod(this._bars.map(b => b.Close ?? b.close));
+      const q = this._qqe;
+      // From the anchor on (or the ',' range), like the other modes — the
+      // states themselves still come from the whole history before it.
+      const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
+      if (a == null || a > n) return null;
+      const opaque = c => c.replace(/,[\d.]+\)$/, ',1)');
+      const upOf = i => { const b = this._bars[i]; return (b.Close ?? b.close) >= (b.Open ?? b.open); };
+      if (this._candleSliced) this._candleSlice = {
+        from: a, to: top,
+        colorAt: (i, p) => QQE_FILLS[q.whatIf(i, p)] ?? C_QQE_SLICE_NONE,
+        // Wicks are 1px — the translucent fills vanish there, so the opaque shade.
+        wickAt: (i, p) => { const c = QQE_FILLS[q.whatIf(i, p)]; return c ? opaque(c) : C_QQE_WICK_NONE; },
+        edgeAt: i => { const c = QQE_FILLS[q.stateAt(i)]; return c ? opaque(c) : (upOf(i) ? C_UP : C_DOWN); },
+      };
+      return (i, e) => {
+        if (i < a || i > top) return null;
+        const c = QQE_FILLS[q.stateAt(i)];
+        if (!c) { const ud = e.close >= e.open ? C_UP : C_DOWN; return { fill: 'rgba(0,0,0,0)', edge: ud, wick: ud }; }
+        return { fill: c, edge: opaque(c), wick: opaque(c) };
       };
     }
     if (this._candleMode === 'relvol') {
