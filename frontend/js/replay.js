@@ -358,8 +358,9 @@ function _wireControls() {
   // '.' — place/remove a manual anchored VWAP at whichever candle is under
   // the cursor. ',' — mark the candle under the cursor as a range start;
   // the next '.' finalizes it as a ranged aVWAP between the two points —
-  // same modifiers, same meaning, as a normal tap: '.' alone is plain,
-  // Shift+. also draws stdev bands, Alt+. is the aVWAP fan. A second ','
+  // same modifiers, same meaning, as a normal tap: '.' alone is plain
+  // (a second '.' over it adds stdev bands), Shift+. the average
+  // aVWAP, Alt+. the aVWAP fan. A second ','
   // on the same candle places an anchor + Volume Profile growing to "now"
   // (start and end are effectively the same point); a second ',' on a
   // different candle a ranged aVWAP + Volume Profile — the Volume Profile
@@ -397,10 +398,8 @@ function _wireControls() {
     if (document.activeElement?.tagName === 'INPUT') return;
     if (!chart || !N) return;
 
-    // e.code (physical key), not e.key, so Shift+. — which types '>', not
-    // '.' — still detects as the period key; e.shiftKey decides whether
-    // stdev bands get drawn, e.altKey makes it the aVWAP fan, e.ctrlKey /
-    // e.metaKey the Volume-Profile-shaded fan.
+    // e.code (physical key), not e.key, for the period key: e.altKey makes
+    // it the aVWAP fan, e.ctrlKey / e.metaKey the Volume-Profile-shaded fan.
     // Undo: Shift+X (capital X — lowercase letters start a ticker search in
     // browse.js, capitals are this app's single-key commands) or Ctrl+Z.
     if ((e.key === 'X' && !e.ctrlKey && !e.metaKey && !e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
@@ -411,7 +410,7 @@ function _wireControls() {
     // ',' marks whichever candle is under the cursor as a pending range
     // start — no click/drag/key-hold needed, just hover there. The next
     // '.' (anywhere else) finalizes it: a plain '.' draws a ranged aVWAP
-    // between the two points, Shift+. also draws stdev bands, Alt+. a fan
+    // between the two points, Shift+. the average aVWAP, Alt+. a fan
     // across the range — same modifiers, same meaning, as a normal tap;
     // a second ',' (or '<') pairs a Volume Profile (below), Shift+K
     // colors the candles in the range only. (Not '/' — that's already bound app-wide to toggleTheme in
@@ -516,16 +515,20 @@ function _wireControls() {
       }
       return;
     }
+    // '.' cycles: aVWAP → + stdev bands (pressed again over its anchor, or
+    // a ranged one's end) → fan shape colored by σ zone (no bands or line)
+    // → removed.
+    // Shift+. the same for the average aVWAP (mean of the aVWAPs from every
+    // candle since the anchor).
     if (e.code === 'Period' && !e.altKey && !e.ctrlKey && !e.metaKey) {
       if (_lastChartX == null) return;
+      const what = e.shiftKey ? 'avg' : false;
       if (_rangeStartIdx != null) {
-        // Same modifiers, same meaning, as a plain tap: '.' alone is a
-        // plain ranged aVWAP, Shift+. also draws stdev bands.
-        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, e.shiftKey, false);
+        chart.createRangedAnchorAtX(_rangeStartIdx, _lastChartX, false, what);
         _rangeStartIdx = null;
         chartEl.style.cursor = '';
       } else {
-        chart.toggleManualAnchorAtX(_lastChartX, e.shiftKey, false);
+        chart.toggleManualAnchorAtX(_lastChartX, false, what);
       }
       return;
     }
@@ -642,7 +645,7 @@ function _wireKeys() {
     if (e.key === 'ArrowDown' && !e.shiftKey) { e.preventDefault(); fps = Math.max(1, fps - 1);  fpsInput.value = fps; }
     if (e.key === 'Backspace') { e.preventDefault(); _setAutoFit(!autoFit); }
     // Shift+K — cycle live candle coloring (standard → σ distance from the
-    // latest Shift+. aVWAP → relative volume → standard).
+    // latest stdev-band aVWAP → relative volume → standard).
     // After ',' it colors only the marked range (from the ',' candle to the
     // one under the mouse), each mode computed from that range alone.
     // Shift+J — the same modes drawn sliced: each candle filled price by

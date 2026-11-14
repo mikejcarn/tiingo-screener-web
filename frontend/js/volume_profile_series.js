@@ -110,8 +110,12 @@ export class VolumeProfileRenderer {
     } = first.originalData;
     if (lo == null || bs == null || !bins || !bins.length) return;
 
+    // An end point past the right edge (its bar not in view, often the
+    // newest bar right at the edge) has no x (NaN) — the profile runs on to
+    // the canvas edge instead of vanishing.
+    if (!Number.isFinite(first.x)) return;
     const x0 = Math.round(first.x * hr);
-    const x1 = Math.round(last.x  * hr);
+    const x1 = Number.isFinite(last.x) ? Math.round(last.x * hr) : scope.bitmapSize.width;
     if (x1 <= x0) return;
 
     const maxBin = Math.max(...bins);

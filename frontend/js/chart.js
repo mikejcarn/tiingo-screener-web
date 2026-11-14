@@ -51,7 +51,7 @@ const C_DOWN = 'rgba(239,83,80,1)';
 //   'sigma'  — close's distance from a reference aVWAP in its σ. Entering the
 //              mode anchors that aVWAP at the candle under the mouse (shown
 //              as a thin dashed grey line while the mode is on); with the
-//              mouse off the chart it falls back to the latest Shift+. /
+//              mouse off the chart it falls back to the latest stdev-band /
 //              manual anchor. Teal above / red below (bullish / bearish).
 //              Fill: opacity 0 → 1 over 0 → CANDLE_SIGMA_OPAQUE σ (1σ), then
 //              solid, shading teal / red → neon green / magenta up to
@@ -1078,7 +1078,7 @@ export class ChartManager {
     return r;
   }
 
-  /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.'/Shift+., and ',' then '<' for the Volume Profile pairing (see replay.js). */
+  /** Create a manual anchor spanning the fixed range [startIdx, candle under x] — withStdev/withProfile same meaning as toggleManualAnchorAtX. Used by ',' then '.', and ',' then '<' for the Volume Profile pairing (see replay.js). */
   createRangedAnchorAtX(startIdx, x, withStdev = false, withProfile = false) {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
@@ -1211,7 +1211,7 @@ export class ChartManager {
     this._candleRefLine?.setData(this._candleRefIdx != null && this._candleRefIdx <= n
       ? this._engine._vwapLine(this._candleRefIdx, top) : []);
     if (this._candleMode === 'sigma') {
-      // Hover-set anchor (Shift+K), else the latest Shift+. / manual anchor.
+      // Hover-set anchor (Shift+K), else the latest stdev-band / manual anchor.
       const ref = this._candleRefIdx != null
         ? (this._candleRefIdx <= n ? this._engine?._stdevCloudData(this._candleRefIdx, top) : null)
         : this._engine?.sigmaReference(n);

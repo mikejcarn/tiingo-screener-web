@@ -88,6 +88,28 @@ const SLOPE_ALPHA_MIN_DEFAULT = 0.15;
 
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
+// Shift+. — the average aVWAP alone: at each bar, the mean of the aVWAPs
+// anchored at every candle from the anchor up to that bar (_fillAvgVwap —
+// the '<' / Shift+M dotted line, the Alt+. fan's 'avg' mode), solid orange.
+const C_AVG_ANCHOR     = 'rgba(255,165,0,0.9)';
+const AVG_ANCHOR_WIDTH = 2;
+// A second Shift+. adds dashed ±MANUAL_STDEV_MULTIPLES σ bands in its
+// orange: σ of the price distribution the average is the mean of — the
+// equal mix of every anchor's volume-weighted typical prices, so
+// σ² = mean over anchors of (σₐ² + (aVWAPₐ − average)²): each aVWAP's own
+// spread plus how far the aVWAPs fan out around their average.
+const C_AVG_STDEV_RGB  = '255,165,0';
+// Third press of '.' / Shift+.: the bands give way to the fan's shape —
+// at each bar the lowest and highest of the aVWAPs anchored at every candle
+// from the anchor up to it (what the Alt+. fan's lines would span) — for
+// Shift+., of the average aVWAPs anchored at those candles (the Alt+. fan's
+// 'avg' mode lines) — filled by FanShapePrimitive, no edge lines, the
+// aVWAP / average line itself hidden (the cloud alone), colored by the σ
+// zone each part of it falls in around the line (the aVWAP's own σ for '.', the
+// average's for Shift+.): above the line teal (within 1σ) → aqua (1–2σ) →
+// neon green (beyond 2σ); below it red → crimson → magenta.
+const FAN_SIGMA_ZONE_RGB = [['38,166,154', '0,229,255', '57,255,20'], ['239,83,80', '220,20,60', '255,40,220']];
+const FAN_SIGMA_ZONE_ALPHA = 0.3;
 // aVWAP fan — an aVWAP anchored at every candle across a span (hovered
 // candle → current bar, or a ','-marked range), each line growing to "now" or
 // stopping at the range's end. Every candle is classified by SIGNIFICANCE:
@@ -184,7 +206,7 @@ const FAN_BARVOL_PCTL     = 0.95;
 const C_FAN_MAX      = 'rgba(255,0,0,1.0)';
 const C_FAN_MIN      = 'rgba(0,255,255,0.85)';
 const FAN_MINMAX_WIDTH = 2;
-// Shift+. also draws stdev bands (vwap +/- k*stdev) around a manual anchor —
+// A second '.' over a manual anchor adds stdev bands (vwap +/- k*stdev) —
 // same rgb (amber), dashed, tiered opacity by k using the identical formula
 // col_styles.py uses for aVWAP_pinch's own stdev bands (tightest band most
 // visible, wider bands fade out).
@@ -192,30 +214,9 @@ const C_MANUAL_STDEV_RGB     = '255,193,7';
 const MANUAL_STDEV_MAX_ALPHA = 0.65;
 const MANUAL_STDEV_MIN_ALPHA = 0.45;
 const MANUAL_STDEV_MULTIPLES = [1, 2]; // matches aVWAP_pinch's default stdev_multiples
-// Clicking inside a Shift+. anchor's ±STDEV_CLOUD_K σ envelope cycles
-// STDEV_CLOUD_MODES: 'bands' (the dashed ±1/±2σ above) → a σ-band CLOUD —
-// band lines every STDEV_CLOUD_STEP σ out to ±STDEV_CLOUD_K σ, drawn by
-// StdevCloudPrimitive — shaded 'vp' (volume orange by the Volume Profile of
-// the anchor's span at each point's price, like the Ctrl+. fan's first mode)
-// → 'mixed' (orange above half the POC's volume, indigo below) → 'sigma' (by
-// distance from the aVWAP: bright near it, fading to ±3σ; teal below, red
-// above) → 'bands'. Every cloud mode also draws faint dashed σ ticks at the
-// whole multiples (±1, ±2, ±3σ) so distances stay readable.
-const STDEV_CLOUD_MODES = ['bands', 'vp', 'mixed', 'sigma'];
-const STDEV_CLOUD_K     = 3;
-const STDEV_CLOUD_STEP  = 0.1;
-const STDEV_TICK_COLOR  = 'rgba(200,200,200,0.5)';
-const SIGMA_ALPHA_MAX   = 0.6;
-const SIGMA_ALPHA_MIN   = 0.04;
-// In cloud modes the anchor's own aVWAP line is drawn by the cloud primitive
-// (its chart series goes transparent) so it can vary per segment: 'vp' —
-// volume orange, width AVWAP_VP_WIDTH_MIN..MAX by the Volume Profile share at
-// its price (thickest at the most volume); 'mixed' — orange above half the
-// POC's volume, indigo below; 'sigma' — by slope, grey when flat shading to
-// teal as it slopes up and red as it slopes down (slope scaled to the line's
-// own AVWAP_SLOPE_PCTL percentile, so the full range gets used).
-const AVWAP_VP_WIDTH_MIN = 1;
-const AVWAP_VP_WIDTH_MAX = 5;
+// The aVWAP slope coloring (the Alt+. fan's 'slope' mode): slope scaled to
+// the line's own AVWAP_SLOPE_PCTL percentile, so the full range gets used;
+// grey when flat, shading to teal as it slopes up and red as it slopes down.
 const AVWAP_SLOPE_PCTL   = 0.95;
 const C_SLOPE_FLAT       = [150, 150, 150];
 const C_SLOPE_UP         = [38, 166, 154];
@@ -260,14 +261,34 @@ const MANUAL_VP_NODE_WINDOW  = 16;
 // busiest level + indigo deepest LVN) → connected: no histogram at all, the
 // aVWAP and other-side aVWAP carry the profile, joined at the right end by a
 // connector coded like the histogram → wick map (see WICK_*) → rejection
-// vs acceptance (see DIFF_*) → off.
+// vs acceptance (see DIFF_*) → liquidity (see LIQ_*; '<' / Ctrl+, only) → off.
 const VP_MODE_NORMAL  = 0;
 const VP_MODE_LVN     = 1;
 const VP_MODE_BOTH    = 2;
 const VP_MODE_CONNECT = 3;
 const VP_MODE_WICK    = 4;
 const VP_MODE_DIFF    = 5;
-const VP_MODE_COUNT   = 6;
+const VP_MODE_LIQ     = 6;
+const VP_MODE_COUNT   = 7;
+// Liquidity mode: volume per unit of price movement at each level — where
+// a lot traded on narrow bars (absorption: effort without result) vs where
+// price moved easily on little (a thin book). Each bar's liquidity is
+// L = volume / (range in ATR(LIQ_ATR_PERIOD) at that bar) — an inverted
+// Amihud illiquidity, ATR-scaled so calm and volatile stretches compare.
+// A level's value is the mean L of the bars that traded through it,
+// weighted by how much of each bar's range overlaps the level, shrunk
+// toward the profile's overall mean by LIQ_PRIOR_VISITS bar-visits' worth
+// so a level touched by one or two wicks doesn't spike on them. Ranges are
+// floored at one level's height (dojis). Liquidity varies far less between
+// levels than volume does (most sit within ~2× of each other), so bars are
+// drawn above a baseline — the profile's LIQ_BASE_PCTL percentile level:
+// LIQ_RGB, longest = full width, thin-book levels near zero — with its own
+// POC (the most-liquid level) in the same color.
+const LIQ_ATR_PERIOD   = 14;
+const LIQ_BASE_PCTL    = 0.1;
+const LIQ_PRIOR_VISITS = 3;
+const LIQ_RGB          = '90,170,255';
+const LIQ_ALPHA        = 0.45;
 // Wick map mode: a rejection map over the same levels as the profile. Each
 // bar's upper wick (high down to its body top) and lower wick (low up to its
 // body bottom) carry the bar's volume × that wick's share of its range,
@@ -637,16 +658,14 @@ function priceToYFn(series) {
   return toY;
 }
 
-// σ-band cloud for a Shift+. anchor (see STDEV_CLOUD_MODES), a series
-// primitive on the anchor's aVWAP line. Reads the per-bar aVWAP / σ arrays
-// and span Volume Profile the engine keeps in entry.cloud (refreshed every
-// replay step); draws only visible bars, batched into a few strokes.
-class StdevCloudPrimitive {
-  constructor(engine, entry) {
-    this._engine = engine;
+// The filled fan shape of a '.' / Shift+. anchor colored by σ zone (see FAN_SIGMA_ZONE_*), up to
+// entry._toIdx — the aVWAPs' (_fanLo / _fanHi) or, for an average aVWAP,
+// the average aVWAPs' (_avgFanLo / _avgFanHi); under the candles.
+class FanShapePrimitive {
+  constructor(entry) {
     this._entry = entry;
     const renderer = { draw: target => this._draw(target) };
-    this._views = [{ renderer: () => renderer, zOrder: () => 'normal' }];
+    this._views = [{ renderer: () => renderer, zOrder: () => 'bottom' }];
   }
   attached({ chart, series, requestUpdate }) { this._chart = chart; this._series = series; this._request = requestUpdate; }
   detached() { this._chart = this._series = this._request = null; }
@@ -654,128 +673,53 @@ class StdevCloudPrimitive {
   update() { this._request?.(); }
 
   _draw(target) {
-    const entry = this._entry, c = entry.cloud, mode = entry.stdevMode;
-    if (!this._chart || !this._series || !c || mode === 'bands') return;
-    const ts = this._chart.timeScale();
-    const range = ts.getVisibleLogicalRange();
+    const e = this._entry, lo = e.avgOnly ? e._avgFanLo : e._fanLo, hi = e.avgOnly ? e._avgFanHi : e._fanHi;
+    if (!this._chart || !this._series || !lo || e._toIdx == null) return;
+    const ts = this._chart.timeScale(), range = ts.getVisibleLogicalRange();
     if (!range) return;
-    const from = Math.max(c.from, Math.floor(range.from) - 1), to = Math.min(c.to, Math.ceil(range.to) + 1);
-    if (to < from) return;
-    const xs = new Float64Array(to - from + 1);
-    for (let i = from; i <= to; i++) xs[i - from] = ts.logicalToCoordinate(i) ?? NaN;
+    const from = Math.max(e.anchorIdx, Math.floor(range.from) - 1), to = Math.min(e._toIdx, Math.ceil(range.to) + 1);
+    if (to <= from) return;
     const toY = priceToYFn(this._series);
-    const vw = c.vwap, sd = c.sd;
-    // Volume Profile share at a price (vp/mixed), null outside the traded range.
-    let shareAt = () => null;
-    if (c.vp && (mode === 'vp' || mode === 'mixed')) {
-      const { priceMin, binSize, bins } = c.vp;
-      let maxBin = 0; for (const v of bins) if (v > maxBin) maxBin = v;
-      const nb = bins.length;
-      shareAt = p => {
-        const b = Math.floor((p - priceMin) / binSize);
-        return (b < 0 || b >= nb || !(maxBin > 0)) ? null : bins[b] / maxBin;
-      };
+    const pts = [];
+    for (let i = from; i <= to; i++) {
+      const x = ts.logicalToCoordinate(i);
+      if (x == null || Number.isNaN(lo[i])) continue;
+      pts.push([x, toY(hi[i]), toY(lo[i])]);
     }
-    const L = FAN_VP_LEVELS;
-    const orange = Array.from({ length: L }, () => new Path2D());
-    const indigo = Array.from({ length: L }, () => new Path2D());
-    const sigmaPaths = [];   // [{rgb, alpha, path}] — one per cloud line in 'sigma'
-    const lv = t => Math.min(L - 1, Math.max(0, Math.floor(t * L)));
-    const steps = Math.round(STDEV_CLOUD_K / STDEV_CLOUD_STEP);
-    for (let s = -steps; s <= steps; s++) {
-      if (s === 0) continue;                     // the aVWAP line itself
-      const k = s * STDEV_CLOUD_STEP;
-      let sigmaPath = null;
-      if (mode === 'sigma') {
-        const t = 1 - Math.abs(k) / STDEV_CLOUD_K;
-        sigmaPath = new Path2D();
-        sigmaPaths.push({ rgb: k < 0 ? C_VALLEY_RGB : C_PEAK_RGB,
-                          alpha: SIGMA_ALPHA_MIN + (SIGMA_ALPHA_MAX - SIGMA_ALPHA_MIN) * t * t, path: sigmaPath });
-      }
-      let px = NaN, py = NaN;
-      for (let i = from; i <= to; i++) {
-        const j = i - c.from;
-        const v = vw[j], d = sd[j];
-        const x = xs[i - from];
-        if (Number.isNaN(v) || Number.isNaN(d) || Number.isNaN(x)) { px = NaN; continue; }
-        const price = v + k * d, y = toY(price);
-        if (y == null) { px = NaN; continue; }
-        if (!Number.isNaN(px)) {
-          let path = sigmaPath;
-          if (!path) {
-            const sh = shareAt(price);
-            if (sh == null) { px = x; py = y; continue; }
-            path = mode === 'mixed'
-              ? (sh >= 0.5 ? orange[lv((sh - 0.5) * 2)] : indigo[lv((0.5 - sh) * 2)])
-              : (sh > 0 ? orange[lv(sh)] : null);
-          }
-          if (path) { path.moveTo(px, py); path.lineTo(x, y); }
-        }
-        px = x; py = y;
-      }
-    }
-    // The anchor's own aVWAP, per segment (see AVWAP_VP_WIDTH_* / C_SLOPE_*).
-    const main = [];   // [{x0, y0, x1, y1, color, width}]
-    {
-      let px = NaN, py = NaN;
-      for (let i = from; i <= to; i++) {
-        const j = i - c.from, v = vw[j], x = xs[i - from];
-        const y = Number.isNaN(v) ? null : toY(v);
-        if (y == null || Number.isNaN(x)) { px = NaN; continue; }
-        if (!Number.isNaN(px)) {
-          let color, width = 2;
-          if (mode === 'sigma') {
-            const t = Math.max(-1, Math.min(1, c.slope[j] / (c.slopeRef || 1)));
-            const to_ = t >= 0 ? C_SLOPE_UP : C_SLOPE_DOWN, a = Math.abs(t);
-            const rgb = C_SLOPE_FLAT.map((f, q) => Math.round(f + (to_[q] - f) * a));
-            color = `rgba(${rgb.join(',')},0.95)`;
-          } else {
-            const sh = shareAt(v) ?? 0;
-            if (mode === 'mixed') color = `rgba(${sh >= 0.5 ? VP_RGB_DEFAULT : VP_RGB_LVN},0.95)`;
-            else { color = `rgba(${VP_RGB_DEFAULT},0.95)`; width = AVWAP_VP_WIDTH_MIN + (AVWAP_VP_WIDTH_MAX - AVWAP_VP_WIDTH_MIN) * sh; }
-          }
-          main.push({ x0: px, y0: py, x1: x, y1: y, color, width });
-        }
-        px = x; py = y;
-      }
-    }
-    // σ ticks at the whole multiples.
-    const ticks = new Path2D();
-    for (let m = 1; m <= STDEV_CLOUD_K; m++) {
-      for (const sign of [-1, 1]) {
-        let pen = false;
-        for (let i = from; i <= to; i++) {
-          const j = i - c.from, v = vw[j], d = sd[j], x = xs[i - from];
-          const y = Number.isNaN(v) || Number.isNaN(d) ? null : toY(v + sign * m * d);
-          if (y == null || Number.isNaN(x)) { pen = false; continue; }
-          if (pen) ticks.lineTo(x, y); else { ticks.moveTo(x, y); pen = true; }
-        }
+    if (pts.length < 2) return;
+    // The closed polygon between two per-bar edges (arrays of [x, y]).
+    const between = (upper, lower, path = new Path2D()) => {
+      upper.forEach(([x, y], k) => (k ? path.lineTo(x, y) : path.moveTo(x, y)));
+      for (let k = lower.length - 1; k >= 0; k--) path.lineTo(lower[k][0], lower[k][1]);
+      path.closePath();
+      return path;
+    };
+    const area = between(pts.map(([x, yh]) => [x, yh]), pts.map(([x, , yl]) => [x, yl]));
+    // The σ zones around the line (FAN_SIGMA_ZONE_*), each clipped to the fan's area.
+    const sg = e._sigma;
+    let zones = null;
+    if (sg) {
+      const at = k => { const out = []; for (let i = from; i <= to; i++) {
+        const x = ts.logicalToCoordinate(i), m = sg.mean(i), d = sg.sd(i);
+        if (x != null && !Number.isNaN(m) && !Number.isNaN(d)) out.push([x, toY(m + k * d)]);
+      } return out; };
+      const p2 = at(2), p1 = at(1), m0 = at(0), n1 = at(-1), n2 = at(-2);
+      if (m0.length >= 2) {
+        const far = y => m0.map(([x]) => [x, y]);               // past any fan edge
+        const top = far(-1e5), bottom = far(1e5);
+        // [side][zone] — side 0 above the line, 1 below; zone 0 within 1σ, 1 at 1–2σ, 2 beyond.
+        zones = [[between(p1, m0), between(p2, p1), between(top, p2)],
+                 [between(m0, n1), between(n1, n2), between(n2, bottom)]];
       }
     }
     target.useMediaCoordinateSpace(({ context: ctx }) => {
+      if (!zones) return;
       ctx.save();
-      ctx.lineWidth = 1;
-      if (mode === 'sigma') {
-        for (const { rgb, alpha, path } of sigmaPaths) { ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`; ctx.stroke(path); }
-      } else {
-        for (const [paths, rgb] of [[orange, VP_RGB_DEFAULT], [indigo, VP_RGB_LVN]]) {
-          paths.forEach((path, q) => {
-            const alpha = FAN_VP_ALPHA_FLOOR + (FAN_VP_ALPHA_MAX - FAN_VP_ALPHA_FLOOR) * Math.pow(q / (L - 1), FAN_VP_GAMMA);
-            ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
-            ctx.stroke(path);
-          });
-        }
-      }
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = STDEV_TICK_COLOR;
-      ctx.stroke(ticks);
-      ctx.setLineDash([]);
-      ctx.lineCap = 'round';
-      for (const sgm of main) {
-        ctx.strokeStyle = sgm.color;
-        ctx.lineWidth = sgm.width;
-        ctx.beginPath(); ctx.moveTo(sgm.x0, sgm.y0); ctx.lineTo(sgm.x1, sgm.y1); ctx.stroke();
-      }
+      ctx.clip(area);
+      zones.forEach((side, sd) => side.forEach((z, q) => {
+        ctx.fillStyle = `rgba(${FAN_SIGMA_ZONE_RGB[sd][q]},${FAN_SIGMA_ZONE_ALPHA})`;
+        ctx.fill(z);
+      }));
       ctx.restore();
     });
   }
@@ -1172,7 +1116,7 @@ export class DynamicVWAPEngine {
     this._pmmPools = [];
     // Manual (click-placed) anchors — ephemeral, keyed by anchor bar index
     // Manual anchors by unique id ('m1', 'm2', ...) — not by bar index, so
-    // different kinds (plain '.', Shift+. stdev, '<' profile) can share
+    // different kinds (plain '.', '.' '.' stdev, '<' profile) can share
     // a candle. Each entry carries its own anchorIdx and kind.
     this._manualSeries = {};
     this._manualSeq    = 0;
@@ -1232,8 +1176,8 @@ export class DynamicVWAPEngine {
 
   /** Tear down one manual anchor's vwap line + any stdev band series + any paired profile + its other-side aVWAP. */
   _removeManualEntry(entry) {
-    if (entry.cloudPrim) { try { entry.vwap.detachPrimitive(entry.cloudPrim); } catch (_) {} }
     if (entry.profileLinePrim) { try { entry.vwap.detachPrimitive(entry.profileLinePrim); } catch (_) {} }
+    if (entry.shapePrim) { try { entry.vwap.detachPrimitive(entry.shapePrim); } catch (_) {} }
     try { this._chart.removeSeries(entry.vwap); } catch (_) {}
     for (const band of entry.bands) {
       try { this._chart.removeSeries(band.upper); } catch (_) {}
@@ -1311,6 +1255,30 @@ export class DynamicVWAPEngine {
     return { total, D };
   }
 
+  /** Liquidity per level (see LIQ_*) on the given bins: mean volume per
+   * ATR of range of the bars through it, overlap-weighted and shrunk. */
+  _liquidityBins(anchorIdx, toIdx, priceMin, binSize, numBins) {
+    const atr = this._getAtr(LIQ_ATR_PERIOD);
+    const num = new Float64Array(numBins), den = new Float64Array(numBins);
+    let sumL = 0, sumW = 0;
+    for (let i = anchorIdx; i <= toIdx; i++) {
+      const v = this._volumes[i];
+      if (!(v > 0)) continue;
+      const h = this._highs[i], l = this._lows[i];
+      const rng = Math.max(h - l, binSize);
+      const L = v / (rng / (Number.isNaN(atr[i]) ? rng : atr[i]));
+      // Spread over [mid − rng/2, mid + rng/2] (= [l, h] unless floored).
+      const mid = (h + l) / 2, a = mid - rng / 2, b = mid + rng / 2;
+      const b0 = Math.max(0, Math.floor((a - priceMin) / binSize)), b1 = Math.min(numBins - 1, Math.floor((b - priceMin) / binSize));
+      for (let k = b0; k <= b1; k++) {
+        const lo = priceMin + k * binSize, ov = Math.min(lo + binSize, b) - Math.max(lo, a);
+        if (ov > 0) { num[k] += L * ov; den[k] += ov; sumL += L * ov; sumW += ov; }
+      }
+    }
+    const mean = sumW > 0 ? sumL / sumW : 0, prior = LIQ_PRIOR_VISITS * binSize;
+    return Array.from(num, (n, k) => (den[k] > 0 ? (n + prior * mean) / (den[k] + prior) : 0));
+  }
+
   /** Rejection vs acceptance profile of [anchorIdx, toIdx] on numBins levels
    * over its price range (candle colorings): { priceMin, binSize, D, posMax,
    * negMax } — the largest positive D and largest |negative| D — or null. */
@@ -1377,7 +1345,7 @@ export class DynamicVWAPEngine {
   /** Build the {lo, bs, bins, ...} payload VolumeProfileSeries expects, or
    * null if there's no real volume in [anchorIdx, toIdx] yet to show. lvn
    * switches it to LVN emphasis (see MANUAL_VP_LVN_LOCALITY). */
-  _vpPayload(anchorIdx, toIdx, lvn = false, wick = false, diff = false) {
+  _vpPayload(anchorIdx, toIdx, lvn = false, wick = false, diff = false, liq = false) {
     const hist = this._vpHistogram(anchorIdx, toIdx, MANUAL_VP_NUM_BINS);
     if (!hist) return null;
     const { priceMin, binSize, bins } = hist;
@@ -1387,6 +1355,19 @@ export class DynamicVWAPEngine {
       for (let b = 1; b < arr.length; b++) if (arr[b] > arr[m]) m = b;
       return arr[m] > 0 ? priceMin + (m + 0.5) * binSize : null;
     };
+    if (liq) {
+      // Liquidity (VP_MODE_LIQ): drawn through the diff bars (all positive).
+      const L = this._liquidityBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
+      const sorted = L.filter(x => x > 0).sort((x, y) => x - y);
+      const base = sorted.length ? sorted[Math.floor(LIQ_BASE_PCTL * (sorted.length - 1))] : 0;
+      for (let k = 0; k < L.length; k++) L[k] = Math.max(0, L[k] - base);
+      return {
+        lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
+        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: ownPoc(L), pocRgb: LIQ_RGB,
+        heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
+        diffBins: L, diffPosRgb: LIQ_RGB, diffAlpha: LIQ_ALPHA,
+      };
+    }
     if (diff) {
       // Rejection vs acceptance (VP_MODE_DIFF): D = wick share − volume share per level.
       const { total, D } = this._rejectionBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
@@ -1425,24 +1406,6 @@ export class DynamicVWAPEngine {
     };
   }
 
-  /**
-   * Id of the existing manual anchor of the same `kind` within `tolerance`
-   * bars of barIdx (the closest one) — hovering the exact bar you placed an
-   * anchor on is brittle at typical zoom (a few px per bar), so removal looks
-   * anchors up loosely. Only the same kind: a Shift+. tap never removes a
-   * '<' profile anchor on that candle (or vice versa), so both can sit
-   * on one candle.
-   */
-  _nearestManualAnchor(barIdx, kind, tolerance = 2) {
-    let best = null, bestDist = Infinity;
-    for (const [id, entry] of Object.entries(this._manualSeries)) {
-      if (entry.kind !== kind) continue;
-      const dist = Math.abs(entry.anchorIdx - barIdx);
-      if (dist <= tolerance && dist < bestDist) { best = id; bestDist = dist; }
-    }
-    return best;
-  }
-
   /** The manual entry of `kind` whose anchor — or, for a ranged one, its
    * end — is closest to barIdx within `tolerance` bars (newest on a tie),
    * or null: what a repeat key press over it cycles. */
@@ -1470,15 +1433,16 @@ export class DynamicVWAPEngine {
 
   /** withProfile: false; true / 'vp' — a Volume Profile alone ('<');
    * 'heat' — the same profile as a heatmap (Ctrl+,); 'lines' — the
-   * profile-coded aVWAP set alone (Shift+M). */
+   * profile-coded aVWAP set alone (Shift+M); 'avg' — the average aVWAP
+   * alone (Shift+., see C_AVG_ANCHOR). */
   static _manualKind(withStdev, withProfile) {
-    return withProfile === 'lines' ? 'lines' : withProfile === 'heat' ? 'heat'
+    return withProfile === 'avg' ? 'avg' : withProfile === 'lines' ? 'lines' : withProfile === 'heat' ? 'heat'
       : withProfile ? 'profile' : withStdev ? 'stdev' : 'plain';
   }
 
   /**
    * Place or remove a manually-anchored VWAP at anchorIdx, drawn out to
-   * toIdx. withStdev also draws vwap +/- k*stdev bands (Shift+.) around it —
+   * toIdx. withStdev also draws vwap +/- k*stdev bands (a second '.') around it —
    * see _vwapStdevBands. withProfile (',' ',' or '<') also pairs a Volume Profile
    * with it, same anchor-to-toIdx span, removed together as one unit.
    * Returns true if an anchor was added, false if an existing one of the
@@ -1491,22 +1455,26 @@ export class DynamicVWAPEngine {
     // anchor (or a ranged one's end), cycles its display mode, and past the
     // last mode removes it — as Shift+K / Shift+J cycle the candle coloring
     // back to standard. The next press starts the cycle over.
-    if (kind !== 'plain') {
+    // '.' cycles plain → + stdev bands → fan shape by σ zone → removed.
+    if (kind === 'plain') {
+      const entry = this._manualEntryAt(anchorIdx, 'plain') ?? this._manualEntryAt(anchorIdx, 'stdev');
+      if (entry?.kind === 'plain') { this._addStdevBands(entry); return 'cycled'; }
+      if (entry && !entry.shape) { this._showFanShape(entry); return 'cycled'; }
+      if (entry) { this._dropManualEntry(entry); return false; }
+    } else if (kind === 'avg') {
+      // Shift+. cycles average aVWAP → + its stdev bands → fan shape by σ
+      // zone → removed.
+      const entry = this._manualEntryAt(anchorIdx, kind);
+      if (entry && !entry.bands.length && !entry.shape) { this._addStdevBands(entry); return 'cycled'; }
+      if (entry && !entry.shape) { this._showFanShape(entry); return 'cycled'; }
+      if (entry) { this._dropManualEntry(entry); return false; }
+    } else {
       const entry = this._manualEntryAt(anchorIdx, kind);
       if (entry) {
-        const next = kind === 'profile' || kind === 'heat' || kind === 'lines' ? this._cycleProfileMode(entry) : this._cycleStdevMode(entry);
-        if (next) return 'cycled';
+        if (this._cycleProfileMode(entry)) return 'cycled';
         this._dropManualEntry(entry);
         return false;
       }
-    }
-    const existing = this._nearestManualAnchor(anchorIdx, kind);
-    if (existing != null) {
-      this._removeManualEntry(this._manualSeries[existing]);
-      delete this._manualSeries[existing];
-      const i = this._manualOrder.indexOf(existing);
-      if (i !== -1) this._manualOrder.splice(i, 1);
-      return false;
     }
     this._createManualAnchor(anchorIdx, toIdx, withStdev, withProfile, null);
     return true;
@@ -1514,7 +1482,7 @@ export class DynamicVWAPEngine {
 
   /**
    * Create a manual anchor spanning the fixed range [anchorIdx, toIdx] —
-   * used when ',' marked anchorIdx as a range-start and '.'/Shift+./',' again
+   * used when ',' marked anchorIdx as a range-start and '.'/',' again
    * then finalizes it at toIdx (see replay.js's ',' and '.' keydown
    * handling). Unlike toggleManualAnchor, this always creates — it never
    * toggles off an existing nearby anchor, since ',' then '.' is a
@@ -1539,22 +1507,12 @@ export class DynamicVWAPEngine {
     // aVWAP, other-side aVWAP and average aVWAP, coded by the range's
     // profile (not drawn) and drawn by ProfileLinePrimitive. Either way the
     // anchor's own series stays transparent.
-    const lines = withProfile === 'lines', vpOnly = !!withProfile && !lines;   // '<' or Ctrl+, (heatmap)
-    const vwap = this._series(withProfile ? 'rgba(0,0,0,0)' : C_MANUAL, 2, 0);
-    vwap.setData(this._vwapLine(anchorIdx, toIdx));
+    const avgOnly = withProfile === 'avg';
+    const lines = withProfile === 'lines', vpOnly = !!withProfile && !lines && !avgOnly;   // '<' or Ctrl+, (heatmap)
+    const vwap = avgOnly ? this._series(C_AVG_ANCHOR, AVG_ANCHOR_WIDTH, 0)
+      : this._series(withProfile ? 'rgba(0,0,0,0)' : C_MANUAL, 2, 0);
 
     const bands = [];
-    if (withStdev) {
-      const { bands: bandData, kMin, kMax } = this._vwapStdevBands(anchorIdx, toIdx, MANUAL_STDEV_MULTIPLES);
-      for (const { k, upper, lower } of bandData) {
-        const alpha = this._manualStdevAlpha(k, kMin, kMax);
-        const upperSeries = this._series(`rgba(${C_MANUAL_STDEV_RGB},${alpha})`, 1, 2);
-        const lowerSeries = this._series(`rgba(${C_MANUAL_STDEV_RGB},${alpha})`, 1, 2);
-        upperSeries.setData(upper);
-        lowerSeries.setData(lower);
-        bands.push({ k, upper: upperSeries, lower: lowerSeries });
-      }
-    }
 
     let profile = null;
     if (vpOnly) {
@@ -1576,12 +1534,43 @@ export class DynamicVWAPEngine {
     const id = `m${++this._manualSeq}`;
     this._manualSeries[id] = {
       anchorIdx, kind: DynamicVWAPEngine._manualKind(withStdev, withProfile),
-      vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL, lines, heat: withProfile === 'heat',
-      stdevMode: 'bands', cloud: null, cloudPrim: null,
+      vwap, bands, profile, fixedEnd, vpMode: VP_MODE_NORMAL, lines, heat: withProfile === 'heat', avgOnly,
       otherSide: lines ? {} : null,
     };
     this._manualOrder.push(id);
-    this._renderManualEntry(anchorIdx, this._manualSeries[id]);
+    if (withStdev) this._addStdevBands(this._manualSeries[id]);
+    else this._renderManualEntry(anchorIdx, this._manualSeries[id]);
+  }
+
+  /** Give a manual anchor its dashed ±MANUAL_STDEV_MULTIPLES σ bands (the
+   * second '.' over it) — it becomes a 'stdev' anchor, the σ candle mode's
+   * preferred reference. On an average aVWAP (second Shift+.), the bands of
+   * the average (see C_AVG_STDEV_RGB). */
+  _addStdevBands(entry) {
+    const kMin = Math.min(...MANUAL_STDEV_MULTIPLES), kMax = Math.max(...MANUAL_STDEV_MULTIPLES);
+    for (const k of MANUAL_STDEV_MULTIPLES) {
+      const color = `rgba(${entry.avgOnly ? C_AVG_STDEV_RGB : C_MANUAL_STDEV_RGB},${this._manualStdevAlpha(k, kMin, kMax)})`;
+      entry.bands.push({ k, upper: this._series(color, 1, 2), lower: this._series(color, 1, 2) });
+    }
+    if (entry.kind === 'plain') entry.kind = 'stdev';   // an average aVWAP stays 'avg' (Shift+. finds it)
+    this._renderManualEntry(entry.anchorIdx, entry);
+  }
+
+  /** Third '.' / Shift+.: drop the stdev bands, draw the fan shape colored
+   * by σ zone instead (see FAN_SIGMA_ZONE_*), cloud only — the aVWAP /
+   * average line goes transparent (its series keeps its data, which
+   * FanShapePrimitive is attached to and the σ coloring reads). */
+  _showFanShape(entry) {
+    for (const b of entry.bands) {
+      try { this._chart.removeSeries(b.upper); } catch (_) {}
+      try { this._chart.removeSeries(b.lower); } catch (_) {}
+    }
+    entry.bands = [];
+    entry.shape = true;
+    entry.vwap.applyOptions({ color: 'rgba(0,0,0,0)' });
+    entry.shapePrim = new FanShapePrimitive(entry);
+    entry.vwap.attachPrimitive(entry.shapePrim);
+    this._renderManualEntry(entry.anchorIdx, entry);
   }
 
   /**
@@ -2055,7 +2044,7 @@ export class DynamicVWAPEngine {
     // StDev bands (vwap +/- k*stdev) around every peak/valley anchor line —
     // one shared on/off + multiples per indicator (see _buildAnchorPools/
     // reveal(), which draw them via the same _vwapStdevBands the manual
-    // anchor tool's Shift+. bands already use).
+    // anchor tool's '.' stdev bands already use).
     this._peaksShowStdev    = !!events.peaks_show_stdev;
     this._peaksStdevMults   = events.peaks_stdev_mults   || [1, 2];
     this._valleysShowStdev  = !!events.valleys_show_stdev;
@@ -2081,6 +2070,7 @@ export class DynamicVWAPEngine {
     // Build O(1) VWAP lookup tables + price arrays for PMM
     const N = bars.length;
     this._cumPV   = new Float64Array(N);
+    this._cumPV2  = new Float64Array(N);   // cumulative typical_price² × volume (average aVWAP σ)
     this._cumVol  = new Float64Array(N);
     this._highs   = new Float64Array(N);
     this._lows    = new Float64Array(N);
@@ -2092,7 +2082,7 @@ export class DynamicVWAPEngine {
     this._typical = new Float64Array(N);
     this._closes  = new Float64Array(N);
     this._opens   = new Float64Array(N);
-    let pv = 0, vol = 0;
+    let pv = 0, pv2 = 0, vol = 0;
     for (let i = 0; i < N; i++) {
       const b = bars[i];
       const h = b.High ?? b.high, l = b.Low ?? b.low, c = b.Close ?? b.close;
@@ -2105,7 +2095,9 @@ export class DynamicVWAPEngine {
       this._typical[i] = (h + l + c) / 3;
       pv  += this._typical[i] * v;
       vol += v;
+      pv2 += this._typical[i] * this._typical[i] * v;
       this._cumPV[i]  = pv;
+      this._cumPV2[i] = pv2;
       this._cumVol[i] = vol;
     }
 
@@ -2407,7 +2399,7 @@ export class DynamicVWAPEngine {
     this._manualOrder.push(step);
   }
 
-  /** Latest Shift+. anchor entry, else the latest manual anchor of any kind, or null. */
+  /** Latest stdev-band ('.' '.') anchor entry, else the latest manual anchor of any kind, or null. */
   _referenceAnchorEntry() {
     const ids = this._manualOrder.filter(o => typeof o === 'string' && this._manualSeries[o]);
     const pick = [...ids].reverse().find(id => this._manualSeries[id].kind === 'stdev') ?? ids[ids.length - 1];
@@ -2420,29 +2412,13 @@ export class DynamicVWAPEngine {
   }
 
   /** Reference for the chart's 'sigma' candle mode: per-bar aVWAP / σ of
-   * the most recently placed Shift+. anchor (else the most recent manual
+   * the most recently placed stdev-band anchor (else the most recent manual
    * anchor of any kind) up to bar n, or null if there's none. */
   sigmaReference(n) {
     const e = this._referenceAnchorEntry();
     if (!e) return null;
     const toIdx = e.fixedEnd != null ? Math.min(e.fixedEnd, n) : n;
     return toIdx >= e.anchorIdx ? this._stdevCloudData(e.anchorIdx, toIdx) : null;
-  }
-
-  /** A repeat Shift+. over a bands anchor: advance it to the next of
-   * STDEV_CLOUD_MODES (the dashed ±1/±2σ band series show only in 'bands');
-   * false past the last (the caller removes it). */
-  _cycleStdevMode(entry) {
-    const next = STDEV_CLOUD_MODES.indexOf(entry.stdevMode) + 1;
-    if (next >= STDEV_CLOUD_MODES.length) return false;
-    entry.stdevMode = STDEV_CLOUD_MODES[next];
-    const showBands = entry.stdevMode === 'bands';
-    for (const b of entry.bands) { b.upper.applyOptions({ visible: showBands }); b.lower.applyOptions({ visible: showBands }); }
-    // Cloud modes draw the aVWAP line themselves (per-segment color/width);
-    // its series stays (price scale, data) but goes transparent.
-    entry.vwap.applyOptions({ color: showBands ? C_MANUAL : 'rgba(0,0,0,0)' });
-    entry.cloudPrim?.update();
-    return true;
   }
 
   // ── Reveal ────────────────────────────────────────────────────────────────
@@ -2583,25 +2559,46 @@ export class DynamicVWAPEngine {
   _renderManualEntry(anchorIdx, entry) {
     const n = this._lastN;
     const toIdx = entry.fixedEnd != null ? Math.min(entry.fixedEnd, n) : n;
-    entry.vwap.setData(this._vwapLine(anchorIdx, toIdx));
-    if (entry.bands.length) {
+    if (entry.avgOnly) {
+      this._fillAvgVwap(entry, anchorIdx, toIdx);
+      const data = [];
+      for (let i = anchorIdx; i <= toIdx; i++) {
+        if (!Number.isNaN(entry._avg[i])) data.push({ time: (this._bars[i].Date || this._bars[i].date || '').slice(0, 10), value: entry._avg[i] });
+      }
+      entry.vwap.setData(data);
+    } else entry.vwap.setData(this._vwapLine(anchorIdx, toIdx));
+    if (entry.shape) {
+      if (!entry.avgOnly) this._fillAvgVwap(entry, anchorIdx, toIdx);   // (avgOnly filled it above)
+      entry._toIdx = toIdx;
+      // The line's per-bar mean / σ, for the zones.
+      if (entry.avgOnly) entry._sigma = { mean: i => entry._avg[i], sd: i => entry._avgSd[i] };
+      else {
+        const c = this._stdevCloudData(anchorIdx, toIdx);
+        entry._sigma = { mean: i => (i < c.from || i > c.to ? NaN : c.vwap[i - c.from]), sd: i => (i < c.from || i > c.to ? NaN : c.sd[i - c.from]) };
+      }
+      entry.shapePrim?.update();
+    }
+    if (entry.bands.length && entry.avgOnly) {
+      for (const b of entry.bands) {
+        const up = [], dn = [];
+        for (let i = anchorIdx; i <= toIdx; i++) {
+          const m = entry._avg[i], sd = entry._avgSd[i];
+          if (Number.isNaN(m) || Number.isNaN(sd)) continue;
+          const time = (this._bars[i].Date || this._bars[i].date || '').slice(0, 10);
+          up.push({ time, value: m + b.k * sd }); dn.push({ time, value: m - b.k * sd });
+        }
+        b.upper.setData(up); b.lower.setData(dn);
+      }
+    } else if (entry.bands.length) {
       const { bands: bandData } = this._vwapStdevBands(anchorIdx, toIdx, entry.bands.map(b => b.k));
       for (let i = 0; i < entry.bands.length; i++) {
         entry.bands[i].upper.setData(bandData[i].upper);
         entry.bands[i].lower.setData(bandData[i].lower);
       }
-      // σ-band cloud (Shift+. repeat-press modes): per-bar aVWAP / σ arrays and the
-      // span's Volume Profile, for StdevCloudPrimitive.
-      if (!entry.cloudPrim) {
-        entry.cloudPrim = new StdevCloudPrimitive(this, entry);
-        entry.vwap.attachPrimitive(entry.cloudPrim);
-      }
-      entry.cloud = this._stdevCloudData(anchorIdx, toIdx);
-      entry.cloudPrim.update();
     }
     if (entry.profile || entry.lines) {
-      const wick = entry.vpMode === VP_MODE_WICK, diff = entry.vpMode === VP_MODE_DIFF;
-      const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN, wick, diff);
+      const wick = entry.vpMode === VP_MODE_WICK, diff = entry.vpMode === VP_MODE_DIFF, liq = entry.vpMode === VP_MODE_LIQ;
+      const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN, wick, diff, liq);
       // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
       entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins,
         upper: payload.wickUpper, lower: payload.wickLower, diff: payload.diffBins } : null;
@@ -2609,7 +2606,7 @@ export class DynamicVWAPEngine {
       if (entry.lines) this._fillAvgVwap(entry, anchorIdx, toIdx);
       // The mode's peak levels — colored on the aVWAPs.
       entry._peaks = !payload ? null : wick ? wickPeakColors(payload.wickUpper, payload.wickLower)
-        : diff ? diffPeakColors(payload.diffBins)
+        : diff || liq ? diffPeakColors(payload.diffBins)
         : profilePeakColors(payload.bins,
           entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both');
 
@@ -2668,15 +2665,41 @@ export class DynamicVWAPEngine {
    * computed ones are filled (replay steps forward add one bar each). */
   _fillAvgVwap(entry, anchorIdx, toIdx) {
     const N = this._bars.length;
-    if (!entry._avg || entry._avg.length !== N) { entry._avg = new Float64Array(N).fill(NaN); entry._avgTo = anchorIdx - 1; }
-    const avg = entry._avg, cumPV = this._cumPV, cumVol = this._cumVol;
+    if (!entry._avg || entry._avg.length !== N) {
+      entry._avg = new Float64Array(N).fill(NaN); entry._avgSd = new Float64Array(N).fill(NaN); entry._avgTo = anchorIdx - 1;
+      entry._fanLo = new Float64Array(N).fill(NaN); entry._fanHi = new Float64Array(N).fill(NaN);
+      entry._avgFanLo = new Float64Array(N).fill(NaN); entry._avgFanHi = new Float64Array(N).fill(NaN);
+    }
+    const avg = entry._avg, avgSd = entry._avgSd, cumPV = this._cumPV, cumPV2 = this._cumPV2, cumVol = this._cumVol;
+    // The fans' shapes ('.' / Shift+. third press): lowest / highest of those
+    // aVWAPs, and of the average aVWAPs anchored at each of those candles.
+    const fanLo = entry._fanLo, fanHi = entry._fanHi, avgFanLo = entry._avgFanLo, avgFanHi = entry._avgFanHi;
     for (let i = entry._avgTo + 1; i <= toIdx; i++) {
-      let sum = 0, cnt = 0;
-      for (let a = anchorIdx; a <= i; a++) {
+      // sum: Σ aVWAPₐ; sum2: Σ (volume-weighted mean of p² since a). The
+      // mix's variance is mean(sum2) − average² (= mean of σₐ² + (aVWAPₐ − average)²).
+      // Newest anchor first, so after adding anchor a, sum / cnt is the
+      // average aVWAP anchored at a.
+      let sum = 0, sum2 = 0, cnt = 0, mn = Infinity, mx = -Infinity, amn = Infinity, amx = -Infinity;
+      for (let a = i; a >= anchorIdx; a--) {
         const vol = cumVol[i] - (a > 0 ? cumVol[a - 1] : 0);
-        if (vol > 0) { sum += (cumPV[i] - (a > 0 ? cumPV[a - 1] : 0)) / vol; cnt++; }
+        if (vol > 0) {
+          const v = (cumPV[i] - (a > 0 ? cumPV[a - 1] : 0)) / vol;
+          if (v < mn) mn = v;
+          if (v > mx) mx = v;
+          sum  += v;
+          sum2 += (cumPV2[i] - (a > 0 ? cumPV2[a - 1] : 0)) / vol;
+          cnt++;
+          const m = sum / cnt;
+          if (m < amn) amn = m;
+          if (m > amx) amx = m;
+        }
       }
       avg[i] = cnt ? sum / cnt : NaN;
+      avgSd[i] = cnt ? Math.sqrt(Math.max(0, sum2 / cnt - avg[i] * avg[i])) : NaN;
+      fanLo[i] = cnt ? mn : NaN;
+      fanHi[i] = cnt ? mx : NaN;
+      avgFanLo[i] = cnt ? amn : NaN;
+      avgFanHi[i] = cnt ? amx : NaN;
     }
     entry._avgTo = Math.max(entry._avgTo, toIdx);
   }
@@ -2686,8 +2709,10 @@ export class DynamicVWAPEngine {
    * false past the last (the caller removes it). Its aVWAP and other-side lines are recoded to match on render. */
   _cycleProfileMode(entry) {
     // '<' (profile alone) skips connected — that mode is lines only.
+    // Liquidity is profile-only — Shift+M's lines end after rejection.
     let next = entry.vpMode + 1;
     if (!entry.lines && next === VP_MODE_CONNECT) next++;
+    if (entry.lines && next === VP_MODE_LIQ) next++;
     if (next >= VP_MODE_COUNT) return false;
     entry.vpMode = next;
     this._renderManualEntry(entry.anchorIdx, entry);
