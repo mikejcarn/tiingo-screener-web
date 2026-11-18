@@ -9,7 +9,7 @@
  * lvnPoc, vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
  * heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality,
  * nodeWindow, histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha, diffBins, diffPosRgb,
- * diffNegRgb, diffAlpha, pocRgb (overrides the POC line's color) } at the
+ * diffNegRgb, diffColors, diffAlpha, diffNegAlpha, pocRgb (overrides the POC line's color) } at the
  * anchor's start and end bar, same
  * start/end convention as the other zone series.
  * lo/bs are the histogram's price origin and bin size, bins the per-bin
@@ -106,7 +106,7 @@ export class VolumeProfileRenderer {
       showHistogram, dualHistogram, directionalColor, barStyle,
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
       histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha,
-      diffBins, diffPosRgb, diffNegRgb, diffAlpha, pocRgb,
+      diffBins, diffPosRgb, diffNegRgb, diffColors, diffAlpha, diffNegAlpha, pocRgb,
     } = first.originalData;
     if (lo == null || bs == null || !bins || !bins.length) return;
 
@@ -271,26 +271,29 @@ export class VolumeProfileRenderer {
     // Rejection vs acceptance (the in-chart profile's difference mode): per
     // level, a signed value drawn from the anchor, longest |value| =
     // maxWidth — positive bars in diffPosRgb, negative in diffNegRgb; a side
-    // without a color isn't drawn.
+    // without a color isn't drawn. diffColors (optional, per level) overrides
+    // a level's color with its own rgb; diffNegAlpha (optional) gives the
+    // negative bars their own opacity (scaled likewise in the heatmap).
     if (diffBins) {
       let dMax = 0;
       for (const d of diffBins) dMax = Math.max(dMax, Math.abs(d));
       if (dMax > 0) {
-        const a = diffAlpha ?? 0.45;
-        const posFill = diffPosRgb ? `rgba(${diffPosRgb},${a})` : null, negFill = diffNegRgb ? `rgba(${diffNegRgb},${a})` : null;
+        const a = diffAlpha ?? 0.45, aNeg = diffNegAlpha ?? a;
+        const posFill = diffPosRgb ? `rgba(${diffPosRgb},${a})` : null, negFill = diffNegRgb ? `rgba(${diffNegRgb},${aNeg})` : null;
         for (let i = 0; i < diffBins.length; i++) {
-          const d = diffBins[i];
-          if (!d || !(d > 0 ? posFill : negFill)) continue;
+          const d = diffBins[i], own = diffColors?.[i];
+          if (!d || !(own || (d > 0 ? posFill : negFill))) continue;
           const yLo = priceToCoordinate(lo + i * bs), yHi = priceToCoordinate(lo + (i + 1) * bs);
           if (yLo == null || yHi == null) continue;
           const top = Math.min(yLo, yHi) * vr, h = Math.max(Math.abs(yLo - yHi) * vr, vr);
           if (barStyle === 'heatmap') {
             // Heatmap style: full-width bands, |value| as opacity.
-            ctx.fillStyle = `rgba(${d > 0 ? diffPosRgb : diffNegRgb},${Math.abs(d) / dMax * (heatmapOpacity ?? 0.85)})`;
+            const k = !own && d < 0 ? aNeg / a : 1;
+            ctx.fillStyle = `rgba(${own || (d > 0 ? diffPosRgb : diffNegRgb)},${Math.abs(d) / dMax * (heatmapOpacity ?? 0.85) * k})`;
             ctx.fillRect(x0, top, x1 - x0, h);
             continue;
           }
-          ctx.fillStyle = d > 0 ? posFill : negFill;
+          ctx.fillStyle = own ? `rgba(${own},${a})` : d > 0 ? posFill : negFill;
           ctx.fillRect(x0, top, Math.abs(d) / dMax * maxWidth, h);
         }
       }

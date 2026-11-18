@@ -261,7 +261,8 @@ const MANUAL_VP_NODE_WINDOW  = 16;
 // busiest level + indigo deepest LVN) → connected: no histogram at all, the
 // aVWAP and other-side aVWAP carry the profile, joined at the right end by a
 // connector coded like the histogram → wick map (see WICK_*) → rejection
-// vs acceptance (see DIFF_*) → liquidity (see LIQ_*; '<' / Ctrl+, only) → off.
+// vs acceptance (see DIFF_*) → liquidity (see LIQ_*) → liquidity vs volume
+// (see LDIV_*) → off; the last two '<' / Ctrl+, only.
 const VP_MODE_NORMAL  = 0;
 const VP_MODE_LVN     = 1;
 const VP_MODE_BOTH    = 2;
@@ -269,7 +270,8 @@ const VP_MODE_CONNECT = 3;
 const VP_MODE_WICK    = 4;
 const VP_MODE_DIFF    = 5;
 const VP_MODE_LIQ     = 6;
-const VP_MODE_COUNT   = 7;
+const VP_MODE_LDIV    = 7;
+const VP_MODE_COUNT   = 8;
 // Liquidity mode: volume per unit of price movement at each level — where
 // a lot traded on narrow bars (absorption: effort without result) vs where
 // price moved easily on little (a thin book). Each bar's liquidity is
@@ -289,6 +291,33 @@ const LIQ_BASE_PCTL    = 0.1;
 const LIQ_PRIOR_VISITS = 3;
 const LIQ_RGB          = '90,170,255';
 const LIQ_ALPHA        = 0.45;
+// Liquidity vs volume mode: where the two profiles disagree, by each
+// level's percentile rank (0 … 1) in each. Yellow (the key-level color) —
+// liquidity in its top
+// half and outranking volume, by how much (rankL − max(rankV, ½)): brief
+// but heavy stands, every visit meeting size, that the volume profile
+// undersells. Faded grey (translucent orange on the dark chart just reads
+// as brown) — volume in its top half and outranking
+// liquidity (rankV − max(rankL, ½)): big only because price spent many bars
+// there, an ordinary balance area: volume without defense. Volume orange —
+// volume and defense: both in their top half and
+// agreeing (min(rankL, rankV) − ½ − |rankL − rankV|): heavily traded and
+// heavily defended, the levels a disagreement-only view would leave blank.
+// Each level shows whichever of the three is largest (all 0 … ½, so
+// lengths compare). The top-half gate matters: every bar's
+// volume is spread evenly over its range, so liquidity ≈ ATR × volume ÷
+// time at price (bars through the level), and a plain rank difference
+// mostly re-draws an inverted time profile (every rarely-visited level outranking its small volume on
+// middling liquidity). Scaled by
+// how much of the level's liquidity is its own data rather than the
+// LIQ_PRIOR_VISITS shrink (visits / (visits + prior)), since the shrink
+// would rank thin tails mid-pack and fake a disagreement there. Its POC
+// marks the strongest yellow level.
+const LDIV_POS_RGB     = '255,220,50';
+const LDIV_BOTH_RGB    = '255,152,0';
+const LDIV_NEG_RGB     = '160,160,160';
+const LDIV_DIM_ALPHA   = 0.3;
+const LDIV_ALPHA       = 0.45;
 // Wick map mode: a rejection map over the same levels as the profile. Each
 // bar's upper wick (high down to its body top) and lower wick (low up to its
 // body bottom) carry the bar's volume × that wick's share of its range,
@@ -1256,7 +1285,9 @@ export class DynamicVWAPEngine {
   }
 
   /** Liquidity per level (see LIQ_*) on the given bins: mean volume per
-   * ATR of range of the bars through it, overlap-weighted and shrunk. */
+   * ATR of range of the bars through it, overlap-weighted and shrunk —
+   * { L, own }: also the share of each level's L that's its own data
+   * rather than the shrink. */
   _liquidityBins(anchorIdx, toIdx, priceMin, binSize, numBins) {
     const atr = this._getAtr(LIQ_ATR_PERIOD);
     const num = new Float64Array(numBins), den = new Float64Array(numBins);
@@ -1276,7 +1307,10 @@ export class DynamicVWAPEngine {
       }
     }
     const mean = sumW > 0 ? sumL / sumW : 0, prior = LIQ_PRIOR_VISITS * binSize;
-    return Array.from(num, (n, k) => (den[k] > 0 ? (n + prior * mean) / (den[k] + prior) : 0));
+    return {
+      L: Array.from(num, (n, k) => (den[k] > 0 ? (n + prior * mean) / (den[k] + prior) : 0)),
+      own: Array.from(den, d => d / (d + prior)),
+    };
   }
 
   /** Rejection vs acceptance profile of [anchorIdx, toIdx] on numBins levels
@@ -1345,7 +1379,7 @@ export class DynamicVWAPEngine {
   /** Build the {lo, bs, bins, ...} payload VolumeProfileSeries expects, or
    * null if there's no real volume in [anchorIdx, toIdx] yet to show. lvn
    * switches it to LVN emphasis (see MANUAL_VP_LVN_LOCALITY). */
-  _vpPayload(anchorIdx, toIdx, lvn = false, wick = false, diff = false, liq = false) {
+  _vpPayload(anchorIdx, toIdx, lvn = false, wick = false, diff = false, liq = false, ldiv = false) {
     const hist = this._vpHistogram(anchorIdx, toIdx, MANUAL_VP_NUM_BINS);
     if (!hist) return null;
     const { priceMin, binSize, bins } = hist;
@@ -1355,18 +1389,49 @@ export class DynamicVWAPEngine {
       for (let b = 1; b < arr.length; b++) if (arr[b] > arr[m]) m = b;
       return arr[m] > 0 ? priceMin + (m + 0.5) * binSize : null;
     };
+    // Liquidity / liquidity vs volume — drawn through the diff bars.
+    const ownBars = (D, pos, neg, alpha, poc = ownPoc(D)) => ({
+      lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
+      showHistogram: false, directionalColor: false, barStyle: 'bars', poc, pocRgb: pos,
+      heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
+      diffBins: D, diffPosRgb: pos, diffNegRgb: neg, diffAlpha: alpha,
+    });
+    if (ldiv) {
+      // Liquidity vs volume (VP_MODE_LDIV): liquidity rank − volume rank, over traded levels.
+      const { L, own } = this._liquidityBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
+      const idx = [];
+      for (let k = 0; k < bins.length; k++) if (bins[k] > 0 && L[k] > 0) idx.push(k);
+      const rank = vals => {
+        const r = new Float64Array(bins.length), o = [...idx].sort((x, y) => vals[x] - vals[y]);
+        o.forEach((k, j) => { r[k] = o.length > 1 ? j / (o.length - 1) : 0.5; });
+        return r;
+      };
+      const rL = rank(L), rV = rank(bins);
+      // Each level takes the strongest of three scores (each 0 … ½): yellow
+      // only where liquidity is in its top half, grey only where volume
+      // is, orange where both are and they agree.
+      const D = new Array(bins.length).fill(0), colors = new Array(bins.length).fill(null);
+      let pocK = -1;
+      for (const k of idx) {
+        const blue = Math.max(0, rL[k] - Math.max(rV[k], 0.5));
+        const orange = Math.max(0, rV[k] - Math.max(rL[k], 0.5));
+        const white = Math.max(0, Math.min(rL[k], rV[k]) - 0.5 - Math.abs(rL[k] - rV[k]));
+        const top = Math.max(blue, orange, white);
+        if (!(top > 0)) continue;
+        if (white === top) { D[k] = white * own[k]; colors[k] = LDIV_BOTH_RGB; }
+        else D[k] = (blue > orange ? blue : -orange) * own[k];
+        if (!colors[k] && D[k] > 0 && (pocK < 0 || D[k] > D[pocK])) pocK = k;
+      }
+      return { ...ownBars(D, LDIV_POS_RGB, LDIV_NEG_RGB, LDIV_ALPHA,
+        pocK >= 0 ? priceMin + (pocK + 0.5) * binSize : null), diffColors: colors, diffNegAlpha: LDIV_DIM_ALPHA };
+    }
     if (liq) {
       // Liquidity (VP_MODE_LIQ): drawn through the diff bars (all positive).
-      const L = this._liquidityBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
+      const { L } = this._liquidityBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
       const sorted = L.filter(x => x > 0).sort((x, y) => x - y);
       const base = sorted.length ? sorted[Math.floor(LIQ_BASE_PCTL * (sorted.length - 1))] : 0;
       for (let k = 0; k < L.length; k++) L[k] = Math.max(0, L[k] - base);
-      return {
-        lo: priceMin, bs: binSize, bins: Array.from(bins), fillOpacity: MANUAL_VP_FILL_OPACITY,
-        showHistogram: false, directionalColor: false, barStyle: 'bars', poc: ownPoc(L), pocRgb: LIQ_RGB,
-        heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
-        diffBins: L, diffPosRgb: LIQ_RGB, diffAlpha: LIQ_ALPHA,
-      };
+      return ownBars(L, LIQ_RGB, null, LIQ_ALPHA);
     }
     if (diff) {
       // Rejection vs acceptance (VP_MODE_DIFF): D = wick share − volume share per level.
@@ -2598,7 +2663,8 @@ export class DynamicVWAPEngine {
     }
     if (entry.profile || entry.lines) {
       const wick = entry.vpMode === VP_MODE_WICK, diff = entry.vpMode === VP_MODE_DIFF, liq = entry.vpMode === VP_MODE_LIQ;
-      const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN, wick, diff, liq);
+      const ldiv = entry.vpMode === VP_MODE_LDIV;
+      const payload = this._vpPayload(anchorIdx, toIdx, entry.vpMode === VP_MODE_LVN, wick, diff, liq, ldiv);
       // Profile data for ProfileLinePrimitive ("Both" mode aVWAP coloring).
       entry._vp = payload ? { lo: payload.lo, bs: payload.bs, bins: payload.bins,
         upper: payload.wickUpper, lower: payload.wickLower, diff: payload.diffBins } : null;
@@ -2606,7 +2672,7 @@ export class DynamicVWAPEngine {
       if (entry.lines) this._fillAvgVwap(entry, anchorIdx, toIdx);
       // The mode's peak levels — colored on the aVWAPs.
       entry._peaks = !payload ? null : wick ? wickPeakColors(payload.wickUpper, payload.wickLower)
-        : diff || liq ? diffPeakColors(payload.diffBins)
+        : diff || liq || ldiv ? diffPeakColors(payload.diffBins)
         : profilePeakColors(payload.bins,
           entry.vpMode === VP_MODE_NORMAL ? 'hvn' : entry.vpMode === VP_MODE_LVN ? 'lvn' : 'both');
 
@@ -2705,14 +2771,15 @@ export class DynamicVWAPEngine {
   }
 
   /** A repeat '<' / 'M' over a profile's anchor (or a ranged one's end):
-   * advance it to its next display mode (normal → LVN → both → line-only → wick map → rejection vs acceptance);
+   * advance it to its next display mode (normal → LVN → both → line-only → wick map → rejection vs acceptance → liquidity → liquidity vs volume);
    * false past the last (the caller removes it). Its aVWAP and other-side lines are recoded to match on render. */
   _cycleProfileMode(entry) {
     // '<' (profile alone) skips connected — that mode is lines only.
-    // Liquidity is profile-only — Shift+M's lines end after rejection.
+    // Liquidity and liquidity vs volume are profile-only — Shift+M's
+    // lines end after rejection.
     let next = entry.vpMode + 1;
     if (!entry.lines && next === VP_MODE_CONNECT) next++;
-    if (entry.lines && next === VP_MODE_LIQ) next++;
+    if (entry.lines && next >= VP_MODE_LIQ) return false;
     if (next >= VP_MODE_COUNT) return false;
     entry.vpMode = next;
     this._renderManualEntry(entry.anchorIdx, entry);
