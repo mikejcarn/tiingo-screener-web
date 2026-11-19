@@ -1066,6 +1066,12 @@ export class ChartManager {
     return r;
   }
 
+  /** Click at chart-local (x, y): on a σ-space profile's fill or histogram
+   * ('.' / Shift+. σ steps), show / hide its histogram. True if one was hit. */
+  toggleSigmaHistAt(x, y) {
+    return !!this._engine?.toggleSigmaHistAt(x, y);
+  }
+
   /** Undo the most recently placed manual aVWAP anchor (LIFO). Returns the removed bar index, or null if none. */
   undoManualAnchor() {
     if (!this._engine) return null;

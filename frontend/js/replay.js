@@ -539,6 +539,11 @@ function _wireControls() {
     }
   });
 
+  // Where the last press started — a click ending a drag (panning the
+  // chart) doesn't count as a click on what's under it.
+  let _pressAt = null;
+  chartEl.addEventListener('mousedown', (e) => { _pressAt = { x: e.clientX, y: e.clientY }; });
+
   chartEl.addEventListener('click', (e) => {
     if (!chart || !N) return;
     if (_measureActive) {
@@ -550,6 +555,10 @@ function _wireControls() {
       _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
       return;
     }
+    // Plain click on a σ-space profile's fill or histogram ('.' / Shift+.):
+    // show its histogram (hidden by default), or hide it again.
+    const moved = _pressAt && Math.hypot(e.clientX - _pressAt.x, e.clientY - _pressAt.y) > 4;
+    if (!moved) chart.toggleSigmaHistAt(e.clientX - rect.left, e.clientY - rect.top);
   });
 
   window.addEventListener('mousemove', (e) => {

@@ -110,6 +110,43 @@ const C_AVG_STDEV_RGB  = '255,165,0';
 // neon green (beyond 2σ); below it red → crimson → magenta.
 const FAN_SIGMA_ZONE_RGB = [['38,166,154', '0,229,255', '57,255,20'], ['239,83,80', '220,20,60', '255,40,220']];
 const FAN_SIGMA_ZONE_ALPHA = 0.3;
+// Fourth press: the σ-space volume profile — a volume profile in the line's
+// moving frame instead of in price. Each bar's range is converted to σ units
+// around that bar's line, z = (price − line) / σ (the aVWAP and its σ for
+// '.', the average aVWAP and its σ for Shift+.), and its volume spread
+// evenly over that z range into SIGPROF_STEP-σ bins out to ±SIGPROF_Z (volume
+// beyond is dropped). It shows where, relative to fair value and its spread,
+// volume traded — a trend that smears the price profile can still pile its
+// volume at, say, +0.5σ … +1σ. Drawn as a heatmap cloud: a band per bin
+// following the line (aVWAP + z·σ at every bar), its opacity the bin's
+// volume (up to SIGPROF_HEAT_ALPHA), in volume orange — busy bins read as
+// glowing channels; plus the profile as a sideways histogram
+// (SIGPROF_HIST_PX wide) off the line's last bar, mapped through that bar's
+// line and σ so it lines up with the current bands. The line itself is
+// drawn (the centerline the bands are measured from).
+// The first SIGPROF_WARMUP bars (σ still ≈ 0 there) are left out of the
+// profile, and σ is floored at SIGPROF_SD_FLOOR_ATR × ATR(SIGPROF_ATR).
+const SIGPROF_Z           = 4;
+const SIGPROF_STEP        = 0.1;
+const SIGPROF_HEAT_ALPHA  = 0.5;
+const SIGPROF_HIST_PX     = 90;
+const SIGPROF_HIST_ALPHA  = 0.45;
+// The histogram starts hidden — just the updating bands; clicking the
+// bands' fill (anywhere between the outermost traded bands at that bar)
+// shows it, and clicking the fill or the histogram again hides it. Per anchor,
+// kept across the σ-space steps. SIGPROF_HIT_PAD px of slack for the click.
+const SIGPROF_HIT_PAD     = 4;
+const SIGPROF_WARMUP      = 5;
+const SIGPROF_SD_FLOOR_ATR = 0.5;
+const SIGPROF_ATR         = 14;
+// Fifth press: the σ-space liquidity vs volume profile — the '<' profile's
+// liquidity vs volume mode (LDIV_*) on the same σ bins: each bin's liquidity
+// is the mean volume per ATR of range of the bars through it (overlap in σ
+// weighted, shrunk by LIQ_PRIOR_VISITS bins' worth as in price), ranked
+// against its volume — orange where both rank high (heavy and defended at
+// that distance from the line), yellow where only liquidity does, faded
+// grey where only volume does. Same bands and histogram, colored by class,
+// opacity / length by the bin's score.
 // aVWAP fan — an aVWAP anchored at every candle across a span (hovered
 // candle → current bar, or a ','-marked range), each line growing to "now" or
 // stopping at the range's end. Every candle is classified by SIGNIFICANCE:
@@ -317,6 +354,9 @@ const LDIV_POS_RGB     = '255,220,50';
 const LDIV_BOTH_RGB    = '255,152,0';
 const LDIV_NEG_RGB     = '160,160,160';
 const LDIV_DIM_ALPHA   = 0.3;
+// Per-level classes (_liqVolBins), and their colors for the candle colorings.
+const LDIV_NONE = 0, LDIV_LIQ = 1, LDIV_VOL = 2, LDIV_BOTH = 3;
+export const LDIV_CLASS_RGB = [null, LDIV_POS_RGB, LDIV_NEG_RGB, LDIV_BOTH_RGB];
 const LDIV_ALPHA       = 0.45;
 // Wick map mode: a rejection map over the same levels as the profile. Each
 // bar's upper wick (high down to its body top) and lower wick (low up to its
@@ -754,6 +794,96 @@ class FanShapePrimitive {
   }
 }
 
+// The σ-space volume profile of a '.' / Shift+. anchor (see SIGPROF_*):
+// entry._sigProf = { bins, zMin, step, max } and entry._sigma (the line's
+// per-bar mean / σ), up to entry._toIdx; under the candles.
+class SigmaProfilePrimitive {
+  constructor(entry) {
+    this._entry = entry;
+    const renderer = { draw: target => this._draw(target) };
+    this._views = [{ renderer: () => renderer, zOrder: () => 'bottom' }];
+  }
+  attached({ chart, series, requestUpdate }) { this._chart = chart; this._series = series; this._request = requestUpdate; }
+  detached() { this._chart = this._series = this._request = null; }
+  paneViews() { return this._views; }
+  update() { this._request?.(); }
+
+  /** Whether chart-local (x, y) is on the bands' fill or the histogram, as
+   * last drawn. */
+  hitTest(x, y) {
+    const P = SIGPROF_HIT_PAD, h = this._hit;
+    if (h && x >= h.x0 - P && x <= h.x1 + P && y >= h.y0 - P && y <= h.y1 + P) return true;
+    // The fill: the column nearest x, within half a bar.
+    const cols = this._fillCols;
+    if (!cols?.length) return false;
+    let best = null;
+    for (const c of cols) if (!best || Math.abs(c[0] - x) < Math.abs(best[0] - x)) best = c;
+    return Math.abs(best[0] - x) <= Math.max(P, this._halfBar ?? 0) && y >= best[1] - P && y <= best[2] + P;
+  }
+
+  _draw(target) {
+    this._hit = null;
+    this._fillCols = null;
+    const e = this._entry, sp = e._sigProf, sg = e._sigma;
+    if (!this._chart || !this._series || !sp || !sg || !(sp.max > 0) || e._toIdx == null) return;
+    // Per bin: value (0 … 1 of the largest) and rgb + opacity scale — volume
+    // orange for the plain profile; the class colors for liquidity vs volume.
+    const lv = sp.lv;
+    const valOf = k => (lv ? Math.abs(lv.D[k]) : sp.bins[k]) / sp.max;
+    const rgbOf = k => (lv ? LDIV_CLASS_RGB[lv.cls[k]] : VP_RGB_DEFAULT);
+    const dimOf = k => (lv && lv.cls[k] === LDIV_VOL ? LDIV_DIM_ALPHA / LDIV_ALPHA : 1);
+    const ts = this._chart.timeScale(), range = ts.getVisibleLogicalRange();
+    if (!range) return;
+    const from = Math.max(e.anchorIdx, Math.floor(range.from) - 1), to = Math.min(e._toIdx, Math.ceil(range.to) + 1);
+    const toY = priceToYFn(this._series);
+    // Per visible bar: x, line, σ.
+    const cols = [];
+    for (let i = from; i <= to; i++) {
+      const x = ts.logicalToCoordinate(i), m = sg.mean(i), d = sg.sd(i);
+      if (x != null && !Number.isNaN(m) && d > 0) cols.push([x, m, d]);
+    }
+    const nb = sp.bins.length;
+    // The outermost drawn bins — the fill's vertical extent at each bar.
+    let kLo = -1, kHi = -1;
+    for (let k = 0; k < nb; k++) if (valOf(k) > 0 && rgbOf(k)) { if (kLo < 0) kLo = k; kHi = k; }
+    if (kLo < 0) return;
+    const zLo = sp.zMin + kLo * sp.step, zHi = sp.zMin + (kHi + 1) * sp.step;
+    this._halfBar = ts.options().barSpacing / 2;
+    this._fillCols = cols.map(([x, m, d]) => { const a = toY(m + zHi * d), b = toY(m + zLo * d); return [x, Math.min(a, b), Math.max(a, b)]; });
+    target.useMediaCoordinateSpace(({ context: ctx }) => {
+      // Heatmap cloud: one band per bin, following the line.
+      if (cols.length >= 2) {
+        for (let k = 0; k < nb; k++) {
+          const v = valOf(k), rgb = rgbOf(k);
+          if (!(v > 0) || !rgb) continue;
+          const z0 = sp.zMin + k * sp.step, z1 = z0 + sp.step;
+          const path = new Path2D();
+          cols.forEach(([x, m, d], j) => (j ? path.lineTo(x, toY(m + z1 * d)) : path.moveTo(x, toY(m + z1 * d))));
+          for (let j = cols.length - 1; j >= 0; j--) { const [x, m, d] = cols[j]; path.lineTo(x, toY(m + z0 * d)); }
+          path.closePath();
+          ctx.fillStyle = `rgba(${rgb},${(v * SIGPROF_HEAT_ALPHA * dimOf(k)).toFixed(3)})`;
+          ctx.fill(path);
+        }
+      }
+      // Sideways histogram off the line's last bar, through its line and σ
+      // (only once a click on the fill has shown it: e.sigHistShown).
+      if (!e.sigHistShown) return;
+      const xEnd = ts.logicalToCoordinate(e._toIdx), m = sg.mean(e._toIdx), d = sg.sd(e._toIdx);
+      if (xEnd == null || Number.isNaN(m) || !(d > 0)) return;
+      const yA = toY(m + zHi * d), yB = toY(m + zLo * d);
+      this._hit = { x0: xEnd, x1: xEnd + SIGPROF_HIST_PX, y0: Math.min(yA, yB), y1: Math.max(yA, yB) };
+      for (let k = 0; k < nb; k++) {
+        const v = valOf(k), rgb = rgbOf(k);
+        if (!(v > 0) || !rgb) continue;
+        const z0 = sp.zMin + k * sp.step;
+        const y0 = toY(m + (z0 + sp.step) * d), y1 = toY(m + z0 * d);
+        ctx.fillStyle = `rgba(${rgb},${(SIGPROF_HIST_ALPHA * dimOf(k)).toFixed(3)})`;
+        ctx.fillRect(xEnd, Math.min(y0, y1), v * SIGPROF_HIST_PX, Math.max(1, Math.abs(y1 - y0)));
+      }
+    });
+  }
+}
+
 // The '<' profile anchor's own aVWAP — and its other-side aVWAP — drawn
 // by ProfileLinePrimitive in every profile mode (their chart series stay
 // transparent) as a filled ribbon: at each point its thickness is the
@@ -826,6 +956,38 @@ function wickPeakColors(upper, lower) {
     if (ok && strict) out.set(b, C_WICK_PEAK);
   }
   return out;
+}
+
+/** Liquidity vs volume classes (see LDIV_*) from a volume histogram, its
+ * liquidity per bin and each bin's own-data share — any binning (price for
+ * '<', σ for the σ-space profile): { D, cls, pocK } as _liqVolBins. */
+function liqVolClassify(bins, L, own) {
+  const n = bins.length;
+  const idx = [];
+  for (let k = 0; k < n; k++) if (bins[k] > 0 && L[k] > 0) idx.push(k);
+  const rank = vals => {
+    const r = new Float64Array(n), o = [...idx].sort((x, y) => vals[x] - vals[y]);
+    o.forEach((k, j) => { r[k] = o.length > 1 ? j / (o.length - 1) : 0.5; });
+    return r;
+  };
+  const rL = rank(L), rV = rank(bins);
+  // Each level takes the strongest of three scores (each 0 … ½): yellow
+  // only where liquidity is in its top half, grey only where volume is,
+  // orange where both are and they agree.
+  const D = new Array(n).fill(0), cls = new Array(n).fill(LDIV_NONE);
+  let pocK = -1;
+  for (const k of idx) {
+    const liq = Math.max(0, rL[k] - Math.max(rV[k], 0.5));
+    const vol = Math.max(0, rV[k] - Math.max(rL[k], 0.5));
+    const both = Math.max(0, Math.min(rL[k], rV[k]) - 0.5 - Math.abs(rL[k] - rV[k]));
+    const top = Math.max(liq, vol, both);
+    if (!(top > 0)) continue;
+    if (both === top) { D[k] = both * own[k]; cls[k] = LDIV_BOTH; }
+    else if (liq > vol) { D[k] = liq * own[k]; cls[k] = LDIV_LIQ; }
+    else { D[k] = -vol * own[k]; cls[k] = LDIV_VOL; }
+    if (cls[k] === LDIV_LIQ && (pocK < 0 || D[k] > D[pocK])) pocK = k;
+  }
+  return { D, cls, pocK };
 }
 
 /** Rejection vs acceptance peak levels (VP_MODE_DIFF), as Map(bin → color):
@@ -1207,6 +1369,7 @@ export class DynamicVWAPEngine {
   _removeManualEntry(entry) {
     if (entry.profileLinePrim) { try { entry.vwap.detachPrimitive(entry.profileLinePrim); } catch (_) {} }
     if (entry.shapePrim) { try { entry.vwap.detachPrimitive(entry.shapePrim); } catch (_) {} }
+    if (entry.sigPrim) { try { entry.vwap.detachPrimitive(entry.sigPrim); } catch (_) {} }
     try { this._chart.removeSeries(entry.vwap); } catch (_) {}
     for (const band of entry.bands) {
       try { this._chart.removeSeries(band.upper); } catch (_) {}
@@ -1313,6 +1476,29 @@ export class DynamicVWAPEngine {
     };
   }
 
+  /** Liquidity vs volume per level (see LDIV_*) on a volume profile's bins:
+   * { D (each level's winning score, scaled by its own-data share — negative
+   * for volume-only), cls (LDIV_NONE / _LIQ / _VOL / _BOTH per level), pocK
+   * (the strongest liquidity-only level, or -1) }. */
+  _liqVolBins(anchorIdx, toIdx, priceMin, binSize, bins) {
+    const { L, own } = this._liquidityBins(anchorIdx, toIdx, priceMin, binSize, bins.length);
+    return liqVolClassify(bins, L, own);
+  }
+
+
+  /** Liquidity vs volume profile of [anchorIdx, toIdx] on numBins levels over
+   * its price range (candle colorings): { priceMin, binSize, D, cls, max
+   * (the largest |D|), rgb (per class) } — or null. */
+  liqVolProfile(anchorIdx, toIdx, numBins) {
+    const hist = this._vpHistogram(anchorIdx, toIdx, numBins);
+    if (!hist) return null;
+    const { priceMin, binSize, bins } = hist;
+    const { D, cls } = this._liqVolBins(anchorIdx, toIdx, priceMin, binSize, bins);
+    let max = 0;
+    for (const d of D) if (Math.abs(d) > max) max = Math.abs(d);
+    return { priceMin, binSize, D, cls, max, rgb: LDIV_CLASS_RGB };
+  }
+
   /** Rejection vs acceptance profile of [anchorIdx, toIdx] on numBins levels
    * over its price range (candle colorings): { priceMin, binSize, D, posMax,
    * negMax } — the largest positive D and largest |negative| D — or null. */
@@ -1397,33 +1583,11 @@ export class DynamicVWAPEngine {
       diffBins: D, diffPosRgb: pos, diffNegRgb: neg, diffAlpha: alpha,
     });
     if (ldiv) {
-      // Liquidity vs volume (VP_MODE_LDIV): liquidity rank − volume rank, over traded levels.
-      const { L, own } = this._liquidityBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
-      const idx = [];
-      for (let k = 0; k < bins.length; k++) if (bins[k] > 0 && L[k] > 0) idx.push(k);
-      const rank = vals => {
-        const r = new Float64Array(bins.length), o = [...idx].sort((x, y) => vals[x] - vals[y]);
-        o.forEach((k, j) => { r[k] = o.length > 1 ? j / (o.length - 1) : 0.5; });
-        return r;
-      };
-      const rL = rank(L), rV = rank(bins);
-      // Each level takes the strongest of three scores (each 0 … ½): yellow
-      // only where liquidity is in its top half, grey only where volume
-      // is, orange where both are and they agree.
-      const D = new Array(bins.length).fill(0), colors = new Array(bins.length).fill(null);
-      let pocK = -1;
-      for (const k of idx) {
-        const blue = Math.max(0, rL[k] - Math.max(rV[k], 0.5));
-        const orange = Math.max(0, rV[k] - Math.max(rL[k], 0.5));
-        const white = Math.max(0, Math.min(rL[k], rV[k]) - 0.5 - Math.abs(rL[k] - rV[k]));
-        const top = Math.max(blue, orange, white);
-        if (!(top > 0)) continue;
-        if (white === top) { D[k] = white * own[k]; colors[k] = LDIV_BOTH_RGB; }
-        else D[k] = (blue > orange ? blue : -orange) * own[k];
-        if (!colors[k] && D[k] > 0 && (pocK < 0 || D[k] > D[pocK])) pocK = k;
-      }
+      // Liquidity vs volume (VP_MODE_LDIV).
+      const { D, cls, pocK } = this._liqVolBins(anchorIdx, toIdx, priceMin, binSize, bins);
       return { ...ownBars(D, LDIV_POS_RGB, LDIV_NEG_RGB, LDIV_ALPHA,
-        pocK >= 0 ? priceMin + (pocK + 0.5) * binSize : null), diffColors: colors, diffNegAlpha: LDIV_DIM_ALPHA };
+        pocK >= 0 ? priceMin + (pocK + 0.5) * binSize : null),
+        diffColors: cls.map(c => (c === LDIV_BOTH ? LDIV_BOTH_RGB : null)), diffNegAlpha: LDIV_DIM_ALPHA };
     }
     if (liq) {
       // Liquidity (VP_MODE_LIQ): drawn through the diff bars (all positive).
@@ -1520,18 +1684,23 @@ export class DynamicVWAPEngine {
     // anchor (or a ranged one's end), cycles its display mode, and past the
     // last mode removes it — as Shift+K / Shift+J cycle the candle coloring
     // back to standard. The next press starts the cycle over.
-    // '.' cycles plain → + stdev bands → fan shape by σ zone → removed.
+    // '.' cycles plain → + stdev bands → fan shape by σ zone → σ-space
+    // volume profile → σ-space liquidity vs volume → removed.
     if (kind === 'plain') {
       const entry = this._manualEntryAt(anchorIdx, 'plain') ?? this._manualEntryAt(anchorIdx, 'stdev');
       if (entry?.kind === 'plain') { this._addStdevBands(entry); return 'cycled'; }
-      if (entry && !entry.shape) { this._showFanShape(entry); return 'cycled'; }
+      if (entry && !entry.shape && !entry.sigProf) { this._showFanShape(entry); return 'cycled'; }
+      if (entry && !entry.sigProf) { this._showSigmaProfile(entry); return 'cycled'; }
+      if (entry && !entry.sigLiq) { this._showSigmaLiq(entry); return 'cycled'; }
       if (entry) { this._dropManualEntry(entry); return false; }
     } else if (kind === 'avg') {
       // Shift+. cycles average aVWAP → + its stdev bands → fan shape by σ
-      // zone → removed.
+      // zone → σ-space volume profile → σ-space liquidity vs volume → removed.
       const entry = this._manualEntryAt(anchorIdx, kind);
-      if (entry && !entry.bands.length && !entry.shape) { this._addStdevBands(entry); return 'cycled'; }
-      if (entry && !entry.shape) { this._showFanShape(entry); return 'cycled'; }
+      if (entry && !entry.bands.length && !entry.shape && !entry.sigProf) { this._addStdevBands(entry); return 'cycled'; }
+      if (entry && !entry.shape && !entry.sigProf) { this._showFanShape(entry); return 'cycled'; }
+      if (entry && !entry.sigProf) { this._showSigmaProfile(entry); return 'cycled'; }
+      if (entry && !entry.sigLiq) { this._showSigmaLiq(entry); return 'cycled'; }
       if (entry) { this._dropManualEntry(entry); return false; }
     } else {
       const entry = this._manualEntryAt(anchorIdx, kind);
@@ -1636,6 +1805,78 @@ export class DynamicVWAPEngine {
     entry.shapePrim = new FanShapePrimitive(entry);
     entry.vwap.attachPrimitive(entry.shapePrim);
     this._renderManualEntry(entry.anchorIdx, entry);
+  }
+
+  /** Fourth '.' / Shift+.: the σ-space volume profile in place of the fan
+   * cloud (see SIGPROF_*); the line shows again (hidden in the fan cloud),
+   * as the centerline its bands are measured from. */
+  _showSigmaProfile(entry) {
+    if (entry.shapePrim) { try { entry.vwap.detachPrimitive(entry.shapePrim); } catch (_) {} }
+    entry.shapePrim = null;
+    entry.shape = false;
+    entry.sigProf = true;
+    entry.vwap.applyOptions({ color: entry.avgOnly ? C_AVG_ANCHOR : C_MANUAL });
+    entry.sigPrim = new SigmaProfilePrimitive(entry);
+    entry.vwap.attachPrimitive(entry.sigPrim);
+    this._renderManualEntry(entry.anchorIdx, entry);
+  }
+
+  /** Click on a σ-space profile's fill or histogram (chart-local x, y):
+   * show its histogram (hidden by default), or hide it again. True if one was hit. */
+  toggleSigmaHistAt(x, y) {
+    for (const entry of Object.values(this._manualSeries)) {
+      if (!entry.sigPrim?.hitTest(x, y)) continue;
+      entry.sigHistShown = !entry.sigHistShown;
+      entry.sigPrim.update();
+      return true;
+    }
+    return false;
+  }
+
+  /** Fifth '.' / Shift+.: the σ-space liquidity vs volume profile. */
+  _showSigmaLiq(entry) {
+    entry.sigLiq = true;
+    this._renderManualEntry(entry.anchorIdx, entry);
+  }
+
+  /** The σ-space volume profile of [anchorIdx, toIdx] around entry._sigma
+   * (see SIGPROF_*): { bins, zMin, step, max } — with entry.sigLiq also lv
+   * ({ D, cls } liquidity vs volume per bin) and max the largest |D|. */
+  _sigmaProfile(entry, anchorIdx, toIdx) {
+    const nb = Math.round(2 * SIGPROF_Z / SIGPROF_STEP), zMin = -SIGPROF_Z;
+    const bins = new Float64Array(nb), atr = this._getAtr(SIGPROF_ATR), sg = entry._sigma;
+    const liq = !!entry.sigLiq, lNum = new Float64Array(nb), lDen = new Float64Array(nb);
+    let lSum = 0, lW = 0;
+    for (let i = anchorIdx + SIGPROF_WARMUP; i <= toIdx; i++) {
+      const v = this._volumes[i], m = sg.mean(i);
+      let d = sg.sd(i);
+      if (!(v > 0) || Number.isNaN(m) || Number.isNaN(d)) continue;
+      if (!Number.isNaN(atr[i])) d = Math.max(d, SIGPROF_SD_FLOOR_ATR * atr[i]);
+      if (!(d > 0)) continue;
+      let za = (this._lows[i] - m) / d, zb = (this._highs[i] - m) / d;
+      // Ranges floored at one bin (dojis), centered — as the price profiles.
+      if (zb - za < SIGPROF_STEP) { const c = (za + zb) / 2; za = c - SIGPROF_STEP / 2; zb = c + SIGPROF_STEP / 2; }
+      // Liquidity: volume per ATR of range (see LIQ_*), range floored likewise.
+      const rng = Math.max(this._highs[i] - this._lows[i], SIGPROF_STEP * d);
+      const L = liq ? v / (rng / (Number.isNaN(atr[i]) ? rng : atr[i])) : 0;
+      const k0 = Math.max(0, Math.floor((za - zMin) / SIGPROF_STEP)), k1 = Math.min(nb - 1, Math.floor((zb - zMin) / SIGPROF_STEP));
+      for (let k = k0; k <= k1; k++) {
+        const lo = zMin + k * SIGPROF_STEP, ov = Math.min(lo + SIGPROF_STEP, zb) - Math.max(lo, za);
+        if (!(ov > 0)) continue;
+        bins[k] += v * ov / (zb - za);
+        if (liq) { lNum[k] += L * ov; lDen[k] += ov; lSum += L * ov; lW += ov; }
+      }
+    }
+    let max = 0;
+    for (const b of bins) if (b > max) max = b;
+    if (!liq) return { bins, zMin, step: SIGPROF_STEP, max };
+    const mean = lW > 0 ? lSum / lW : 0, prior = LIQ_PRIOR_VISITS * SIGPROF_STEP;
+    const L = Array.from(lNum, (x, k) => (lDen[k] > 0 ? (x + prior * mean) / (lDen[k] + prior) : 0));
+    const own = Array.from(lDen, x => x / (x + prior));
+    const lv = liqVolClassify(Array.from(bins), L, own);
+    let lmax = 0;
+    for (const x of lv.D) if (Math.abs(x) > lmax) lmax = Math.abs(x);
+    return { bins, zMin, step: SIGPROF_STEP, max: lmax, lv };
   }
 
   /**
@@ -2632,8 +2873,8 @@ export class DynamicVWAPEngine {
       }
       entry.vwap.setData(data);
     } else entry.vwap.setData(this._vwapLine(anchorIdx, toIdx));
-    if (entry.shape) {
-      if (!entry.avgOnly) this._fillAvgVwap(entry, anchorIdx, toIdx);   // (avgOnly filled it above)
+    if (entry.shape || entry.sigProf) {
+      if (entry.shape && !entry.avgOnly) this._fillAvgVwap(entry, anchorIdx, toIdx);   // fan edges (avgOnly filled it above)
       entry._toIdx = toIdx;
       // The line's per-bar mean / σ, for the zones.
       if (entry.avgOnly) entry._sigma = { mean: i => entry._avg[i], sd: i => entry._avgSd[i] };
@@ -2641,7 +2882,9 @@ export class DynamicVWAPEngine {
         const c = this._stdevCloudData(anchorIdx, toIdx);
         entry._sigma = { mean: i => (i < c.from || i > c.to ? NaN : c.vwap[i - c.from]), sd: i => (i < c.from || i > c.to ? NaN : c.sd[i - c.from]) };
       }
+      if (entry.sigProf) entry._sigProf = this._sigmaProfile(entry, anchorIdx, toIdx);
       entry.shapePrim?.update();
+      entry.sigPrim?.update();
     }
     if (entry.bands.length && entry.avgOnly) {
       for (const b of entry.bands) {
