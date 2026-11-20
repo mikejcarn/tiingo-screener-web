@@ -2974,7 +2974,6 @@ export class DynamicVWAPEngine {
         // 'M' lines only — nothing more to draw.
       } else if (payload) {
         if (entry.vpMode === VP_MODE_BOTH) {
-          payload.lvnPoc = this._vpLvnPoc(payload.lo, payload.bs, payload.bins, MANUAL_VP_NODE_WINDOW);
           payload.dualHistogram = true;
         } else if (entry.vpMode === VP_MODE_CONNECT) {
           // Connected: no histogram and no floating POC lines — the aVWAPs
@@ -2982,10 +2981,20 @@ export class DynamicVWAPEngine {
           payload.showHistogram = false;
           payload.poc = null;
         }
+        // POC lines only where they read as one clear level: the normal and
+        // the liquidity profiles. Elsewhere (LVN, both, wick map, rejection,
+        // liquidity vs volume) they cluttered the chart more than they helped.
+        if (entry.vpMode !== VP_MODE_NORMAL && entry.vpMode !== VP_MODE_LIQ) {
+          payload.poc = null;
+          payload.lvnPoc = null;
+        }
         if (entry.heat) {
-          // Ctrl+, — the same mode as a heatmap: full-width bands, value as opacity.
+          // Ctrl+, — the same mode as a heatmap: full-width bands, value as
+          // opacity; no POC lines (the bands themselves show the peaks).
           payload.barStyle = 'heatmap';
           payload.heatmapOpacity = MANUAL_HEAT_OPACITY;
+          payload.poc = null;
+          payload.lvnPoc = null;
         }
         const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
         const endTime   = (this._bars[toIdx].Date     || this._bars[toIdx].date     || '').slice(0, 10);
