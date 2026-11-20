@@ -380,7 +380,7 @@ const C_WICK_PEAK     = 'rgba(255,255,255,1)';
 // average wick share): positive where price is pushed away more than usual
 // (relative rejection), negative where it holds more than usual (relative
 // acceptance), weighted by how much traded there — thin levels stay near 0.
-// D sums to 0 over the profile; it's also exactly (total body volume / all
+// D sums to 0 over the profile (before the rejection-area filter below); it's also exactly (total body volume / all
 // volume) × (wick share − body share). Only the rejection side is drawn as
 // bars: off-white for D > 0, longest = full width (DIFF_ALPHA); the
 // acceptance side shows on the aVWAPs. The aVWAPs follow: off-white / orange by sign, thicker the
@@ -388,6 +388,22 @@ const C_WICK_PEAK     = 'rgba(255,255,255,1)';
 // pure white / bright orange.
 const DIFF_ALPHA    = 0.45;
 const DIFF_PEAK_MIN = 0.25;
+// Rejection area: only the relevant rejection levels are kept, value-area
+// style. The rejection side (D > 0) is split into zones — contiguous levels,
+// grouped across gaps of up to DIFF_ZONE_GAP of the levels (so a level split
+// by a one-bin dip counts as one) — each scored by its area (its summed D:
+// its total excess wick share). Zones are taken largest first until they
+// hold DIFF_KEEP_SHARE of all the rejection; the rest — the minor cuts — are
+// zeroed. Adaptive: one dominant zone keeps few, evenly spread rejection
+// keeps more. The acceptance side (D < 0) is untouched.
+// Then a length cut, drawn not computed: in the profile's bars / heatmap
+// the surviving rejection levels at or under DIFF_MIN_LENGTH of the longest
+// one fade to DIFF_FADED_ALPHA, so the long bars stand out (D itself, and
+// the candle colorings / aVWAP coding that read it, keep them).
+const DIFF_ZONE_GAP   = 0.01;
+const DIFF_KEEP_SHARE = 0.7;
+export const DIFF_MIN_LENGTH = 0.5;
+const DIFF_FADED_ALPHA = 0.12;
 // When a profile is paired ('<'), its aVWAP — and a second aVWAP
 // anchored at the range's "other side" extremum (see _otherSideExtremum) —
 // are drawn by ProfileLinePrimitive, coded like the profile's histogram;
@@ -990,6 +1006,29 @@ function liqVolClassify(bins, L, own) {
   return { D, cls, pocK };
 }
 
+/** The rejection-area filter (see DIFF_KEEP_SHARE), in place on D: zeroes
+ * the positive levels outside the largest zones holding DIFF_KEEP_SHARE of
+ * all positive D. */
+function filterRejectionArea(D) {
+  const n = D.length, gap = Math.max(1, Math.round(n * DIFF_ZONE_GAP));
+  const zones = [];
+  let cur = null, lastPos = -Infinity;
+  for (let k = 0; k < n; k++) {
+    if (!(D[k] > 0)) continue;
+    if (!cur || k - lastPos - 1 > gap) zones.push(cur = { bins: [], area: 0 });
+    cur.bins.push(k); cur.area += D[k]; lastPos = k;
+  }
+  const total = zones.reduce((t, z) => t + z.area, 0);
+  if (!(total > 0)) return D;
+  zones.sort((x, y) => y.area - x.area);
+  let kept = 0;
+  for (const z of zones) {
+    if (kept >= DIFF_KEEP_SHARE * total) for (const k of z.bins) D[k] = 0;
+    kept += z.area;
+  }
+  return D;
+}
+
 /** Rejection vs acceptance peak levels (VP_MODE_DIFF), as Map(bin → color):
  * local maxima of D (≥ DIFF_PEAK_MIN of the largest D) pure white, local
  * minima (≤ DIFF_PEAK_MIN of the most negative) bright orange — each at
@@ -1436,14 +1475,15 @@ export class DynamicVWAPEngine {
   }
 
   /** Rejection vs acceptance per level (see DIFF_*) on the given bins:
-   * { total (volume per level), D (wick share − volume share) }. */
+   * { total (volume per level), D (wick share − volume share), its
+   * rejection side cut to the rejection area (see DIFF_KEEP_SHARE) }. */
   _rejectionBins(anchorIdx, toIdx, priceMin, binSize, numBins) {
     const { upper, lower, body } = this._wickHistogram(anchorIdx, toIdx, priceMin, binSize, numBins);
     let W = 0, V = 0;
     const wickV = Array.from(upper, (u, b) => u + lower[b]);
     const total = wickV.map((w, b) => w + body[b]);
     for (let b = 0; b < numBins; b++) { W += wickV[b]; V += total[b]; }
-    const D = total.map((v, b) => (W > 0 ? wickV[b] / W : 0) - (V > 0 ? v / V : 0));
+    const D = filterRejectionArea(total.map((v, b) => (W > 0 ? wickV[b] / W : 0) - (V > 0 ? v / V : 0)));
     return { total, D };
   }
 
@@ -1501,7 +1541,9 @@ export class DynamicVWAPEngine {
 
   /** Rejection vs acceptance profile of [anchorIdx, toIdx] on numBins levels
    * over its price range (candle colorings): { priceMin, binSize, D, posMax,
-   * negMax } — the largest positive D and largest |negative| D — or null. */
+   * negMax, longMin } — the largest positive D, the largest |negative| D, and
+   * the D a rejection level must beat to be a long (unfaded) bar (see
+   * DIFF_MIN_LENGTH) — or null. */
   rejectionProfile(anchorIdx, toIdx, numBins) {
     const hist = this._vpHistogram(anchorIdx, toIdx, numBins);
     if (!hist) return null;
@@ -1509,7 +1551,7 @@ export class DynamicVWAPEngine {
     const { D } = this._rejectionBins(anchorIdx, toIdx, priceMin, binSize, numBins);
     let posMax = 0, negMax = 0;
     for (const d of D) { if (d > posMax) posMax = d; if (-d > negMax) negMax = -d; }
-    return { priceMin, binSize, D, posMax, negMax };
+    return { priceMin, binSize, D, posMax, negMax, longMin: DIFF_MIN_LENGTH * posMax };
   }
 
   /** Point of Control + Value Area bounds — same expand-from-the-peak-bin
@@ -1600,11 +1642,13 @@ export class DynamicVWAPEngine {
     if (diff) {
       // Rejection vs acceptance (VP_MODE_DIFF): D = wick share − volume share per level.
       const { total, D } = this._rejectionBins(anchorIdx, toIdx, priceMin, binSize, MANUAL_VP_NUM_BINS);
+      const dMax = Math.max(0, ...D);
+      const alphas = D.map(d => (d > 0 && d <= DIFF_MIN_LENGTH * dMax ? DIFF_FADED_ALPHA : null));
       return {
         lo: priceMin, bs: binSize, bins: total, fillOpacity: MANUAL_VP_FILL_OPACITY,
         showHistogram: false, directionalColor: false, barStyle: 'bars', poc: ownPoc(D), pocRgb: WICK_RGB,
         heatmapContrast: 1, heatmapEmphasis: 'hvn', heatmapLocality: 0, nodeWindow: MANUAL_VP_NODE_WINDOW,
-        diffBins: D, diffPosRgb: WICK_RGB, diffAlpha: DIFF_ALPHA,
+        diffBins: D, diffPosRgb: WICK_RGB, diffAlpha: DIFF_ALPHA, diffAlphas: alphas,
       };
     }
     if (wick) {

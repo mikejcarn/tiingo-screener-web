@@ -9,7 +9,7 @@
  * lvnPoc, vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
  * heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality,
  * nodeWindow, histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha, diffBins, diffPosRgb,
- * diffNegRgb, diffColors, diffAlpha, diffNegAlpha, pocRgb (overrides the POC line's color) } at the
+ * diffNegRgb, diffColors, diffAlpha, diffNegAlpha, diffAlphas, pocRgb (overrides the POC line's color) } at the
  * anchor's start and end bar, same
  * start/end convention as the other zone series.
  * lo/bs are the histogram's price origin and bin size, bins the per-bin
@@ -106,7 +106,7 @@ export class VolumeProfileRenderer {
       showHistogram, dualHistogram, directionalColor, barStyle,
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
       histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha,
-      diffBins, diffPosRgb, diffNegRgb, diffColors, diffAlpha, diffNegAlpha, pocRgb,
+      diffBins, diffPosRgb, diffNegRgb, diffColors, diffAlpha, diffNegAlpha, diffAlphas, pocRgb,
     } = first.originalData;
     if (lo == null || bs == null || !bins || !bins.length) return;
 
@@ -273,7 +273,8 @@ export class VolumeProfileRenderer {
     // maxWidth — positive bars in diffPosRgb, negative in diffNegRgb; a side
     // without a color isn't drawn. diffColors (optional, per level) overrides
     // a level's color with its own rgb; diffNegAlpha (optional) gives the
-    // negative bars their own opacity (scaled likewise in the heatmap).
+    // negative bars their own opacity (scaled likewise in the heatmap);
+    // diffAlphas (optional, per level) a level its own opacity.
     if (diffBins) {
       let dMax = 0;
       for (const d of diffBins) dMax = Math.max(dMax, Math.abs(d));
@@ -288,12 +289,13 @@ export class VolumeProfileRenderer {
           const top = Math.min(yLo, yHi) * vr, h = Math.max(Math.abs(yLo - yHi) * vr, vr);
           if (barStyle === 'heatmap') {
             // Heatmap style: full-width bands, |value| as opacity.
-            const k = !own && d < 0 ? aNeg / a : 1;
+            const k = diffAlphas?.[i] != null ? diffAlphas[i] / a : !own && d < 0 ? aNeg / a : 1;
             ctx.fillStyle = `rgba(${own || (d > 0 ? diffPosRgb : diffNegRgb)},${Math.abs(d) / dMax * (heatmapOpacity ?? 0.85) * k})`;
             ctx.fillRect(x0, top, x1 - x0, h);
             continue;
           }
-          ctx.fillStyle = own ? `rgba(${own},${a})` : d > 0 ? posFill : negFill;
+          if (diffAlphas?.[i] != null) ctx.fillStyle = `rgba(${own || (d > 0 ? diffPosRgb : diffNegRgb)},${diffAlphas[i]})`;
+          else ctx.fillStyle = own ? `rgba(${own},${a})` : d > 0 ? posFill : negFill;
           ctx.fillRect(x0, top, Math.abs(d) / dMax * maxWidth, h);
         }
       }
