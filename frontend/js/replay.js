@@ -659,6 +659,10 @@ function _wireKeys() {
     // one under the mouse), each mode computed from that range alone.
     // Shift+J — the same modes drawn sliced: each candle filled price by
     // price (see chart.js CandleSlicePrimitive).
+    // Alt+Shift+K in the 'lambda' coloring — flip its long / short reading.
+    if ((e.key === 'K' || e.key === 'k') && e.altKey && e.shiftKey && !ctrl && chart.flipLambdaSide()) {
+      e.preventDefault();
+    }
     if ((e.key === 'K' || e.key === 'J') && !ctrl && !e.altKey) {
       e.preventDefault();
       const sliced = e.key === 'J';

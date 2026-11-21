@@ -26,6 +26,7 @@
 
 import { DynamicVWAPEngine, DIFF_MIN_LENGTH } from './avwap_replay.js';
 import { buildQqemod } from './qqemod.js';
+import { computeLambdaRatio, detectLambdaSide, LAMBDA_COLORS, LAMBDA_BAND_COLORS } from './lambda_ratio.js';
 import { OBZoneSeries } from './ob_zone_series.js';
 import { FVGZoneSeries } from './fvg_zone_series.js';
 import { GapZoneSeries } from './gap_zone_series.js';
@@ -74,7 +75,25 @@ const C_DOWN = 'rgba(239,83,80,1)';
 //              transparency (CANDLE_VOL_ALPHA_MIN) as ratio → 0; above it it brightens to full volume orange at
 //              CANDLE_RELVOL_FULL×. Black only for a bar with genuinely zero
 //              volume. Candles before the anchor stay standard.
-const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit', 'reject', 'liqvol', 'qqemod'];
+const CANDLE_MODES        = ['standard', 'sigma', 'relvol', 'vpsplit', 'reject', 'liqvol', 'qqemod', 'lambda'];
+// 'lambda' — pullback quality vs the preceding push, from the anchor
+// (lambda_ratio.js): each pullback bar by its (speed ratio, volume ratio)
+// quadrant — quiet purple, absorbed teal, thin orange, selling pressure red;
+// push bars recessive grey, too-early-to-read pullback bars hollow light
+// grey, everything after the anchor's extreme is taken out hollow dark grey.
+// Long from a valley anchor, short from a peak (auto; Alt+Shift+K flips).
+// Down bars filled solid, up bars at LAMBDA_UP_ALPHA; border / wick opaque.
+// The anchor's aVWAP is drawn dashed; pullback bars touching its band (low
+// within ½ ATR, no close through it) switch to the bright σ palette — quiet
+// aqua, absorbed neon green (the ideal pullback), thin crimson, pressure
+// magenta (LAMBDA_BAND_COLORS).
+// Sliced (Shift+J): a what-if — each price in the quadrant the bar would
+// have had closing there, so the edge inside a candle is the price where the
+// pullback flips from slow to fast.
+const LAMBDA_DOWN_ALPHA = 0.9;
+const LAMBDA_UP_ALPHA   = 0.45;
+const LAMBDA_PUSH_ALPHA = [0.2, 0.5];      // [down, up] push-bar fills — recessive
+const C_LAMBDA_VWAP     = 'rgba(200,200,200,0.55)';
 // 'vpsplit' — the Volume Profile's "Both" split on the candles: the close's
 // level vs half the range POC's volume — orange (HVN side) above, LVN indigo
 // below, opacity rising with distance from that midpoint (CANDLE_SPLIT_ALPHA_MIN
@@ -483,6 +502,8 @@ export class ChartManager {
     this._bars = bars;
     this._volCum = null;
     this._qqe = null;   // 'qqemod' candle state, built on first use per load
+    this._lambdaCache = null;   // 'lambda' candle mode, per anchor / side
+    this._lambdaFlip  = null;   // Alt+Shift+K side override { a, side }
     this._candleRefIdx = null;   // σ-mode anchor bar — bars changed, drop it
     this._candleEndIdx = null;   // ranged coloring's end bar (',' then Shift+K)
     this._N    = bars.length;
@@ -738,6 +759,7 @@ export class ChartManager {
     this._revealPoc(n);
     this._revealDivMarkers(n);
     this._revealDivLines(n);
+    this._revealLambdaOverlay();
   }
 
   // ── Segment helpers ──────────────────────────────────────────────────────
@@ -977,10 +999,10 @@ export class ChartManager {
         overlayData.push(entry);
       }
     }
-    markers.sort((a, b)     => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     overlayData.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     // v5 moved markers out of the series API into a plugin, created once
     // per candle series (see _init) and fed the full marker list here.
+    markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     this._candleMarkers.setMarkers(markers);
     this._divCandleSeries.setData(overlayData);
   }
@@ -1190,6 +1212,7 @@ export class ChartManager {
     const top = this._candleEndIdx != null ? Math.min(this._candleEndIdx, n) : n;
     // Shift+J slices: set below per mode when sliced (CandleSlicePrimitive).
     this._candleSlice = null;
+    this._lambda = null;   // set by the 'lambda' mode below, read by _revealLambdaOverlay
     // A profile-based slice colorer: price → its level in a CANDLE_SLICE_BINS
     // profile of [a, top] → levelColor(share of the POC, is the POC).
     const vpSlices = (a, levelColor) => {
@@ -1394,8 +1417,75 @@ export class ChartManager {
         return { ...this._volumeRampBody(vol, avg), wick: e.close >= e.open ? C_UP : C_DOWN };
       };
     }
+    if (this._candleMode === 'lambda') {
+      const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
+      if (a == null || a > n) return null;
+      const lr = this._lambdaFor(a);
+      this._lambda = { lr, a, top };
+      // band: the bar touches the aVWAP band → the bright palette.
+      const rgba = (q, al, band) => `rgba(${(band && LAMBDA_BAND_COLORS[q] || LAMBDA_COLORS[q]).join(',')},${al})`;
+      const fillOf = (q, up, band) => q === 'forming' || q === 'broken' ? 'rgba(0,0,0,0)'
+        : q === 'push' ? rgba(q, LAMBDA_PUSH_ALPHA[up ? 1 : 0])
+        : rgba(q, up ? LAMBDA_UP_ALPHA : LAMBDA_DOWN_ALPHA, band);
+      const edgeOf = (q, band) => rgba(q, q === 'push' ? 0.85 : 1, band);
+      if (this._candleSliced) this._candleSlice = {
+        from: a, to: top,
+        colorAt: (i, p) => { const w = lr.whatIf(i, p); return w ? fillOf(w.quadrant, false, w.atBand) : null; },
+        wickAt: (i, p) => { const w = lr.whatIf(i, p); return w ? edgeOf(w.quadrant, w.atBand) : null; },
+        edgeAt: i => { const r = lr.out[i - a]; return r ? edgeOf(r.quadrant, r.atBand) : null; },
+      };
+      return (i, e) => {
+        if (i < a || i > top) return null;
+        const r = lr.out[i - a];
+        if (!r) return null;
+        const edge = edgeOf(r.quadrant, r.atBand);
+        return { fill: fillOf(r.quadrant, e.close >= e.open, r.atBand), edge, wick: edge };
+      };
+    }
     return null;
   }
+
+  /** computeLambdaRatio from anchor a, cached per load / anchor / side (it
+   * runs over the whole history — every bar as-of — so replay just slices). */
+  _lambdaFor(a) {
+    const side = this._lambdaFlip?.a === a ? this._lambdaFlip.side : detectLambdaSide(this._bars, a);
+    const key = `${a}|${side}`;
+    if (this._lambdaCache?.key !== key) this._lambdaCache = { key, lr: computeLambdaRatio(this._bars, a, side) };
+    return this._lambdaCache.lr;
+  }
+
+  /** Alt+Shift+K in the 'lambda' mode: read the anchor as the other side
+   * (long ↔ short). Returns false outside the mode. */
+  flipLambdaSide() {
+    if (this._candleMode !== 'lambda' || !this._lambda) return false;
+    const a = this._lambda.a;
+    this._lambdaFlip = { a, side: this._lambda.lr.side === 'long' ? 'short' : 'long' };
+    if (this._curN >= 0) this.reveal(this._curN);
+    return true;
+  }
+
+  /** The 'lambda' mode's anchor aVWAP (dashed). */
+  _revealLambdaOverlay() {
+    const L = this._lambda;
+    if (!L) {
+      if (this._lambdaLine) { this._chart.removeSeries(this._lambdaLine); this._lambdaLine = null; }
+      return;
+    }
+    if (!this._lambdaLine) this._lambdaLine = this._chart.addSeries(LightweightCharts.LineSeries, {
+      color: C_LAMBDA_VWAP, lineWidth: 1, lineStyle: 2,
+      lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+    });
+    const data = [];
+    for (let i = L.a; i <= L.top; i++) {
+      const v = L.lr.vwap[i - L.a];
+      if (!Number.isNaN(v)) data.push({ time: (this._bars[i].Date || this._bars[i].date || '').slice(0, 10), value: v });
+    }
+    this._lambdaLine.setData(data);
+  }
+
+
+
+
 
   /** Body color for a volume-like value vs its average ('relvol'): below average → grey + transparent (squared), average →
    * opaque medium orange, CANDLE_RELVOL_FULL× → full volume orange; black
