@@ -399,7 +399,7 @@ function _wireControls() {
     if (!chart || !N) return;
 
     // e.code (physical key), not e.key, for the period key: e.altKey makes
-    // it the aVWAP fan, e.ctrlKey / e.metaKey the Volume-Profile-shaded fan.
+    // it the aVWAP fan, e.ctrlKey / e.metaKey the ranked fan.
     // Undo: Shift+X (capital X — lowercase letters start a ticker search in
     // browse.js, capitals are this app's single-key commands) or Ctrl+Z.
     if ((e.key === 'X' && !e.ctrlKey && !e.metaKey && !e.altKey) || (e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey))) {
@@ -497,15 +497,15 @@ function _wireControls() {
     // the current bar (growing to "now"), weighted by swing significance;
     // after ',' it fans across the marked range instead, every line
     // stopping at the range's end.
-    // Ctrl+. — the same full set as one Volume-Profile-shaded fan: volume
-    // orange, each line bright through heavily traded price levels of the
-    // span and faint through thin ones (',' first for a range).
+    // Ctrl+. — the same full set ranked by the max-volume / max-wick scores:
+    // the strongest lines solid and labelled, the rest faint context
+    // (',' first for a range).
     // Either again over a fan's first anchor (or a ranged fan's end) cycles
     // its coloring instead of making another.
     if (e.code === 'Period' && (e.altKey || e.ctrlKey || e.metaKey) && !(e.altKey && (e.ctrlKey || e.metaKey))) {
       e.preventDefault();
       if (_lastChartX == null) return;
-      const kind = e.altKey ? 'sig' : 'vp';
+      const kind = e.altKey ? 'sig' : 'rank';
       if (_rangeStartIdx != null) {
         chart.createRangedFanAtX(_rangeStartIdx, _lastChartX, kind);
         _rangeStartIdx = null;
@@ -556,9 +556,12 @@ function _wireControls() {
       return;
     }
     // Plain click on a σ-space profile's fill or histogram ('.' / Shift+.):
-    // show its histogram (hidden by default), or hide it again.
+    // show its histogram (hidden by default), or hide it again; else on a
+    // Ctrl+. ranked fan: toggle its support / resistance coloring.
     const moved = _pressAt && Math.hypot(e.clientX - _pressAt.x, e.clientY - _pressAt.y) > 4;
-    if (!moved) chart.toggleSigmaHistAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (moved) return;
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    if (!chart.toggleSigmaHistAt(cx, cy)) chart.toggleFanSrAt(cx, cy);
   });
 
   window.addEventListener('mousemove', (e) => {

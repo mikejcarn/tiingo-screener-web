@@ -88,6 +88,31 @@ const SLOPE_ALPHA_MIN_DEFAULT = 0.15;
 
 // Manually placed (click-to-anchor) aVWAP — amber, distinct from all auto anchors
 const C_MANUAL = 'rgba(255,193,7,0.95)';
+// Last steps of the '.' / Shift+. cycles — max-volume and max-wick
+// aVWAPs. Of the lines anchored at every candle from the anchor up to the
+// current bar (the aVWAPs for '.', the Alt+. fan's lines; the average
+// aVWAPs for Shift+., its 'avg' mode lines), two are drawn alongside the
+// anchor's own line (kept as the main line, its candle marked):
+//   max volume — the line crossing the most volume: the volume of every bar
+//     after its anchor whose high–low range it passes through (the anchor
+//     bar itself doesn't count);
+//   max wick — the line passing through the most wicks compared to bodies:
+//     each bar it crosses is a wick crossing (between the body and the
+//     high / low) or a body crossing.
+// Two metrics, one step each: 'vol' — raw crossed volume (the volume-
+// profile / POC sense, as aVWAP_volume_fit's rank_by='volume'; older anchors
+// have more bars to collect it, by design) and wick crossings minus body
+// crossings → 'frac' — crossed volume as a share of all volume since the
+// anchor (as rank_by='volfrac'; needs MAXVOL_FRAC_MIN_SPAN bars after it, or
+// a two-bar line would score 100%) and wicks as a share of all crossings
+// (needs MAXWICK_FRAC_MIN_CROSS crossings). Re-searched on every replay step,
+// so the winners can move as bars arrive; each found candle is marked.
+const C_MAXVOL = { vol: 'rgba(233,30,99,0.95)', frac: 'rgba(156,39,176,0.95)' };
+// Wick lines off-white / grey, as the other wick-based views (WICK_RGB).
+// Toned down from WICK_RGB's full off-white, which glares as a solid line.
+const C_MAXWICK = { vol: 'rgba(196,192,184,0.8)', frac: 'rgba(140,140,140,0.8)' };
+const MAXVOL_FRAC_MIN_SPAN = 10;
+const MAXWICK_FRAC_MIN_CROSS = 5;
 // Shift+. — the average aVWAP alone: at each bar, the mean of the aVWAPs
 // anchored at every candle from the anchor up to that bar (_fillAvgVwap —
 // the '<' / Shift+M dotted line, the Alt+. fan's 'avg' mode), solid orange.
@@ -201,45 +226,60 @@ const FAN_SLOPE_ALPHA_MAX   = 0.6;
 // first candle's own average aVWAP on top: neon green where the bar closed
 // above it, magenta where below (the σ candle coloring's extremes).
 const FAN_MODES             = ['amber', 'pv', 'flat', 'slope', 'avg'];
+// Volume-at-price bins for _stdevCloudData's histogram.
+const FAN_VP_BINS         = 100;
+// Ctrl+. 'rank' fan — the same full aVWAP set, every line ranked by how it
+// scores on the max-volume / max-wick measures (see C_MAXVOL and
+// _crossScores): the strongest stand out, the rest stay as faint context.
+// FAN_RANK_MODES, one per press: 'vol' crossed volume → 'volfrac' crossed
+// volume as a share of all volume since the anchor → 'wick' wick crossings
+// minus body crossings → 'wickfrac' wicks as a share of all crossings →
+// removed. Lines are ranked by percentile within the fan (robust to one
+// outlier score); below the top FAN_RANK_TOP they shade from faint grey
+// (weakest, FAN_RANK_ALPHA_MIN) toward the mode's color and opacity
+// (FAN_RANK_ALPHA_MID) with rank², quantized into FAN_RANK_LEVELS batches;
+// the top FAN_RANK_TOP (kept apart, see FAN_RANK_SEP_*) are drawn solid and wide on top. Lines that can't be
+// scored in a share mode (too few bars / crossings) count as the weakest.
+// Re-ranked every replay step.
+// Then the same four on the average aVWAPs ('avg_' modes): every candle's
+// line is its average aVWAP instead (as the Alt+. fan's 'avg' mode), scored
+// and drawn as such — same colors, labels prefixed "avg".
+// Last, for testing, 'sr' — wick crossings split by side: a lower-wick
+// crossing (line below the body: price dipped through it and closed back
+// above) is a support test, an upper-wick crossing (line above the body) a
+// resistance test. Each line scores support = lower − upper − body crossings
+// and resistance = upper − lower − body crossings and takes its better side:
+// the top FAN_RANK_TOP support lines teal, the top resistance lines red
+// (each kept apart as usual), the rest faint and shading toward their side's
+// color; lines that hold from neither side (score ≤ 0 — price flipping
+// across, or closing through) never make the top.
+const FAN_RANK_MODES      = ['vol', 'volfrac', 'wick', 'wickfrac', 'avg_vol', 'avg_volfrac', 'avg_wick', 'avg_wickfrac', 'sr'];
+// Crossed volume and its share in volume orange — volume density along the
+// line, as the Volume Profile's.
+const FAN_RANK_RGB        = { vol: VP_RGB_DEFAULT, volfrac: VP_RGB_DEFAULT, wick: '196,192,184', wickfrac: '140,140,140',
+                              sup: C_VALLEY_RGB, res: C_PEAK_RGB };
+const FAN_RANK_TOP        = 5;
+const FAN_RANK_SEP_MIN    = 3;      // top picks at least this many bars apart …
+const FAN_RANK_SEP_FRAC   = 0.03;   // … or this share of the fan's span, whichever is more
+const FAN_RANK_LEVELS     = 16;
+const FAN_RANK_ALPHA_MIN  = 0.05;
+const FAN_RANK_ALPHA_MID  = 0.4;
+const FAN_RANK_GREY       = [150, 150, 150];
+const FAN_RANK_WICK_ALPHA = 0.75;   // top-line opacity cap in the wick modes
+// Clicking a 'rank' fan (anywhere between its lowest and highest line, within
+// FAN_HIT_PAD px) toggles its support / resistance view — the 'sr' step's
+// sides applied to the step's own measure. Each line's side is from its wick
+// direction, as in 'sr': more lower-wick crossings (price dipped through and
+// closed back above) → support (teal), more upper-wick crossings → resistance
+// (red), equal → neither (grey context, never highlighted). Then the top
+// FAN_RANK_TOP of each side by the step's score are drawn bold, the rest shade
+// from faint grey toward their side's color by rank as usual. Stays on across
+// the steps until clicked off. (The 'sr' step itself is unchanged — its sides
+// and its score both from wick direction.)
+const FAN_HIT_PAD         = 4;
 // In the red/teal coloring, the fan's min/max aVWAPs — anchored at its
 // highest peak and lowest valley — are highlighted in the same colors the
 // aVWAP Min|Max lines use (avwap_max / avwap_min below), and wider.
-// Ctrl+. 'vp' fan — the same full aVWAP set, all in volume orange, each line
-// shaded point by point by the Volume Profile of the fan's span (bars from
-// its first anchor to the current/end bar) at that point's price: bright
-// through heavily traded levels (HVNs), faint through thin ones (LVNs).
-// Opacity follows the level's share of the busiest level raised to
-// FAN_VP_GAMMA (>1 keeps only the busiest levels bright — with hundreds of
-// overlapping lines, linear shading saturates into a solid band), quantized
-// into FAN_VP_LEVELS steps so segments batch into a few strokes; drawing
-// per segment costs more than per line, hence its smaller point budget.
-const FAN_VP_BINS         = 100;
-// Every segment at a level that traded at all gets at least FAN_VP_ALPHA_FLOOR
-// (the line stays visible there) and the shading adds up to FAN_VP_ALPHA_MAX
-// on top; only a level with truly zero volume is left out, in the mode where
-// it would be the faintest ('hvn' — in 'both' a zero-volume level is the
-// brightest).
-const FAN_VP_ALPHA_FLOOR  = 0.1;
-const FAN_VP_ALPHA_MAX    = 0.45;
-const FAN_VP_GAMMA        = 2;
-const FAN_VP_LEVELS       = 20;
-const FAN_VP_POINT_BUDGET = 250000;
-// Clicking a 'vp' fan cycles FAN_VP_MODES — the in-chart Volume Profile's own
-// modes ('<') applied to the fan: 'hvn' volume orange, bright
-// through heavily traded levels → 'anchor' each WHOLE line one color, from
-// its anchor candle's close as the HVN / LVN split candle coloring reads it:
-// orange if that close's level is above half the POC's volume, indigo below,
-// brighter the further from the midpoint, the POC yellow (C_FAN_ANCHOR_POC)
-// — do lines launched from busy vs thin prices behave differently? →
-// 'both' orange where a level's volume is above half the POC's, indigo where
-// below, brighter the further from that midpoint → 'barvol' every line shaded
-// by each BAR's own volume instead (time, not price: at bar i all lines take
-// bar i's shade, so the volume histogram reads as vertical bands across the
-// fan — bar volume / the span's FAN_BARVOL_PCTL percentile, capped at 1, so
-// one spike doesn't flatten the rest) → 'hvn'.
-const FAN_VP_MODES        = ['hvn', 'anchor', 'both', 'barvol'];
-const C_FAN_ANCHOR_POC    = 'rgba(255,214,0,0.9)';
-const FAN_BARVOL_PCTL     = 0.95;
 const C_FAN_MAX      = 'rgba(255,0,0,1.0)';
 const C_FAN_MIN      = 'rgba(0,255,255,0.85)';
 const FAN_MINMAX_WIDTH = 2;
@@ -497,8 +537,23 @@ class FanPrimitive {
   paneViews() { return this._views; }
   update() { this._request?.(); }
 
+  /** 'rank' fan: whether chart-local (x, y) is between its lowest and highest
+   * line at the nearest drawn bar (within half a bar), as last drawn. */
+  hitTest(x, y) {
+    const c = this._cols, P = FAN_HIT_PAD;
+    if (!c) return false;
+    let best = -1;
+    for (let j = 0; j < c.xs.length; j++) {
+      if (!(c.hi[j] >= c.lo[j])) continue;
+      if (best < 0 || Math.abs(c.xs[j] - x) < Math.abs(c.xs[best] - x)) best = j;
+    }
+    return best >= 0 && Math.abs(c.xs[best] - x) <= Math.max(P, c.half)
+      && y >= c.lo[best] - P && y <= c.hi[best] + P;
+  }
+
   _draw(target) {
     const fan = this._fan, eng = this._engine;
+    this._cols = null;
     if (!this._chart || !this._series || fan._toIdx == null) return;
     const ts = this._chart.timeScale();
     const range = ts.getVisibleLogicalRange();
@@ -509,6 +564,13 @@ class FanPrimitive {
     const xs = new Float64Array(to - from + 1);
     for (let i = from; i <= to; i++) xs[i - from] = ts.logicalToCoordinate(i) ?? NaN;
     const cumPV = eng._cumPV, cumVol = eng._cumVol, series = this._series;
+    // 'rank' fan: per-bar y extent of its lines, for hitTest.
+    const cols = fan.kind === 'rank'
+      ? { xs, lo: new Float64Array(to - from + 1).fill(Infinity), hi: new Float64Array(to - from + 1).fill(-Infinity),
+          half: xs.length > 1 ? Math.abs(xs[1] - xs[0]) / 2 : 4 }
+      : null;
+    const track = cols ? (i, y) => { const j = i - from; if (y < cols.lo[j]) cols.lo[j] = y; if (y > cols.hi[j]) cols.hi[j] = y; } : null;
+    this._cols = cols;
     // Price → y. On a linear price scale that's a straight line, so derive it
     // once from two reference prices instead of calling priceToCoordinate for
     // every point (hundreds of thousands per frame for a full-chart fan).
@@ -518,7 +580,6 @@ class FanPrimitive {
       const y1 = series.priceToCoordinate(1), y2 = series.priceToCoordinate(2);
       if (y1 != null && y2 != null) { const k = y2 - y1, c = y1 - k; toY = p => c + k * p; }
     }
-    if (fan.kind === 'vp') return this._drawVp(target, { from, to, toIdx, n, xs, toY, cumPV, cumVol });
     // Style buckets: key -> {style, width, order, path}
     const buckets = new Map();
     // 'flat' mode: per-bar sum / count of every drawn line, for the average aVWAP.
@@ -528,7 +589,17 @@ class FanPrimitive {
       ? { paths: FAN_SLOPE_STYLES.map(lvls => lvls.map(() => new Path2D())), atr: eng._getAtr(FAN_SLOPE_ATR) }
       : null;
     let firstAvg = null;
-    if (fan.colorMode === 'avg') {
+    const rankAvg = fan.kind === 'rank' && fan.colorMode.startsWith('avg_');
+    if (rankAvg) {
+      // Ranked average aVWAPs — each segment into its line's style bucket.
+      this._avgLines({ from, to, toIdx, n, xs, toY, cumPV, cumVol }, (pv, v, i, k) => {
+        const y = toY(v); if (y != null) track(i, y);
+        const st = fan.styles[k];
+        let b = buckets.get(st.key);
+        if (!b) { b = { color: st.color, width: st.width, order: st.order, path: new Path2D() }; buckets.set(st.key, b); }
+        return b.path;
+      });
+    } else if (fan.colorMode === 'avg') {
       // Average aVWAPs, each segment by its slope in ATR per bar (as 'slope').
       firstAvg = this._avgLines({ from, to, toIdx, n, xs, toY, cumPV, cumVol }, (pv, v, i) => {
         const atr = slope.atr[i], t = atr > 0 ? Math.min(1, Math.abs(v - pv) / atr / FAN_SLOPE_SCALE) : 0;
@@ -552,6 +623,7 @@ class FanPrimitive {
         const y = toY(v);
         const x = xs[i - from];
         if (y == null || Number.isNaN(x)) { pen = false; continue; }
+        if (track) track(i, y);
         if (slope) {
           if (pen) {
             const atr = slope.atr[i], t = atr > 0 ? Math.min(1, Math.abs(v - pv) / atr / FAN_SLOPE_SCALE) : 0;
@@ -619,86 +691,11 @@ class FanPrimitive {
     });
   }
 
-  /** 'vp' fan: each segment colored from the Volume Profile share of the
-   * price level it sits at (segment's end point) per the fan's mode (see
-   * FAN_VP_MODES), batched by color and level. */
-  _drawVp(target, { from, to, toIdx, n, xs, toY, cumPV, cumVol }) {
-    const fan = this._fan, vp = fan.vp, mode = fan.colorMode;
-    if (!vp) return;
-    const { priceMin, binSize, bins } = vp;
-    let maxBin = 0;
-    for (const v of bins) if (v > maxBin) maxBin = v;
-    if (!(maxBin > 0)) return;
-    const nb = bins.length;
-    // Two palettes (volume orange / LVN indigo), FAN_VP_LEVELS paths each;
-    // 'barvol' uses the orange paths, by bar volume instead of price level.
-    const orange = Array.from({ length: FAN_VP_LEVELS }, () => new Path2D());
-    const indigo = Array.from({ length: FAN_VP_LEVELS }, () => new Path2D());
-    const zero = new Path2D();   // zero-volume levels in 'hvn' — not drawn
-    // 'barvol': per-bar volume level for each visible bar.
-    let barLv = null;
-    if (mode === 'barvol') {
-      const vols = this._engine._volumes, ref = fan.volRef || 1;
-      barLv = new Int16Array(to - from + 1);
-      for (let i = from; i <= to; i++) barLv[i - from] = Math.min(FAN_VP_LEVELS - 1, Math.floor(Math.min(1, vols[i] / ref) * FAN_VP_LEVELS));
-    }
-    const lv = t => Math.min(FAN_VP_LEVELS - 1, Math.max(0, Math.floor(t * FAN_VP_LEVELS)));
-    const pocPath = new Path2D();   // 'anchor': lines anchored at a POC-level close
-    // 'anchor': one path per line, from its anchor candle's close level.
-    const binOf = price => Math.min(nb - 1, Math.max(0, Math.floor((price - priceMin) / binSize)));
-    const anchorPath = a => {
-      const b = binOf(this._engine._closes[a]), s = bins[b] / maxBin;
-      if (bins[b] === maxBin) return pocPath;
-      return s >= 0.5 ? orange[lv((s - 0.5) * 2)] : indigo[lv((0.5 - s) * 2)];
-    };
-    const pathOf = (price, i) => {
-      if (mode === 'barvol') return orange[barLv[i - from]];
-      const b = Math.min(nb - 1, Math.max(0, Math.floor((price - priceMin) / binSize)));
-      const s = bins[b] / maxBin;
-      if (mode === 'hvn' && !(bins[b] > 0)) return zero;
-      if (mode === 'both') return s >= 0.5 ? orange[lv((s - 0.5) * 2)] : indigo[lv((0.5 - s) * 2)];
-      return orange[lv(s)];
-    };
-    fan.anchors.forEach((a, k) => {
-      if (a > to || a > toIdx || fan.confirm[k] > n) return;
-      const pvBase = a > 0 ? cumPV[a - 1] : 0, volBase = a > 0 ? cumVol[a - 1] : 0;
-      const linePath = mode === 'anchor' ? anchorPath(a) : null;
-      let px = NaN, py = NaN;
-      for (let i = Math.max(a, from); i <= to; i++) {
-        const vol = cumVol[i] - volBase;
-        if (!(vol > 0)) continue;
-        const price = (cumPV[i] - pvBase) / vol;
-        const x = xs[i - from], y = toY(price);
-        if (y == null || Number.isNaN(x)) { px = NaN; continue; }
-        if (!Number.isNaN(px)) {
-          const path = linePath ?? pathOf(price, i);
-          path.moveTo(px, py); path.lineTo(x, y);
-        }
-        px = x; py = y;
-      }
-    });
-    target.useMediaCoordinateSpace(({ context: ctx }) => {
-      ctx.save();
-      ctx.lineWidth = 1;
-      ctx.lineCap = 'round';
-      for (const [paths, rgb] of [[orange, VP_RGB_DEFAULT], [indigo, VP_RGB_LVN]]) {
-        paths.forEach((path, k) => {
-          const alpha = FAN_VP_ALPHA_FLOOR + (FAN_VP_ALPHA_MAX - FAN_VP_ALPHA_FLOOR) * Math.pow(k / (FAN_VP_LEVELS - 1), FAN_VP_GAMMA);
-          ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
-          ctx.stroke(path);
-        });
-      }
-      ctx.strokeStyle = C_FAN_ANCHOR_POC;
-      ctx.stroke(pocPath);
-      ctx.restore();
-    });
-  }
-
   /** 'avg' mode: every fan anchor c's average aVWAP — at bar i, the mean of
    * the aVWAPs anchored at every candle c … i (all candles, not only the
    * fan's drawn anchors). Per bar, one backward pass over the span gives
    * every candle's sum at once (S_c = S_{c+1} + aVWAP(c, i)), so the cost
-   * matches drawing the fan's own lines. Each segment goes to pathOf(prevValue, value, i).
+   * matches drawing the fan's own lines. Each segment goes to pathOf(prevValue, value, i, lineIndex).
    * Returns the first candle's (fan.lo) average aVWAP over [from, to]. */
   _avgLines({ from, to, toIdx, n, xs, toY, cumPV, cumVol }, pathOf) {
     const fan = this._fan, lo = fan.lo;
@@ -722,7 +719,7 @@ class FanPrimitive {
         const y = cnt && !Number.isNaN(x) ? toY(sum / cnt) : null;
         if (y == null) { px[k] = NaN; continue; }
         const v = sum / cnt;
-        if (!Number.isNaN(px[k])) { const path = pathOf(pv[k], v, i); path.moveTo(px[k], py[k]); path.lineTo(x, y); }
+        if (!Number.isNaN(px[k])) { const path = pathOf(pv[k], v, i, k); path.moveTo(px[k], py[k]); path.lineTo(x, y); }
         px[k] = x; py[k] = y; pv[k] = v;
       }
       if (cnt) first[i - from] = sum / cnt;
@@ -1416,6 +1413,7 @@ export class DynamicVWAPEngine {
     }
     if (entry.profile) { try { this._chart.removeSeries(entry.profile); } catch (_) {} }
     if (entry.otherSide?.line) { try { this._chart.removeSeries(entry.otherSide.line); } catch (_) {} }
+    for (const s of [entry.volLine, entry.wickLine]) if (s) { try { this._chart.removeSeries(s); } catch (_) {} }
   }
 
   /**
@@ -1729,23 +1727,29 @@ export class DynamicVWAPEngine {
     // last mode removes it — as Shift+K / Shift+J cycle the candle coloring
     // back to standard. The next press starts the cycle over.
     // '.' cycles plain → + stdev bands → fan shape by σ zone → σ-space
-    // volume profile → σ-space liquidity vs volume → removed.
+    // volume profile → σ-space liquidity vs volume → max-volume / max-wick
+    // aVWAPs (raw → share) → removed.
     if (kind === 'plain') {
       const entry = this._manualEntryAt(anchorIdx, 'plain') ?? this._manualEntryAt(anchorIdx, 'stdev');
+      if (entry?.maxVol?.metric === 'vol') { this._maxVolToFrac(entry); return 'cycled'; }
+      if (entry?.maxVol) { this._dropManualEntry(entry); return false; }
       if (entry?.kind === 'plain') { this._addStdevBands(entry); return 'cycled'; }
       if (entry && !entry.shape && !entry.sigProf) { this._showFanShape(entry); return 'cycled'; }
       if (entry && !entry.sigProf) { this._showSigmaProfile(entry); return 'cycled'; }
       if (entry && !entry.sigLiq) { this._showSigmaLiq(entry); return 'cycled'; }
-      if (entry) { this._dropManualEntry(entry); return false; }
+      if (entry) { this._showMaxVol(entry); return 'cycled'; }
     } else if (kind === 'avg') {
       // Shift+. cycles average aVWAP → + its stdev bands → fan shape by σ
-      // zone → σ-space volume profile → σ-space liquidity vs volume → removed.
+      // zone → σ-space volume profile → σ-space liquidity vs volume →
+      // max-volume / max-wick average aVWAPs (raw → share) → removed.
       const entry = this._manualEntryAt(anchorIdx, kind);
+      if (entry?.maxVol?.metric === 'vol') { this._maxVolToFrac(entry); return 'cycled'; }
+      if (entry?.maxVol) { this._dropManualEntry(entry); return false; }
       if (entry && !entry.bands.length && !entry.shape && !entry.sigProf) { this._addStdevBands(entry); return 'cycled'; }
       if (entry && !entry.shape && !entry.sigProf) { this._showFanShape(entry); return 'cycled'; }
       if (entry && !entry.sigProf) { this._showSigmaProfile(entry); return 'cycled'; }
       if (entry && !entry.sigLiq) { this._showSigmaLiq(entry); return 'cycled'; }
-      if (entry) { this._dropManualEntry(entry); return false; }
+      if (entry) { this._showMaxVol(entry); return 'cycled'; }
     } else {
       const entry = this._manualEntryAt(anchorIdx, kind);
       if (entry) {
@@ -1774,6 +1778,244 @@ export class DynamicVWAPEngine {
     this._createManualAnchor(lo, hi, withStdev, withProfile, hi);
     return true;
   }
+
+  /** Sixth '.' / Shift+.: drop the σ-space profile, keep the line as the
+   * main aVWAP (its candle marked) and add the max-volume and max-wick lines
+   * (see C_MAXVOL) — 'vol' metric; the next press switches them to 'frac'. */
+  _showMaxVol(entry) {
+    if (entry.sigPrim) { try { entry.vwap.detachPrimitive(entry.sigPrim); } catch (_) {} }
+    entry.sigPrim = null;
+    entry.sigProf = false;
+    entry.sigLiq = false;
+    entry.vwap.applyOptions({ color: entry.avgOnly ? C_AVG_ANCHOR : C_MANUAL });
+    entry.maxVol = { metric: 'vol', _key: null, result: null };
+    entry.mainMarkers = LightweightCharts.createSeriesMarkers(entry.vwap, []);
+    entry.volLine = this._series(C_MAXVOL.vol, 2, 0);
+    entry.wickLine = this._series(C_MAXWICK.vol, 2, 0);
+    for (const l of [entry.volLine, entry.wickLine]) l.applyOptions({ lastValueVisible: true });
+    entry.volMarkers = LightweightCharts.createSeriesMarkers(entry.volLine, []);
+    entry.wickMarkers = LightweightCharts.createSeriesMarkers(entry.wickLine, []);
+    this._renderManualEntry(entry.anchorIdx, entry);
+  }
+
+  /** Seventh '.' / Shift+.: the max-volume / max-wick lines by share instead of raw. */
+  _maxVolToFrac(entry) {
+    entry.maxVol.metric = 'frac';
+    entry.maxVol._key = null;
+    entry.volLine.applyOptions({ color: C_MAXVOL.frac });
+    entry.wickLine.applyOptions({ color: C_MAXWICK.frac });
+    this._renderManualEntry(entry.anchorIdx, entry);
+  }
+
+  /**
+   * Crossing tallies for every anchor in [from, to] — its aVWAP's line, or
+   * with avg its average aVWAP's — over the bars after it up to `to` (see
+   * C_MAXVOL): crossed (volume of the bars whose high–low range the line
+   * passes through), wicks / bodies (how many of those it passes through a
+   * wick / the body). One pass: for each bar t, the aVWAPs of every anchor
+   * up to it, newest first, so a running sum gives the average aVWAPs too.
+   * O(span²). Arrays indexed by anchor − from.
+   */
+  _crossScores(from, to, avg = false) {
+    const cumPV = this._cumPV, cumVol = this._cumVol, hiA = this._highs, loA = this._lows, volA = this._volumes;
+    const opA = this._opens, clA = this._closes;
+    const span = Math.max(0, to - from + 1);
+    const crossed = new Float64Array(span), wicks = new Float64Array(span), bodies = new Float64Array(span);
+    const lowW = new Float64Array(span);   // of wicks: lower-wick crossings (line below the body)
+    for (let t = from + 1; t <= to; t++) {
+      const v = volA[t] > 0 ? volA[t] : 0, lo = loA[t], hi = hiA[t];
+      const top = Math.max(opA[t], clA[t]), bot = Math.min(opA[t], clA[t]);
+      let sum = 0, cnt = 0;
+      for (let a = t; a >= from; a--) {
+        const cv = cumVol[t] - (a > 0 ? cumVol[a - 1] : 0);
+        let vw = NaN;
+        if (cv > 0) { vw = (cumPV[t] - (a > 0 ? cumPV[a - 1] : 0)) / cv; sum += vw; cnt++; }
+        if (a === t) continue;                       // the anchor bar itself doesn't count
+        const line = avg ? (cnt ? sum / cnt : NaN) : vw;
+        if (!(line >= lo && line <= hi)) continue;
+        const k = a - from;
+        crossed[k] += v;
+        if (line >= bot && line <= top) bodies[k]++;
+        else { wicks[k]++; if (line < bot) lowW[k]++; }
+      }
+    }
+    return { from, to, crossed, wicks, bodies, lowW };
+  }
+
+  /** Anchor a's score under `mode` ('vol' / 'volfrac' / 'wick' /
+   * 'wickfrac', see C_MAXVOL) from _crossScores tallies, or null where it
+   * can't be scored (no bars after it; in the share modes too few bars /
+   * crossings). Also returns a short label for the score. */
+  _crossScore(cs, a, mode) {
+    const { from, to } = cs, k = a - from;
+    if (a >= to) return null;
+    const fmt = x => (x >= 1e9 ? `${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? `${(x / 1e6).toFixed(1)}M` : x >= 1e3 ? `${(x / 1e3).toFixed(0)}K` : `${Math.round(x)}`);
+    const pct = x => `${(100 * x).toFixed(0)}%`;
+    const crossed = cs.crossed[k], wicks = cs.wicks[k], bodies = cs.bodies[k], nCross = wicks + bodies;
+    if (mode === 'vol') return { score: crossed, label: fmt(crossed) };
+    if (mode === 'volfrac') {
+      const total = this._cumVol[to] - this._cumVol[a];
+      if (!(total > 0) || to - a < Math.max(1, Math.min(MAXVOL_FRAC_MIN_SPAN, to - from))) return null;
+      return { score: crossed / total, label: pct(crossed / total) };
+    }
+    if (mode === 'wick') return nCross > 0 ? { score: wicks - bodies, label: `${wicks}w/${bodies}b` } : null;
+    if (mode === 'sr') {
+      if (!(nCross > 0)) return null;
+      const low = cs.lowW[k], up = wicks - low;
+      const sup = low - up - bodies, res = up - low - bodies;
+      return sup >= res ? { score: sup, side: 'sup', label: `S ${low}/${up}/${bodies}` }
+                        : { score: res, side: 'res', label: `R ${up}/${low}/${bodies}` };
+    }
+    return nCross >= MAXWICK_FRAC_MIN_CROSS ? { score: wicks / nCross, label: `${pct(wicks / nCross)} (${wicks}/${nCross})` } : null;
+  }
+
+  /**
+   * Search [from, to] for the anchor whose line crosses the most volume and
+   * the one crossing the most wicks vs bodies (see C_MAXVOL) — metric 'vol'
+   * (raw) or 'frac' (shares). Ties go to the earlier anchor. Returns
+   * { vol: { idx, label } | null, wick: { idx, label } | null }.
+   */
+  _maxVolSearch(from, to, metric, avg = false) {
+    const cs = this._crossScores(from, to, avg);
+    const frac = metric === 'frac';
+    const best = mode => {
+      let r = null;
+      for (let a = from; a < to; a++) {
+        const s = this._crossScore(cs, a, mode);
+        if (s && (!r || s.score > r.score)) r = { idx: a, ...s };
+      }
+      return r;
+    };
+    return { vol: best(frac ? 'volfrac' : 'vol'), wick: best(frac ? 'wickfrac' : 'wick') };
+  }
+
+  /** Rank a 'rank' fan's drawn lines under its mode (see FAN_RANK_*) at end
+   * bar toIdx: styles for every line, plus fan.top — the top FAN_RANK_TOP
+   * with rank, label and color. Tallies cached per end bar. */
+  _rankFan(fan, toIdx = fan._toIdx) {
+    if (toIdx == null) {
+      const n = this._lastN;
+      toIdx = fan.fixedEnd != null ? Math.min(fan.fixedEnd, n) : n;
+    }
+    const key = `${toIdx}:${fan.colorMode}:${fan.srView ? 1 : 0}`;
+    if (fan._rankKey === key) return;
+    fan._rankKey = key;
+    const avg = fan.colorMode.startsWith('avg_'), mode = avg ? fan.colorMode.slice(4) : fan.colorMode;
+    fan._csBy ??= {};
+    const ck = avg ? 'avg' : 'plain';
+    if (fan._csBy[ck]?.to !== toIdx) fan._csBy[ck] = toIdx > fan.lo ? this._crossScores(fan.lo, toIdx, avg) : null;
+    const cs = fan._csBy[ck];
+    const sr = mode === 'sr';
+    // Support / resistance view: each line's side from its wick direction
+    // (see FAN_HIT_PAD), null where neither dominates.
+    const sideAt = fan.srView && !sr && cs ? a => {
+      const k = a - cs.from, low = cs.lowW[k], up = cs.wicks[k] - low;
+      return low > up ? 'sup' : up > low ? 'res' : null;
+    } : null;
+    const scored = fan.anchors.map((a, i) => {
+      const s = cs && a <= toIdx ? this._crossScore(cs, a, mode) : null;
+      const side = sr ? s?.side : sideAt && a < toIdx ? sideAt(a) : undefined;
+      // srView: a line on neither side stays grey context.
+      const rgb = sideAt && !side ? FAN_RANK_GREY.join(',') : FAN_RANK_RGB[side ?? (sr ? 'sup' : mode)];
+      return { i, a, score: s ? s.score : -Infinity, label: s ? (avg ? `avg ${s.label}` : s.label) : '',
+               side, rgb, hue: rgb.split(',').map(Number) };
+    });
+    const live = scored.filter(x => x.a <= toIdx);
+    // Percentile rank: share of the fan's lines scoring strictly lower.
+    const sorted = live.map(x => x.score).sort((p, q) => p - q);
+    const below = sc => { let lo = 0, hi = sorted.length; while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < sc) lo = m + 1; else hi = m; } return lo; };
+    const denom = Math.max(1, sorted.length - 1);
+    // Top N: highest score first, earlier anchor on a tie; unscorable never.
+    // Neighbouring candles draw near-identical lines, so each pick must be
+    // FAN_RANK_SEP_MIN bars / FAN_RANK_SEP_FRAC of the span from the ones
+    // before it — the top lines are distinct levels, not one cluster.
+    const sep = Math.max(FAN_RANK_SEP_MIN, Math.round(FAN_RANK_SEP_FRAC * (toIdx - fan.lo)));
+    // 'sr': a top list per side, positive scores only.
+    const pickTop = pool => {
+      const out = [];
+      for (const x of pool.sort((p, q) => q.score - p.score || p.a - q.a)) {
+        if (out.length >= FAN_RANK_TOP) break;
+        if (out.every(t => Math.abs(t.a - x.a) >= sep)) out.push(x);
+      }
+      return out;
+    };
+    // 'sr' and the support / resistance view: a top list per side ('sr':
+    // positive scores only).
+    const tops = sr
+      ? ['sup', 'res'].map(side => pickTop(live.filter(x => x.side === side && x.score > 0)))
+      : sideAt
+        ? ['sup', 'res'].map(side => pickTop(live.filter(x => x.side === side && x.score > -Infinity)))
+        : [pickTop(live.filter(x => x.score > -Infinity))];
+    const topRank = new Map();
+    for (const t of tops) t.forEach((x, r) => topRank.set(x.i, r + 1));
+    fan.top = tops.flatMap(t => t.map((x, r) => ({ idx: x.a, rank: r + 1, label: x.label, side: x.side, color: `rgba(${x.rgb},1)` })));
+    fan.styles = scored.map(x => {
+      const r = topRank.get(x.i);
+      if (r) {
+        // Wick lines (off-white / grey) top out lower — at full opacity they glare.
+        const cap = !sideAt && (mode === 'wick' || mode === 'wickfrac') ? FAN_RANK_WICK_ALPHA : 1;
+        const alpha = (cap * (1 - 0.25 * (r - 1) / Math.max(1, FAN_RANK_TOP - 1))).toFixed(2);
+        const width = r === 1 ? 3 : 2;
+        const color = `rgba(${x.rgb},${alpha})`;
+        return { visible: true, color, width, order: 100 - r, key: color + '|w' + width };
+      }
+      const t = x.score === -Infinity ? 0 : below(x.score) / denom;
+      const lvl = Math.round(t * t * FAN_RANK_LEVELS) / FAN_RANK_LEVELS;
+      const c = FAN_RANK_GREY.map((g, k) => Math.round(g + (x.hue[k] - g) * lvl));
+      const alpha = (FAN_RANK_ALPHA_MIN + (FAN_RANK_ALPHA_MID - FAN_RANK_ALPHA_MIN) * lvl).toFixed(3);
+      const color = `rgba(${c.join(',')},${alpha})`;
+      return { visible: true, color, width: 1, order: lvl, key: color + '|w1' };
+    });
+  }
+
+  /** Average aVWAP anchored at a, at bar i (mean of the aVWAPs anchored at a … i), or null. O(i − a). */
+  _avgVwapAt(a, i) {
+    let sum = 0, cnt = 0;
+    for (let c = a; c <= i; c++) { const v = this._vwapAt(c, i); if (v != null) { sum += v; cnt++; } }
+    return cnt ? sum / cnt : null;
+  }
+
+  /** Average aVWAP anchored at a, out to toIdx, as line data (see _fillAvgVwap). O(span²). */
+  _avgVwapLine(a, toIdx) {
+    const cumPV = this._cumPV, cumVol = this._cumVol, data = [];
+    for (let i = a; i <= toIdx; i++) {
+      let sum = 0, cnt = 0;
+      for (let c = a; c <= i; c++) {
+        const vol = cumVol[i] - (c > 0 ? cumVol[c - 1] : 0);
+        if (vol > 0) { sum += (cumPV[i] - (c > 0 ? cumPV[c - 1] : 0)) / vol; cnt++; }
+      }
+      if (cnt) data.push({ time: (this._bars[i].Date || this._bars[i].date || '').slice(0, 10), value: sum / cnt });
+    }
+    return data;
+  }
+
+  /** Re-run an entry's max-volume / max-wick search over [anchorIdx, toIdx] (cached per span and metric), redraw both lines, and label / mark them and the main line's candle. */
+  _updateMaxVol(entry, anchorIdx, toIdx) {
+    const mv = entry.maxVol;
+    const key = `${anchorIdx}:${toIdx}:${mv.metric}`;
+    if (mv._key === key) return;
+    mv._key = key;
+    const avg = !!entry.avgOnly;
+    const r = toIdx > anchorIdx ? this._maxVolSearch(anchorIdx, toIdx, mv.metric, avg) : { vol: null, wick: null };
+    mv.result = r;
+    const timeOf = i => (this._bars[i]?.Date || this._bars[i]?.date || '').slice(0, 10);
+    const mark = (idx, color, text) => [{ time: timeOf(idx), position: 'inBar', shape: 'circle', color, size: 1, text }];
+    const lineOf = a => (avg ? this._avgVwapLine(a, toIdx) : this._vwapLine(a, toIdx));
+
+    entry.mainMarkers?.setMarkers(anchorIdx <= toIdx ? mark(anchorIdx, avg ? C_AVG_ANCHOR : C_MANUAL, '') : []);
+
+    const v = r.vol;
+    entry.volLine.setData(v ? lineOf(v.idx) : []);
+    entry.volLine.applyOptions({ title: v ? `max vol ${v.label}` : '' });
+    entry.volMarkers.setMarkers(v ? mark(v.idx, C_MAXVOL[mv.metric], 'vol') : []);
+
+    const w = r.wick;
+    entry.wickLine.setData(w ? lineOf(w.idx) : []);
+    entry.wickLine.applyOptions({ title: w ? `max wick ${w.label}` : '' });
+    entry.wickMarkers.setMarkers(w ? mark(w.idx, C_MAXWICK[mv.metric], 'wick') : []);
+  }
+
+
 
   /**
    * Shared creation body for toggleManualAnchor and createRangedManualAnchor
@@ -1818,6 +2060,7 @@ export class DynamicVWAPEngine {
     this._manualOrder.push(id);
     if (withStdev) this._addStdevBands(this._manualSeries[id]);
     else this._renderManualEntry(anchorIdx, this._manualSeries[id]);
+    return this._manualSeries[id];
   }
 
   /** Give a manual anchor its dashed ±MANUAL_STDEV_MULTIPLES σ bands (the
@@ -1994,7 +2237,7 @@ export class DynamicVWAPEngine {
     // significant first), then evenly spaced in-between candles in what's left.
     const endBar = fixedEnd != null ? hi : n;
     const cost = c => Math.max(1, endBar - c.idx + 1);
-    const budget = kind === 'vp' ? FAN_VP_POINT_BUDGET : FAN_POINT_BUDGET;
+    const budget = FAN_POINT_BUDGET;
     if (cands.reduce((t, c) => t + cost(c), 0) > budget) {
       let left = budget;
       const keep = [];
@@ -2020,7 +2263,7 @@ export class DynamicVWAPEngine {
       if (c.kind === 'valley' && (minI < 0 || this._lows[c.idx]  < this._lows[cands[minI].idx]))  minI = i;
     });
     const fan = {
-      kind, fixedEnd, lo, colorMode: kind === 'vp' ? 'hvn' : 'amber', maxI, minI, sig, vp: null,
+      kind, fixedEnd, lo, colorMode: kind === 'rank' ? 'vol' : 'amber', maxI, minI, sig,
       anchors: cands.map(c => c.idx),
       kinds:   cands.map(c => c.kind),
       confirm: cands.map(c => c.idx),
@@ -2047,7 +2290,7 @@ export class DynamicVWAPEngine {
    * 1px. In both non-amber modes the min/max aVWAPs (highest peak / lowest
    * valley) are drawn in the Min|Max colors. */
   _applyFanColors(fan) {
-    if (fan.kind === 'vp') { fan.primitive?.update(); return; }   // drawn per mode in FanPrimitive._drawVp
+    if (fan.kind === 'rank') { this._rankFan(fan); fan.primitive?.update(); return; }
     const redTeal = fan.colorMode !== 'amber';
     fan.styles = fan.anchors.map((_, i) => {
       const sg = fan.sig[i], kind = fan.kinds[i];
@@ -2117,17 +2360,7 @@ export class DynamicVWAPEngine {
       });
       fan._bounds = Number.isFinite(pLo) ? { loBar: bLo, hiBar: toIdx, priceLo: pLo, priceHi: pHi } : null;
     }
-    // 'vp' fan: Volume Profile of the span so far (first anchor → end bar).
-    if (fan.kind === 'vp') {
-      const first = Math.min(...fan.anchors);
-      fan.vp = first <= toIdx ? this._vpHistogram(first, toIdx, FAN_VP_BINS) : null;
-      // Reference volume for 'barvol' per-bar shading: the span's
-      // FAN_BARVOL_PCTL percentile of bar volume.
-      if (first <= toIdx) {
-        const v = Array.from(this._volumes.subarray(first, toIdx + 1)).sort((a, b) => a - b);
-        fan.volRef = v[Math.min(v.length - 1, Math.floor(FAN_BARVOL_PCTL * (v.length - 1)))] || 1;
-      }
-    }
+    if (fan.kind === 'rank') this._rankFan(fan, toIdx);
     fan._n = n; fan._toIdx = toIdx;
     fan.primitive.update();
   }
@@ -2150,14 +2383,27 @@ export class DynamicVWAPEngine {
     return best;
   }
 
+  /** Click at chart-local (x, y) on a 'rank' fan (see FAN_HIT_PAD): toggle
+   * its support / resistance view. True if one was hit. */
+  toggleFanSrAt(x, y) {
+    for (const fan of [...this._manualFans].reverse()) {
+      if (fan.kind !== 'rank' || !fan.primitive.hitTest(x, y)) continue;
+      fan.srView = !fan.srView;
+      this._rankFan(fan);
+      fan.primitive.update();
+      return true;
+    }
+    return false;
+  }
+
   /** A repeat Alt+. / Ctrl+. over a fan's first anchor (or a ranged fan's
    * end): advance it to the next of FAN_MODES (amber → red/teal weighted →
-   * grey flat → slope-colored) or FAN_VP_MODES, and past the last removes
+   * grey flat → slope-colored) or FAN_RANK_MODES, and past the last removes
    * it. Returns true if a fan was cycled or removed. */
   cycleFanAt(barIdx, kind) {
     const fan = this._fanAt(barIdx, kind);
     if (!fan) return false;
-    const modes = fan.kind === 'vp' ? FAN_VP_MODES : FAN_MODES;
+    const modes = fan.kind === 'rank' ? FAN_RANK_MODES : FAN_MODES;
     const next = modes.indexOf(fan.colorMode) + 1;
     if (next >= modes.length) {
       // Past the last mode: the fan goes away (and its undo step with it).
@@ -2917,6 +3163,7 @@ export class DynamicVWAPEngine {
       }
       entry.vwap.setData(data);
     } else entry.vwap.setData(this._vwapLine(anchorIdx, toIdx));
+    if (entry.maxVol) this._updateMaxVol(entry, anchorIdx, toIdx);
     if (entry.shape || entry.sigProf) {
       if (entry.shape && !entry.avgOnly) this._fillAvgVwap(entry, anchorIdx, toIdx);   // fan edges (avgOnly filled it above)
       entry._toIdx = toIdx;

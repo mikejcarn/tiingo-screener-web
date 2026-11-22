@@ -1099,6 +1099,11 @@ export class ChartManager {
     return !!this._engine?.toggleSigmaHistAt(x, y);
   }
 
+  /** Click at chart-local (x, y) on a Ctrl+. ranked fan: toggle its support / resistance coloring. True if one was hit. */
+  toggleFanSrAt(x, y) {
+    return !!this._engine?.toggleFanSrAt(x, y);
+  }
+
   /** Undo the most recently placed manual aVWAP anchor (LIFO). Returns the removed bar index, or null if none. */
   undoManualAnchor() {
     if (!this._engine) return null;
@@ -1506,7 +1511,7 @@ export class ChartManager {
     return { fill: body, edge: body };
   }
 
-  /** aVWAP fan from the candle under x to the current bar, all growing to "now" — kind 'sig' (Alt+., significance-weighted) or 'vp' (Ctrl+., Volume-Profile-shaded orange). See avwap_replay.js FAN_*. */
+  /** aVWAP fan from the candle under x to the current bar, all growing to "now" — kind 'sig' (Alt+., significance-weighted) or 'rank' (Ctrl+., ranked by crossed volume / wicks). See avwap_replay.js FAN_*. */
   createFanAtX(x, kind = 'sig') {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
