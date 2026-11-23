@@ -555,13 +555,14 @@ function _wireControls() {
       _toggleMeasureAt(e.clientX - rect.left, e.clientY - rect.top);
       return;
     }
-    // Plain click on a σ-space profile's fill or histogram ('.' / Shift+.):
-    // show its histogram (hidden by default), or hide it again; else on a
-    // Ctrl+. ranked fan: toggle its support / resistance coloring.
+    // Plain click on a σ-space volume profile ('.' / Shift+.) or a '<'
+    // profile in normal mode: toggle the picked one's value area (on its
+    // line first, else the brightest under the cursor); else on a Ctrl+.
+    // ranked fan: toggle its support / resistance coloring.
     const moved = _pressAt && Math.hypot(e.clientX - _pressAt.x, e.clientY - _pressAt.y) > 4;
     if (moved) return;
     const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
-    if (!chart.toggleSigmaHistAt(cx, cy)) chart.toggleFanSrAt(cx, cy);
+    if (!chart.toggleProfileAt(cx, cy)) chart.toggleFanSrAt(cx, cy);
   });
 
   window.addEventListener('mousemove', (e) => {
@@ -675,6 +676,22 @@ function _wireKeys() {
         chartEl.style.cursor = '';
       } else {
         chart.cycleCandleMode(_lastChartX, sliced);
+      }
+    }
+    // Shift+N — the fan-distribution candle colorings (chart.js DIST_MODES):
+    // position → distance → compression → line interaction → crossing
+    // density → crowd vs strong → standard; body from the Ctrl+.-weighted
+    // distribution, outline from the full one. Same anchoring and ',' ranges as Shift+K; keeps
+    // the current whole / sliced drawing (Shift+K / Shift+J switch it).
+    if (e.key === 'N' && !ctrl && !e.altKey) {
+      e.preventDefault();
+      const sliced = chart.candleSliced;
+      if (_rangeStartIdx != null && _lastChartX != null) {
+        chart.setCandleRangeAtX(_rangeStartIdx, _lastChartX, sliced, 'dist');
+        _rangeStartIdx = null;
+        chartEl.style.cursor = '';
+      } else {
+        chart.cycleCandleMode(_lastChartX, sliced, 'dist');
       }
     }
     // Shift+V — same toggle as the Volume row in the show/hide panel.

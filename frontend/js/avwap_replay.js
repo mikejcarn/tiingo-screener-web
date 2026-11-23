@@ -145,22 +145,23 @@ const FAN_SIGMA_ZONE_ALPHA = 0.3;
 // volume at, say, +0.5σ … +1σ. Drawn as a heatmap cloud: a band per bin
 // following the line (aVWAP + z·σ at every bar), its opacity the bin's
 // volume (up to SIGPROF_HEAT_ALPHA), in volume orange — busy bins read as
-// glowing channels; plus the profile as a sideways histogram
-// (SIGPROF_HIST_PX wide) off the line's last bar, mapped through that bar's
-// line and σ so it lines up with the current bands. The line itself is
-// drawn (the centerline the bands are measured from).
+// glowing channels. The line itself is drawn (the centerline the bands are
+// measured from).
 // The first SIGPROF_WARMUP bars (σ still ≈ 0 there) are left out of the
 // profile, and σ is floored at SIGPROF_SD_FLOOR_ATR × ATR(SIGPROF_ATR).
 const SIGPROF_Z           = 4;
 const SIGPROF_STEP        = 0.1;
 const SIGPROF_HEAT_ALPHA  = 0.5;
-const SIGPROF_HIST_PX     = 90;
-const SIGPROF_HIST_ALPHA  = 0.45;
-// The histogram starts hidden — just the updating bands; clicking the
-// bands' fill (anywhere between the outermost traded bands at that bar)
-// shows it, and clicking the fill or the histogram again hides it. Per anchor,
-// kept across the σ-space steps. SIGPROF_HIT_PAD px of slack for the click.
-const SIGPROF_HIT_PAD     = 4;
+// Value-area view (volume step only): clicking the profile (see
+// PROFILE_CLICK_LINE_PX for which one a click picks) keeps only the bands inside the profile's value area
+// (MANUAL_VP_VALUE_AREA_PCT of its volume, grown out from the POC bin toward
+// the busier neighbor, as the price profiles) — the rest are dropped, no
+// boundary lines — and draws the POC bin's band in SIGPROF_POC_RGB at
+// SIGPROF_POC_ALPHA instead of orange: a band like the others, not a line,
+// so it doesn't compete with the aVWAP. Click again to go back to every
+// band. Per anchor, off by default.
+const SIGPROF_POC_RGB     = '255,214,0';   // C_PROFILE_LINE_POC's yellow
+const SIGPROF_POC_ALPHA   = 0.45;
 const SIGPROF_WARMUP      = 5;
 const SIGPROF_SD_FLOOR_ATR = 0.5;
 const SIGPROF_ATR         = 14;
@@ -241,23 +242,29 @@ const FAN_VP_BINS         = 100;
 // the top FAN_RANK_TOP (kept apart, see FAN_RANK_SEP_*) are drawn solid and wide on top. Lines that can't be
 // scored in a share mode (too few bars / crossings) count as the weakest.
 // Re-ranked every replay step.
-// Then the same four on the average aVWAPs ('avg_' modes): every candle's
+// Then two on liquidity — volume per ATR of range, as the '<' profile's
+// liquidity mode: each crossed bar's L = volume / (its range in ATR(LIQ_ATR_PERIOD),
+// floored at FAN_LIQ_RANGE_FLOOR ATR). The profile spreads a bar's volume
+// evenly over its range, so L is also the volume density right where the
+// line crosses it. A pair, as 'vol' / 'volfrac': 'liq' — the summed L of
+// the bars the line crossed (absorption: price kept meeting heavy volume on
+// narrow bars there; favors older anchors, as 'vol') → 'liqfrac' — that as a
+// share of the summed L of every bar since the anchor (needs
+// MAXVOL_FRAC_MIN_SPAN bars after it, as 'volfrac'), so newer lines compete:
+// the dynamic one. Unlike the volume pair, a wide breakout bar running
+// through the line counts little. (A liquidity-weighted rejection step was
+// tried and dropped — it overlapped too much with the wick pair.)
+// Then the same six on the average aVWAPs ('avg_' modes): every candle's
 // line is its average aVWAP instead (as the Alt+. fan's 'avg' mode), scored
 // and drawn as such — same colors, labels prefixed "avg".
-// Last, for testing, 'sr' — wick crossings split by side: a lower-wick
-// crossing (line below the body: price dipped through it and closed back
-// above) is a support test, an upper-wick crossing (line above the body) a
-// resistance test. Each line scores support = lower − upper − body crossings
-// and resistance = upper − lower − body crossings and takes its better side:
-// the top FAN_RANK_TOP support lines teal, the top resistance lines red
-// (each kept apart as usual), the rest faint and shading toward their side's
-// color; lines that hold from neither side (score ≤ 0 — price flipping
-// across, or closing through) never make the top.
-const FAN_RANK_MODES      = ['vol', 'volfrac', 'wick', 'wickfrac', 'avg_vol', 'avg_volfrac', 'avg_wick', 'avg_wickfrac', 'sr'];
+const FAN_RANK_MODES      = ['vol', 'volfrac', 'wick', 'wickfrac', 'liq', 'liqfrac',
+                             'avg_vol', 'avg_volfrac', 'avg_wick', 'avg_wickfrac', 'avg_liq', 'avg_liqfrac'];
+const FAN_LIQ_RANGE_FLOOR = 0.1;
 // Crossed volume and its share in volume orange — volume density along the
-// line, as the Volume Profile's.
+// line, as the Volume Profile's; liquidity in the liquidity profile's sky
+// blue.
 const FAN_RANK_RGB        = { vol: VP_RGB_DEFAULT, volfrac: VP_RGB_DEFAULT, wick: '196,192,184', wickfrac: '140,140,140',
-                              sup: C_VALLEY_RGB, res: C_PEAK_RGB };
+                              liq: '90,170,255', liqfrac: '90,170,255', sup: C_VALLEY_RGB, res: C_PEAK_RGB };
 const FAN_RANK_TOP        = 5;
 const FAN_RANK_SEP_MIN    = 3;      // top picks at least this many bars apart …
 const FAN_RANK_SEP_FRAC   = 0.03;   // … or this share of the fan's span, whichever is more
@@ -265,17 +272,16 @@ const FAN_RANK_LEVELS     = 16;
 const FAN_RANK_ALPHA_MIN  = 0.05;
 const FAN_RANK_ALPHA_MID  = 0.4;
 const FAN_RANK_GREY       = [150, 150, 150];
-const FAN_RANK_WICK_ALPHA = 0.75;   // top-line opacity cap in the wick modes
+const FAN_RANK_WICK_ALPHA = 0.75;   // top-line opacity cap in the wick modes (off-white glares)
 // Clicking a 'rank' fan (anywhere between its lowest and highest line, within
-// FAN_HIT_PAD px) toggles its support / resistance view — the 'sr' step's
-// sides applied to the step's own measure. Each line's side is from its wick
-// direction, as in 'sr': more lower-wick crossings (price dipped through and
+// FAN_HIT_PAD px) toggles its support / resistance view — sides applied to
+// the step's own measure. Each line's side is from its wick direction: more
+// lower-wick crossings (price dipped through and
 // closed back above) → support (teal), more upper-wick crossings → resistance
 // (red), equal → neither (grey context, never highlighted). Then the top
 // FAN_RANK_TOP of each side by the step's score are drawn bold, the rest shade
 // from faint grey toward their side's color by rank as usual. Stays on across
-// the steps until clicked off. (The 'sr' step itself is unchanged — its sides
-// and its score both from wick direction.)
+// the steps until clicked off.
 const FAN_HIT_PAD         = 4;
 // In the red/teal coloring, the fan's min/max aVWAPs — anchored at its
 // highest peak and lowest valley — are highlighted in the same colors the
@@ -314,6 +320,33 @@ const FAN_SLOPE_STYLES = [C_SLOPE_UP, C_SLOPE_DOWN].map(to_ =>
 const MANUAL_VP_NUM_BINS       = 200;
 const MANUAL_VP_FILL_OPACITY   = 0.4;
 const MANUAL_VP_VALUE_AREA_PCT = 0.7;
+// Clicking a '<' profile in its normal mode (see PROFILE_CLICK_LINE_PX)
+// toggles its value area: the dashed VAH / VAL lines and the dimming of the
+// bars outside them (MANUAL_VP_VALUE_AREA_PCT of the volume, grown out from
+// the POC). The POC line itself is always drawn in this mode. Off by
+// default; per profile. A Ctrl+, heatmap in normal mode gets the σ-space
+// profile's value-area view instead (it's bands too): the bands outside the
+// value area dropped, no VAH / VAL lines, the POC's band in SIGPROF_POC_RGB
+// at SIGPROF_POC_ALPHA. A Ctrl+, heatmap in 'both' mode: the click drops
+// its indigo side (levels below half the POC's volume), leaving only the
+// orange levels, and draws the POC line (as '<' normal's); click again for
+// both, no line. Per profile, kept apart from the
+// value-area toggle.
+const MANUAL_VP_HIT_WIDTH      = 0.3;   // volume_profile_series.js MAX_WIDTH_FRACTION
+// Which profile a click picks — the σ-space volume profiles ('.' / Shift+.)
+// and the '<' profiles in normal mode, all at once, so overlapping ones stay
+// reachable: (1) a click within PROFILE_CLICK_LINE_PX of a profile's line —
+// a σ profile's aVWAP (or average aVWAP), a '<' profile's POC line — picks
+// that profile, the nearest line if several; (2) otherwise the profile that's
+// brightest right under the cursor: a σ profile by the drawn opacity of its
+// band there, a '<' profile at MANUAL_VP_FILL_OPACITY when the cursor is on
+// one of its bars (within PROFILE_CLICK_PAD px of the bar's end), a Ctrl+,
+// heatmap by its band's drawn opacity (anywhere across its span; in 'both'
+// mode any drawn band, orange or — while shown — indigo); newest on
+// a tie. Only each profile's value-area bands / bars count for (2) — its
+// faint outer levels don't catch clicks.
+const PROFILE_CLICK_LINE_PX    = 5;
+const PROFILE_CLICK_PAD        = 4;
 // Ctrl+, draws the same profile and modes as a heatmap — each level a band
 // across the whole span, its value as opacity, up to MANUAL_HEAT_OPACITY
 // (kept low so candles read through it).
@@ -821,22 +854,29 @@ class SigmaProfilePrimitive {
   paneViews() { return this._views; }
   update() { this._request?.(); }
 
-  /** Whether chart-local (x, y) is on the bands' fill or the histogram, as
-   * last drawn. */
-  hitTest(x, y) {
-    const P = SIGPROF_HIT_PAD, h = this._hit;
-    if (h && x >= h.x0 - P && x <= h.x1 + P && y >= h.y0 - P && y <= h.y1 + P) return true;
-    // The fill: the column nearest x, within half a bar.
-    const cols = this._fillCols;
-    if (!cols?.length) return false;
+  /** What a click at chart-local (x, y) hits, as last drawn (see
+   * PROFILE_CLICK_LINE_PX): { lineDist (px from the line, at the nearest bar),
+   * strength (the band's drawn opacity there, 0 outside the value area) },
+   * or null off the profile's bars. */
+  probe(x, y) {
+    const cols = this._cols, sp = this._entry._sigProf;
+    if (!cols?.length || !sp || !this._series) return null;
     let best = null;
     for (const c of cols) if (!best || Math.abs(c[0] - x) < Math.abs(best[0] - x)) best = c;
-    return Math.abs(best[0] - x) <= Math.max(P, this._halfBar ?? 0) && y >= best[1] - P && y <= best[2] + P;
+    if (Math.abs(best[0] - x) > Math.max(PROFILE_CLICK_PAD, this._halfBar ?? 0)) return null;
+    const [, m, d] = best, toY = priceToYFn(this._series);
+    const lineDist = Math.abs(y - toY(m));
+    const price = this._series.coordinateToPrice(y), va = sp.va;
+    let strength = 0;
+    if (price != null && va && sp.max > 0) {
+      const k = Math.floor(((price - m) / d - sp.zMin) / sp.step);
+      if (k >= va.lo && k <= va.hi) strength = sp.bins[k] / sp.max * SIGPROF_HEAT_ALPHA;
+    }
+    return { lineDist, strength };
   }
 
   _draw(target) {
-    this._hit = null;
-    this._fillCols = null;
+    this._cols = null;
     const e = this._entry, sp = e._sigProf, sg = e._sigma;
     if (!this._chart || !this._series || !sp || !sg || !(sp.max > 0) || e._toIdx == null) return;
     // Per bin: value (0 … 1 of the largest) and rgb + opacity scale — volume
@@ -860,38 +900,26 @@ class SigmaProfilePrimitive {
     let kLo = -1, kHi = -1;
     for (let k = 0; k < nb; k++) if (valOf(k) > 0 && rgbOf(k)) { if (kLo < 0) kLo = k; kHi = k; }
     if (kLo < 0) return;
-    const zLo = sp.zMin + kLo * sp.step, zHi = sp.zMin + (kHi + 1) * sp.step;
     this._halfBar = ts.options().barSpacing / 2;
-    this._fillCols = cols.map(([x, m, d]) => { const a = toY(m + zHi * d), b = toY(m + zLo * d); return [x, Math.min(a, b), Math.max(a, b)]; });
+    this._cols = cols;
+    // Value-area view (see SIGPROF_POC_RGB): volume step, clicked.
+    const va = !lv && e.sigVaShown ? sp.va : null;
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       // Heatmap cloud: one band per bin, following the line.
       if (cols.length >= 2) {
         for (let k = 0; k < nb; k++) {
           const v = valOf(k), rgb = rgbOf(k);
           if (!(v > 0) || !rgb) continue;
+          if (va && (k < va.lo || k > va.hi)) continue;
           const z0 = sp.zMin + k * sp.step, z1 = z0 + sp.step;
           const path = new Path2D();
           cols.forEach(([x, m, d], j) => (j ? path.lineTo(x, toY(m + z1 * d)) : path.moveTo(x, toY(m + z1 * d))));
           for (let j = cols.length - 1; j >= 0; j--) { const [x, m, d] = cols[j]; path.lineTo(x, toY(m + z0 * d)); }
           path.closePath();
-          ctx.fillStyle = `rgba(${rgb},${(v * SIGPROF_HEAT_ALPHA * dimOf(k)).toFixed(3)})`;
+          ctx.fillStyle = va && k === va.poc ? `rgba(${SIGPROF_POC_RGB},${SIGPROF_POC_ALPHA})`
+            : `rgba(${rgb},${(v * SIGPROF_HEAT_ALPHA * dimOf(k)).toFixed(3)})`;
           ctx.fill(path);
         }
-      }
-      // Sideways histogram off the line's last bar, through its line and σ
-      // (only once a click on the fill has shown it: e.sigHistShown).
-      if (!e.sigHistShown) return;
-      const xEnd = ts.logicalToCoordinate(e._toIdx), m = sg.mean(e._toIdx), d = sg.sd(e._toIdx);
-      if (xEnd == null || Number.isNaN(m) || !(d > 0)) return;
-      const yA = toY(m + zHi * d), yB = toY(m + zLo * d);
-      this._hit = { x0: xEnd, x1: xEnd + SIGPROF_HIST_PX, y0: Math.min(yA, yB), y1: Math.max(yA, yB) };
-      for (let k = 0; k < nb; k++) {
-        const v = valOf(k), rgb = rgbOf(k);
-        if (!(v > 0) || !rgb) continue;
-        const z0 = sp.zMin + k * sp.step;
-        const y0 = toY(m + (z0 + sp.step) * d), y1 = toY(m + z0 * d);
-        ctx.fillStyle = `rgba(${rgb},${(SIGPROF_HIST_ALPHA * dimOf(k)).toFixed(3)})`;
-        ctx.fillRect(xEnd, Math.min(y0, y1), v * SIGPROF_HIST_PX, Math.max(1, Math.abs(y1 - y0)));
       }
     });
   }
@@ -1807,12 +1835,24 @@ export class DynamicVWAPEngine {
     this._renderManualEntry(entry.anchorIdx, entry);
   }
 
+  /** Bar i's liquidity for the ranked fan's 'liq' / 'liqfrac' (see
+   * FAN_LIQ_RANGE_FLOOR): volume / range in ATR, 0 at no volume. */
+  _barLiq(i) {
+    const v = this._volumes[i];
+    if (!(v > 0)) return 0;
+    const atr = this._getAtr(LIQ_ATR_PERIOD)[i];
+    return Number.isNaN(atr) || !(atr > 0) ? v : v / Math.max((this._highs[i] - this._lows[i]) / atr, FAN_LIQ_RANGE_FLOOR);
+  }
+
   /**
    * Crossing tallies for every anchor in [from, to] — its aVWAP's line, or
    * with avg its average aVWAP's — over the bars after it up to `to` (see
    * C_MAXVOL): crossed (volume of the bars whose high–low range the line
    * passes through), wicks / bodies (how many of those it passes through a
-   * wick / the body). One pass: for each bar t, the aVWAPs of every anchor
+   * wick / the body), liq (the summed liquidity L of the crossed bars, see
+   * _barLiq); for the span, cumL (L summed over its bars from+1 … from+k,
+   * by k).
+   * One pass: for each bar t, the aVWAPs of every anchor
    * up to it, newest first, so a running sum gives the average aVWAPs too.
    * O(span²). Arrays indexed by anchor − from.
    */
@@ -1822,8 +1862,12 @@ export class DynamicVWAPEngine {
     const span = Math.max(0, to - from + 1);
     const crossed = new Float64Array(span), wicks = new Float64Array(span), bodies = new Float64Array(span);
     const lowW = new Float64Array(span);   // of wicks: lower-wick crossings (line below the body)
+    const liq = new Float64Array(span), cumL = new Float64Array(span);
+    let sumL = 0;
     for (let t = from + 1; t <= to; t++) {
       const v = volA[t] > 0 ? volA[t] : 0, lo = loA[t], hi = hiA[t];
+      const Lt = this._barLiq(t);
+      cumL[t - from] = sumL += Lt;
       const top = Math.max(opA[t], clA[t]), bot = Math.min(opA[t], clA[t]);
       let sum = 0, cnt = 0;
       for (let a = t; a >= from; a--) {
@@ -1835,17 +1879,19 @@ export class DynamicVWAPEngine {
         if (!(line >= lo && line <= hi)) continue;
         const k = a - from;
         crossed[k] += v;
+        liq[k] += Lt;
         if (line >= bot && line <= top) bodies[k]++;
         else { wicks[k]++; if (line < bot) lowW[k]++; }
       }
     }
-    return { from, to, crossed, wicks, bodies, lowW };
+    return { from, to, crossed, wicks, bodies, lowW, liq, cumL };
   }
 
   /** Anchor a's score under `mode` ('vol' / 'volfrac' / 'wick' /
-   * 'wickfrac', see C_MAXVOL) from _crossScores tallies, or null where it
-   * can't be scored (no bars after it; in the share modes too few bars /
-   * crossings). Also returns a short label for the score. */
+   * 'wickfrac', see C_MAXVOL; 'liq' / 'liqfrac', see FAN_RANK_MODES) from
+   * _crossScores tallies, or null where it can't be scored (no bars after
+   * it; in the share modes too few bars / crossings). Also returns a short
+   * label for the score. */
   _crossScore(cs, a, mode) {
     const { from, to } = cs, k = a - from;
     if (a >= to) return null;
@@ -1859,12 +1905,11 @@ export class DynamicVWAPEngine {
       return { score: crossed / total, label: pct(crossed / total) };
     }
     if (mode === 'wick') return nCross > 0 ? { score: wicks - bodies, label: `${wicks}w/${bodies}b` } : null;
-    if (mode === 'sr') {
-      if (!(nCross > 0)) return null;
-      const low = cs.lowW[k], up = wicks - low;
-      const sup = low - up - bodies, res = up - low - bodies;
-      return sup >= res ? { score: sup, side: 'sup', label: `S ${low}/${up}/${bodies}` }
-                        : { score: res, side: 'res', label: `R ${up}/${low}/${bodies}` };
+    if (mode === 'liq') return { score: cs.liq[k], label: `${fmt(cs.liq[k])} liq` };
+    if (mode === 'liqfrac') {
+      const total = cs.cumL[to - from] - cs.cumL[k];
+      if (!(total > 0) || to - a < Math.max(1, Math.min(MAXVOL_FRAC_MIN_SPAN, to - from))) return null;
+      return { score: cs.liq[k] / total, label: `${pct(cs.liq[k] / total)} liq` };
     }
     return nCross >= MAXWICK_FRAC_MIN_CROSS ? { score: wicks / nCross, label: `${pct(wicks / nCross)} (${wicks}/${nCross})` } : null;
   }
@@ -1905,18 +1950,17 @@ export class DynamicVWAPEngine {
     const ck = avg ? 'avg' : 'plain';
     if (fan._csBy[ck]?.to !== toIdx) fan._csBy[ck] = toIdx > fan.lo ? this._crossScores(fan.lo, toIdx, avg) : null;
     const cs = fan._csBy[ck];
-    const sr = mode === 'sr';
     // Support / resistance view: each line's side from its wick direction
     // (see FAN_HIT_PAD), null where neither dominates.
-    const sideAt = fan.srView && !sr && cs ? a => {
+    const sideAt = fan.srView && cs ? a => {
       const k = a - cs.from, low = cs.lowW[k], up = cs.wicks[k] - low;
       return low > up ? 'sup' : up > low ? 'res' : null;
     } : null;
     const scored = fan.anchors.map((a, i) => {
       const s = cs && a <= toIdx ? this._crossScore(cs, a, mode) : null;
-      const side = sr ? s?.side : sideAt && a < toIdx ? sideAt(a) : undefined;
+      const side = sideAt && a < toIdx ? sideAt(a) : undefined;
       // srView: a line on neither side stays grey context.
-      const rgb = sideAt && !side ? FAN_RANK_GREY.join(',') : FAN_RANK_RGB[side ?? (sr ? 'sup' : mode)];
+      const rgb = sideAt && !side ? FAN_RANK_GREY.join(',') : FAN_RANK_RGB[side ?? mode];
       return { i, a, score: s ? s.score : -Infinity, label: s ? (avg ? `avg ${s.label}` : s.label) : '',
                side, rgb, hue: rgb.split(',').map(Number) };
     });
@@ -1930,7 +1974,6 @@ export class DynamicVWAPEngine {
     // FAN_RANK_SEP_MIN bars / FAN_RANK_SEP_FRAC of the span from the ones
     // before it — the top lines are distinct levels, not one cluster.
     const sep = Math.max(FAN_RANK_SEP_MIN, Math.round(FAN_RANK_SEP_FRAC * (toIdx - fan.lo)));
-    // 'sr': a top list per side, positive scores only.
     const pickTop = pool => {
       const out = [];
       for (const x of pool.sort((p, q) => q.score - p.score || p.a - q.a)) {
@@ -1939,11 +1982,8 @@ export class DynamicVWAPEngine {
       }
       return out;
     };
-    // 'sr' and the support / resistance view: a top list per side ('sr':
-    // positive scores only).
-    const tops = sr
-      ? ['sup', 'res'].map(side => pickTop(live.filter(x => x.side === side && x.score > 0)))
-      : sideAt
+    // The support / resistance view: a top list per side.
+    const tops = sideAt
         ? ['sup', 'res'].map(side => pickTop(live.filter(x => x.side === side && x.score > -Infinity)))
         : [pickTop(live.filter(x => x.score > -Infinity))];
     const topRank = new Map();
@@ -2108,16 +2148,65 @@ export class DynamicVWAPEngine {
     this._renderManualEntry(entry.anchorIdx, entry);
   }
 
-  /** Click on a σ-space profile's fill or histogram (chart-local x, y):
-   * show its histogram (hidden by default), or hide it again. True if one was hit. */
-  toggleSigmaHistAt(x, y) {
-    for (const entry of Object.values(this._manualSeries)) {
-      if (!entry.sigPrim?.hitTest(x, y)) continue;
-      entry.sigHistShown = !entry.sigHistShown;
+  /** A click at chart-local (x, y) on a σ-space volume profile or a '<' /
+   * Ctrl+, profile in normal mode: picks one (see PROFILE_CLICK_LINE_PX) and toggles
+   * its value-area view. True if one was hit. */
+  toggleProfileAt(x, y) {
+    const ts = this._chart.timeScale(), P = PROFILE_CLICK_PAD;
+    const hits = [];   // { entry, lineDist, strength, order }
+    this._manualOrder.forEach((id, order) => {
+      const entry = typeof id === 'string' ? this._manualSeries[id] : null;
+      if (!entry) return;
+      if (entry.sigPrim && !entry.sigLiq) {
+        const h = entry.sigPrim.probe(x, y);
+        if (h) hits.push({ entry, order, ...h });
+        return;
+      }
+      const b = entry._vpHit;
+      if (!b || !entry.profile || (entry.vpMode !== VP_MODE_NORMAL && !b.both)) return;
+      const x0 = ts.logicalToCoordinate(b.from);
+      if (x0 == null || x < x0 - P) return;
+      const x1 = ts.logicalToCoordinate(b.to) ?? ts.width();
+      if (x > x1 + P) return;
+      // The POC line, where drawn: '<' normal, and a 'both' heatmap clicked to orange only.
+      const pocDrawn = b.poc != null && (!entry.heat || (b.both && entry.lvnHidden));
+      const yPoc = pocDrawn ? entry.profile.priceToCoordinate(b.poc) : null;
+      const lineDist = yPoc == null ? Infinity : Math.abs(y - yPoc);
+      // On a value-area level: a heatmap band (its drawn opacity), or inside
+      // a '<' bar's drawn length (volume share × the max width).
+      const price = entry.profile.coordinateToPrice(y);
+      let strength = 0;
+      if (price != null) {
+        const k = Math.floor((price - b.lo) / b.bs);
+        if (b.both) {
+          // 'both' heatmap: the band's drawn opacity — orange above half the
+          // POC's volume, indigo below (unless hidden).
+          const t = k >= 0 && k < b.bins.length ? b.bins[k] / b.max : NaN;
+          if (t >= 0.5 || (t < 0.5 && !entry.lvnHidden)) strength = Math.abs(t - 0.5) * 2 * MANUAL_HEAT_OPACITY;
+        } else if (k >= b.vaLo && k <= b.vaHi) {
+          if (entry.heat) strength = b.bins[k] / b.max * MANUAL_HEAT_OPACITY;
+          else if (x <= x0 + b.bins[k] / b.max * MANUAL_VP_HIT_WIDTH * (x1 - x0) + P) strength = MANUAL_VP_FILL_OPACITY;
+        }
+      }
+      if (lineDist <= PROFILE_CLICK_LINE_PX || strength > 0) hits.push({ entry, order, lineDist, strength });
+    });
+    const onLine = hits.filter(h => h.lineDist <= PROFILE_CLICK_LINE_PX);
+    const pick = onLine.length
+      ? onLine.reduce((p, q) => (q.lineDist < p.lineDist || (q.lineDist === p.lineDist && q.order > p.order) ? q : p))
+      : hits.filter(h => h.strength > 0).reduce((p, q) => (!p || q.strength > p.strength || (q.strength === p.strength && q.order > p.order) ? q : p), null);
+    if (!pick) return false;
+    const entry = pick.entry;
+    if (entry.sigPrim && !entry.sigLiq) {
+      entry.sigVaShown = !entry.sigVaShown;
       entry.sigPrim.update();
-      return true;
+    } else if (entry._vpHit?.both) {
+      entry.lvnHidden = !entry.lvnHidden;
+      this._renderManualEntry(entry.anchorIdx, entry);
+    } else {
+      entry.vaShown = !entry.vaShown;
+      this._renderManualEntry(entry.anchorIdx, entry);
     }
-    return false;
+    return true;
   }
 
   /** Fifth '.' / Shift+.: the σ-space liquidity vs volume profile. */
@@ -2127,8 +2216,10 @@ export class DynamicVWAPEngine {
   }
 
   /** The σ-space volume profile of [anchorIdx, toIdx] around entry._sigma
-   * (see SIGPROF_*): { bins, zMin, step, max } — with entry.sigLiq also lv
-   * ({ D, cls } liquidity vs volume per bin) and max the largest |D|. */
+   * (see SIGPROF_*): { bins, zMin, step, max, va } — va the POC bin and the
+   * value area's bins, { poc, lo, hi } (null without volume); with
+   * entry.sigLiq also lv ({ D, cls } liquidity vs volume per bin) and max
+   * the largest |D|. */
   _sigmaProfile(entry, anchorIdx, toIdx) {
     const nb = Math.round(2 * SIGPROF_Z / SIGPROF_STEP), zMin = -SIGPROF_Z;
     const bins = new Float64Array(nb), atr = this._getAtr(SIGPROF_ATR), sg = entry._sigma;
@@ -2156,14 +2247,18 @@ export class DynamicVWAPEngine {
     }
     let max = 0;
     for (const b of bins) if (b > max) max = b;
-    if (!liq) return { bins, zMin, step: SIGPROF_STEP, max };
+    // POC and value area in bins: _vpPocValueArea on bin indices (priceMin 0,
+    // binSize 1), so its prices are bin edges.
+    const pv = max > 0 ? this._vpPocValueArea(0, 1, bins, MANUAL_VP_VALUE_AREA_PCT) : null;
+    const va = pv ? { poc: Math.floor(pv.poc), lo: Math.round(pv.val), hi: Math.round(pv.vah) - 1 } : null;
+    if (!liq) return { bins, zMin, step: SIGPROF_STEP, max, va };
     const mean = lW > 0 ? lSum / lW : 0, prior = LIQ_PRIOR_VISITS * SIGPROF_STEP;
     const L = Array.from(lNum, (x, k) => (lDen[k] > 0 ? (x + prior * mean) / (lDen[k] + prior) : 0));
     const own = Array.from(lDen, x => x / (x + prior));
     const lv = liqVolClassify(Array.from(bins), L, own);
     let lmax = 0;
     for (const x of lv.D) if (Math.abs(x) > lmax) lmax = Math.abs(x);
-    return { bins, zMin, step: SIGPROF_STEP, max: lmax, lv };
+    return { bins, zMin, step: SIGPROF_STEP, max: lmax, lv, va };
   }
 
   /**
@@ -3007,6 +3102,14 @@ export class DynamicVWAPEngine {
     return this._referenceAnchorEntry()?.anchorIdx ?? null;
   }
 
+  /** The newest Ctrl+. ranked fan's measure (a FAN_RANK_MODES entry) and
+   * whether its support / resistance view is on, or null without one — the
+   * Shift+N candle colorings' weighted distribution follows it. */
+  rankFanMeasure() {
+    const fan = [...this._manualFans].reverse().find(f => f.kind === 'rank');
+    return fan ? { mode: fan.colorMode, sr: !!fan.srView } : null;
+  }
+
   /** Reference for the chart's 'sigma' candle mode: per-bar aVWAP / σ of
    * the most recently placed stdev-band anchor (else the most recent manual
    * anchor of any kind) up to bar n, or null if there's none. */
@@ -3235,6 +3338,26 @@ export class DynamicVWAPEngine {
           payload.poc = null;
           payload.lvnPoc = null;
         }
+        // Normal mode: the value area, drawn once clicked; and what a click
+        // needs to find this profile (see PROFILE_CLICK_LINE_PX).
+        entry._vpHit = null;
+        if (entry.vpMode === VP_MODE_NORMAL) {
+          const { lo, bs, bins } = payload;
+          const { poc, vah, val } = this._vpPocValueArea(lo, bs, bins, MANUAL_VP_VALUE_AREA_PCT);
+          if (entry.vaShown) {
+            payload.vah = vah; payload.val = val;
+            // Heatmap: as the σ-space profile's value-area view.
+            if (entry.heat) Object.assign(payload, { vaHide: true, pocBand: poc, pocBandRgb: SIGPROF_POC_RGB, pocBandAlpha: SIGPROF_POC_ALPHA });
+          }
+          entry._vpHit = { lo, bs, bins, max: Math.max(...bins), poc, from: anchorIdx, to: toIdx,
+                           vaLo: Math.round((val - lo) / bs), vaHi: Math.round((vah - lo) / bs) - 1 };
+        } else if (entry.vpMode === VP_MODE_BOTH && entry.heat) {
+          // Ctrl+, 'both': clicked, only the orange levels (see SIGPROF_POC_ALPHA's note).
+          const { lo, bs, bins } = payload;
+          const poc = this._vpPocValueArea(lo, bs, bins, MANUAL_VP_VALUE_AREA_PCT).poc;
+          if (entry.lvnHidden) payload.dualHideLvn = true;
+          entry._vpHit = { lo, bs, bins, max: Math.max(...bins), poc, from: anchorIdx, to: toIdx, both: true };
+        }
         if (entry.heat) {
           // Ctrl+, — the same mode as a heatmap: full-width bands, value as
           // opacity; no POC lines (the bands themselves show the peaks).
@@ -3242,6 +3365,8 @@ export class DynamicVWAPEngine {
           payload.heatmapOpacity = MANUAL_HEAT_OPACITY;
           payload.poc = null;
           payload.lvnPoc = null;
+          // 'both', clicked: its POC line (see SIGPROF_POC_ALPHA's note).
+          if (entry._vpHit?.both && entry.lvnHidden) payload.poc = entry._vpHit.poc;
         }
         const startTime = (this._bars[anchorIdx].Date || this._bars[anchorIdx].date || '').slice(0, 10);
         const endTime   = (this._bars[toIdx].Date     || this._bars[toIdx].date     || '').slice(0, 10);

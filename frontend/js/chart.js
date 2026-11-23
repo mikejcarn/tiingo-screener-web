@@ -27,6 +27,7 @@
 import { DynamicVWAPEngine, DIFF_MIN_LENGTH } from './avwap_replay.js';
 import { buildQqemod } from './qqemod.js';
 import { computeLambdaRatio, detectLambdaSide, LAMBDA_COLORS, LAMBDA_BAND_COLORS } from './lambda_ratio.js';
+import { FanDist } from './fan_dist.js';
 import { OBZoneSeries } from './ob_zone_series.js';
 import { FVGZoneSeries } from './fvg_zone_series.js';
 import { GapZoneSeries } from './gap_zone_series.js';
@@ -173,6 +174,97 @@ const RGB_CANDLE_VOLUME   = [255, 127, 0];
 // re-anchors there and restarts the color cycle (at its first colored mode).
 const CANDLE_REANCHOR_BARS = 2;
 const lerpRgb = (a, b, t) => `rgb(${a.map((x, q) => Math.round(x + (b[q] - x) * t)).join(',')})`;
+// 'sigma' fill / border for a σ distance z (also the Shift+N 'dz' mode's).
+const sigmaFillOf = z => {
+  const side = z >= 0 ? 0 : 1, a = Math.abs(z), base = RGB_SIGMA_BASE[side];
+  if (a < CANDLE_SIGMA_OPAQUE) return `rgba(${base.join(',')},${(a / CANDLE_SIGMA_OPAQUE).toFixed(3)})`;
+  return lerpRgb(base, RGB_SIGMA_EXTREME[side], Math.min(1, (a - CANDLE_SIGMA_OPAQUE) / (CANDLE_SIGMA_NEON - CANDLE_SIGMA_OPAQUE)));
+};
+const sigmaEdgeOf = z => {
+  const a = Math.abs(z);
+  if (a < CANDLE_SIGMA_OPAQUE) return C_SIGMA_EDGE_NEAR;
+  return `rgb(${(a < CANDLE_SIGMA_NEON ? RGB_SIGMA_BASE : RGB_SIGMA_EXTREME)[z >= 0 ? 0 : 1].join(',')})`;
+};
+
+// Shift+N — candle colorings from the aVWAP fan as a DISTRIBUTION (fan_dist.js):
+// at every bar, the values of the aVWAPs anchored at every candle from the
+// anchor up to it — where everyone who entered since the anchor is
+// positioned, on average. Two distributions at once, one candle:
+//   BODY      the weighted (dynamic) distribution — the lines weighted by
+//             their rank on the Ctrl+. ranked fan's measure as of the bar
+//             before, so the strong lines dominate and the reading moves as
+//             lines gain or lose importance. Follows the newest Ctrl+. fan on
+//             the chart (its step — crossed volume, volume share, wick
+//             measures, liquidity pair, the avg_ ones — and its support / resistance
+//             click); without one, crossed volume.
+//   BORDER    the full distribution — every line once (the Alt+. fan as a
+//   + WICKS   whole, the crowd).
+// So a solid body in a grey outline is a reading only the strong lines
+// give; matching body and outline is agreement. Same anchoring, ',' ranges,
+// undo and Shift+J slicing as Shift+K (Shift+J / Shift+K over a Shift+N
+// coloring switch its drawing; Shift+N keeps the current drawing); sliced,
+// each price inside the body is filled by the weighted reading and the
+// wicks by the full one. Everything is as-of each bar (replay-safe). While
+// on, the full median is drawn dashed grey with its 10th / 90th
+// percentiles dotted, and the weighted median dashed in the measure's color.
+//   'dpos'     position — the price's percentile: teal above the median / red
+//              below, from empty (grey outline) at the median to solid at the
+//              edge; past the edge (above / below every line) shading to neon
+//              green / magenta, fully by DIST_BEYOND_FULL ATR out.
+//   'dz'       distance — (price − median) / the distribution's robust σ
+//              ((q75 − q25) / 1.349, floored at DIST_SD_FLOOR_ATR × ATR), in
+//              the 'sigma' mode's palette (1σ solid, 2σ neon / magenta).
+//   'dsqueeze' compression — the width of the densest core (the narrowest
+//              band holding half the weight, in ATR) against its own history:
+//              bottom DIST_SQ_RANK → squeeze, violet, stronger the tighter;
+//              within DIST_SQ_RELEASE bars after a squeeze with the width
+//              growing → release, neon green / magenta by the close vs the
+//              core's middle; else growing by more than DIST_SQ_CHANGE over
+//              DIST_SQ_LOOK bars → expanding (teal / red by the close vs the
+//              core's middle), shrinking → coiling (grey-violet), else faint
+//              grey. The weighted core's edges drawn dotted violet. A violet
+//              body in a grey outline: the strong lines agree before the crowd
+//              does. No slicing.
+//   'dtouch'   line interaction — body: what the bar did at the strongest of
+//              the top DIST_TOUCH_TOP lines by the measure it touched (support
+//              held teal, resistance held red, broke up neon green, broke down
+//              magenta, fainter for lower ranks; touched none → hollow); those
+//              lines drawn thin in the measure's color. Border: the same at the
+//              full median (grey where untouched). No slicing.
+//   'ddense'   crossing density — the share of the distribution the candle's
+//              range covers, as a percentile of its own history: orange
+//              (dense — a crowd of fair values, a balance area) above the
+//              middle, indigo (sparse — empty space, where price moves fast)
+//              below. Sliced: each price by the density there.
+//   'dsplit'   crowd vs strong — the two medians against each other. Body:
+//              above both medians teal, below both red (stronger the further
+//              past the nearer one, in the full spread), between them amber,
+//              stronger the wider the gap (contested: the crowd and the strong
+//              lines disagree, and price sits in the disagreement). Border:
+//              which median is higher — teal when the weighted one is above
+//              the full one (the important lines sit over the crowd), red
+//              below. Sliced: per price.
+const DIST_MODES        = ['standard', 'dpos', 'dz', 'dsqueeze', 'dtouch', 'ddense', 'dsplit'];
+const DIST_MEASURE_LABEL = { vol: 'crossed vol', volfrac: 'vol share', wick: 'wick−body', wickfrac: 'wick share', liq: 'crossed liq', liqfrac: 'liq share' };
+const DIST_MEASURE_RGB  = { vol: RGB_VOLUME.split(',').map(Number), volfrac: RGB_VOLUME.split(',').map(Number), wick: [196, 192, 184], wickfrac: [160, 160, 160], liq: [90, 170, 255], liqfrac: [90, 170, 255] };
+const DIST_BEYOND_FULL  = 1;
+const DIST_SD_FLOOR_ATR = 0.1;
+const DIST_SQ_RANK      = 0.25;
+const DIST_SQ_RELEASE   = 3;
+const DIST_SQ_LOOK      = 3;
+const DIST_SQ_CHANGE    = 0.05;
+const DIST_SQ_FAST      = 0.5;    // relative width change for full expanding / coiling strength
+const DIST_SPLIT_FULL   = 1;      // 'dsplit': gap between the medians (ATR) / distance past both (full σ) for full strength
+const DIST_EDGE_MIN     = 0.35;   // outline opacity at strength 0 (grey) — still visible
+const RGB_DIST_SQUEEZE  = [170, 80, 255];
+const RGB_DIST_COIL     = [140, 120, 170];
+const RGB_DIST_SPLIT    = [255, 190, 40];
+const RGB_DIST_GREY     = [130, 130, 130];
+const RGB_VOLUME_ARR    = RGB_VOLUME.split(',').map(Number);
+const RGB_LVN_ARR       = RGB_LVN.split(',').map(Number);
+const C_DIST_MEDIAN     = 'rgba(200,200,200,0.6)';
+const C_DIST_BAND       = 'rgba(200,200,200,0.35)';
+const C_DIST_CORE       = 'rgba(170,80,255,0.6)';
 
 // Sliced candle coloring (Shift+J): the same modes as Shift+K, but each
 // candle is drawn as a conventional body box (open → close, body width) and
@@ -503,6 +595,7 @@ export class ChartManager {
     this._volCum = null;
     this._qqe = null;   // 'qqemod' candle state, built on first use per load
     this._lambdaCache = null;   // 'lambda' candle mode, per anchor / side
+    this._distCache = null;     // Shift+N modes' FanDist, per anchor
     this._lambdaFlip  = null;   // Alt+Shift+K side override { a, side }
     this._candleRefIdx = null;   // σ-mode anchor bar — bars changed, drop it
     this._candleEndIdx = null;   // ranged coloring's end bar (',' then Shift+K)
@@ -760,6 +853,7 @@ export class ChartManager {
     this._revealDivMarkers(n);
     this._revealDivLines(n);
     this._revealLambdaOverlay();
+    this._revealDistOverlay();
   }
 
   // ── Segment helpers ──────────────────────────────────────────────────────
@@ -1093,15 +1187,18 @@ export class ChartManager {
     return r;
   }
 
-  /** Click at chart-local (x, y): on a σ-space profile's fill or histogram
-   * ('.' / Shift+. σ steps), show / hide its histogram. True if one was hit. */
-  toggleSigmaHistAt(x, y) {
-    return !!this._engine?.toggleSigmaHistAt(x, y);
+  /** Click at chart-local (x, y) on a σ-space volume profile ('.' / Shift+.)
+   * or a '<' profile in normal mode: toggle the picked one's value-area view
+   * (see avwap_replay.js PROFILE_CLICK_LINE_PX). True if one was hit. */
+  toggleProfileAt(x, y) {
+    return !!this._engine?.toggleProfileAt(x, y);
   }
 
   /** Click at chart-local (x, y) on a Ctrl+. ranked fan: toggle its support / resistance coloring. True if one was hit. */
   toggleFanSrAt(x, y) {
-    return !!this._engine?.toggleFanSrAt(x, y);
+    const hit = !!this._engine?.toggleFanSrAt(x, y);
+    if (hit) this._refreshCandleTint();
+    return hit;
   }
 
   /** Undo the most recently placed manual aVWAP anchor (LIFO). Returns the removed bar index, or null if none. */
@@ -1128,10 +1225,14 @@ export class ChartManager {
 
   // ── Live candle coloring (Shift+K) ───────────────────────────────────────
 
+  /** Whether the live candle coloring is drawn sliced (Shift+J). */
+  get candleSliced() { return this._candleSliced; }
+
   /** Advance to the next of CANDLE_MODES and redraw. Entering 'sigma'
    * anchors its reference aVWAP at the candle under x (#chart-local px, the
    * last mouse position), if any. Returns the new mode. */
-  cycleCandleMode(x = null, sliced = false) {
+  cycleCandleMode(x = null, sliced = false, modes = CANDLE_MODES) {
+    if (modes === 'dist') modes = DIST_MODES;     // Shift+N's cycle
     const prev = { mode: this._candleMode, refIdx: this._candleRefIdx, endIdx: this._candleEndIdx, sliced: this._candleSliced };
     const hoveredNow = x != null ? this.barIndexAtX(x) : null;
     // A ranged coloring (',' then Shift+K) stays in force while the mouse is
@@ -1148,9 +1249,11 @@ export class ChartManager {
     }
     // A different candle restarts the wheel at its first colored mode;
     // otherwise advance.
-    this._candleMode = newCandle
-      ? CANDLE_MODES[1]
-      : CANDLE_MODES[(CANDLE_MODES.indexOf(this._candleMode) + 1) % CANDLE_MODES.length];
+    // From the other cycle's coloring (Shift+K ↔ Shift+N), start this one.
+    const at = modes.indexOf(this._candleMode);
+    this._candleMode = newCandle || at < 0
+      ? modes[1]
+      : modes[(at + 1) % modes.length];
     // Anchor at the hovered candle; mouse off the chart keeps the anchor
     // already in use (σ → relvol), else none (falls back per mode).
     const keepRange = inRange && this._candleMode !== 'standard';
@@ -1178,18 +1281,20 @@ export class ChartManager {
    * plain Shift+K with the mouse inside it). Start and end within
    * CANDLE_REANCHOR_BARS → a plain Shift+K there. Returns the new mode, or
    * null if x isn't over a candle. */
-  setCandleRangeAtX(startIdx, x, sliced = false) {
+  setCandleRangeAtX(startIdx, x, sliced = false, modes = CANDLE_MODES) {
+    if (modes === 'dist') modes = DIST_MODES;
     const b = this.barIndexAtX(x);
     if (b == null) return null;
     const lo = Math.min(startIdx, b), hi = Math.max(startIdx, b);
-    if (hi - lo <= CANDLE_REANCHOR_BARS) return this.cycleCandleMode(x, sliced);
+    if (hi - lo <= CANDLE_REANCHOR_BARS) return this.cycleCandleMode(x, sliced, modes);
     const prev = { mode: this._candleMode, refIdx: this._candleRefIdx, endIdx: this._candleEndIdx, sliced: this._candleSliced };
     const same = prev.mode !== 'standard' && prev.refIdx === lo && prev.endIdx === hi;
     if (same && sliced !== prev.sliced) {            // other key, same range: switch drawing only
       this._setCandleState(prev.mode, lo, hi, sliced);
       return this._candleMode;
     }
-    const mode = same ? CANDLE_MODES[(CANDLE_MODES.indexOf(prev.mode) + 1) % CANDLE_MODES.length] : CANDLE_MODES[1];
+    const at = modes.indexOf(prev.mode);
+    const mode = same && at >= 0 ? modes[(at + 1) % modes.length] : modes[1];
     if (!same) this._engine?.pushUndoStep({ candle: prev });
     this._setCandleState(mode, mode === 'standard' ? null : lo, mode === 'standard' ? null : hi, sliced);
     return this._candleMode;
@@ -1206,7 +1311,8 @@ export class ChartManager {
 
   /** The 'sigma' reference depends on manual anchors — redraw after they change. */
   _refreshCandleTint() {
-    if (this._candleMode === 'sigma' && this._curN >= 0) this.reveal(this._curN);
+    // The Shift+N weighted distribution follows the newest Ctrl+. fan too.
+    if ((this._candleMode === 'sigma' || DIST_MODES.includes(this._candleMode)) && this._candleMode !== 'standard' && this._curN >= 0) this.reveal(this._curN);
   }
 
   /** Per-bar body color function for the current candle mode, or null
@@ -1230,6 +1336,8 @@ export class ChartManager {
         return b < 0 || b >= bins.length ? null : levelColor(bins[b] / poc, bins[b] === poc);
       } };
     };
+    this._dist = null;     // set by the Shift+N modes, read by _revealDistOverlay
+    if (DIST_MODES.includes(this._candleMode) && this._candleMode !== 'standard') return this._distTint(n, top);
     if (this._candleMode === 'sigma') {
       // Hover-set anchor (Shift+K), else the latest stdev-band / manual anchor.
       const ref = this._candleRefIdx != null
@@ -1244,18 +1352,7 @@ export class ChartManager {
         if (Number.isNaN(v) || !(d > 0)) return null;
         return (price - v) / d;
       };
-      // Fill: opacity 0 → 1 over 0 → 1σ, then the color teal / red → neon / magenta over 1 → 2σ.
-      const fillOf = z => {
-        const side = z >= 0 ? 0 : 1, a = Math.abs(z), base = RGB_SIGMA_BASE[side];
-        if (a < CANDLE_SIGMA_OPAQUE) return `rgba(${base.join(',')},${(a / CANDLE_SIGMA_OPAQUE).toFixed(3)})`;
-        return lerpRgb(base, RGB_SIGMA_EXTREME[side], Math.min(1, (a - CANDLE_SIGMA_OPAQUE) / (CANDLE_SIGMA_NEON - CANDLE_SIGMA_OPAQUE)));
-      };
-      // Border / wick: grey within 1σ, teal / red at 1–2σ, neon green / magenta from 2σ.
-      const edgeOf = z => {
-        const a = Math.abs(z);
-        if (a < CANDLE_SIGMA_OPAQUE) return C_SIGMA_EDGE_NEAR;
-        return `rgb(${(a < CANDLE_SIGMA_NEON ? RGB_SIGMA_BASE : RGB_SIGMA_EXTREME)[z >= 0 ? 0 : 1].join(',')})`;
-      };
+      const fillOf = sigmaFillOf, edgeOf = sigmaEdgeOf;
       if (this._candleSliced) this._candleSlice = {
         from: ref.from, to: ref.from + ref.vwap.length - 1,
         colorAt: (i, p) => { const z = zAt(i, p); return z == null ? null : fillOf(z); },
@@ -1450,6 +1547,161 @@ export class ChartManager {
     return null;
   }
 
+  /** The Shift+N modes (see DIST_MODES): body color function over [a, top]
+   * from the anchor's FanDist — body from the weighted distribution, border
+   * and wicks from the full one — setting _candleSlice when sliced. */
+  _distTint(n, top) {
+    const a = this._candleRefIdx ?? this._engine?.referenceAnchorIdx();
+    if (a == null || a > n || !this._engine) return null;
+    const rm = this._engine.rankFanMeasure();
+    const measure = rm?.mode ?? 'vol', srView = !!rm?.sr;
+    const C = this._distCache;
+    if (C?.a !== a || C.measure !== measure || C.srView !== srView) this._distCache = { a, measure, srView, fd: new FanDist(this._engine, a, measure, srView) };
+    const fd = this._distCache.fd, mode = this._candleMode;
+    fd.extend(top);
+    this._dist = { fd, a, top, mode, following: !!rm };
+    const W = fd.wtd, F = fd.full, atrA = fd._atr;
+    const inRange = i => i >= a && i <= top;
+    const rgba = (rgb, al) => `rgba(${rgb.map(Math.round).join(',')},${Math.max(0, Math.min(1, al)).toFixed(3)})`;
+    const mix = (p, q, t) => p.map((x, k) => x + (q[k] - x) * t);
+    // A tone { rgb, k } (k = strength 0 … 1) → fill: the color at opacity k;
+    // edge: from grey toward the color, never fully invisible.
+    const fillOf = t => (t ? rgba(t.rgb, t.k) : null);
+    const edgeOf = t => (t ? rgba(mix(RGB_DIST_GREY, t.rgb, t.k), DIST_EDGE_MIN + (1 - DIST_EDGE_MIN) * t.k) : null);
+    // Body from bodyTone(i, price) (the weighted side), border / wicks from
+    // edgeTone(i, price) (the full side); sliced when sliceable.
+    const dual = (bodyTone, edgeTone, sliceable) => {
+      if (this._candleSliced && sliceable) this._candleSlice = { from: a, to: top,
+        colorAt: (i, p) => fillOf(bodyTone(i, p)),
+        wickAt: (i, p) => edgeOf(edgeTone(i, p)),
+        edgeAt: (i, c) => edgeOf(edgeTone(i, c)),
+      };
+      return (i, e) => {
+        if (!inRange(i)) return null;
+        const b = bodyTone(i, e.close);
+        if (!b) return null;
+        const edge = edgeOf(edgeTone(i, e.close)) ?? C_DIST_MEDIAN;
+        return { fill: fillOf(b), edge, wick: edge };
+      };
+    };
+    const per = toneAt => [(i, p) => toneAt(W, i, p), (i, p) => toneAt(F, i, p)];
+
+    if (mode === 'dpos') return dual(...per((D, i, p) => {
+      const r = D.pct(i, p);
+      if (!r) return null;
+      const side = r.p >= 0.5 ? 0 : 1;
+      if (r.beyond > 0) return { rgb: mix(RGB_SIGMA_BASE[side], RGB_SIGMA_EXTREME[side], Math.min(1, r.beyond / DIST_BEYOND_FULL)), k: 1 };
+      return { rgb: RGB_SIGMA_BASE[side], k: Math.min(1, Math.abs(r.p - 0.5) * 2) };
+    }), true);
+
+    if (mode === 'dz') return dual(...per((D, i, p) => {
+      if (!D.has(i)) return null;
+      const z = (p - D.quantile(i, 0.5)) / D.spread(i, DIST_SD_FLOOR_ATR), side = z >= 0 ? 0 : 1, az = Math.abs(z);
+      if (az < CANDLE_SIGMA_OPAQUE) return { rgb: RGB_SIGMA_BASE[side], k: az / CANDLE_SIGMA_OPAQUE };
+      return { rgb: mix(RGB_SIGMA_BASE[side], RGB_SIGMA_EXTREME[side], Math.min(1, (az - CANDLE_SIGMA_OPAQUE) / (CANDLE_SIGMA_NEON - CANDLE_SIGMA_OPAQUE))), k: 1 };
+    }), true);
+
+    if (mode === 'dsqueeze') return dual(...per((D, i, close) => {
+      const j = i - a, w = D.width[j], rk = D.wRank[j];
+      if (Number.isNaN(w) || Number.isNaN(rk)) return D.has(i) ? { rgb: RGB_DIST_GREY, k: 0 } : null;
+      if (rk <= DIST_SQ_RANK) return { rgb: RGB_DIST_SQUEEZE, k: 0.35 + 0.65 * (1 - rk / DIST_SQ_RANK) };
+      const wPrev = i - DIST_SQ_LOOK >= a ? D.width[j - DIST_SQ_LOOK] : NaN;
+      const d = wPrev > 0 ? (w - wPrev) / wPrev : 0;
+      const side = close >= (D.coreLo[j] + D.coreHi[j]) / 2 ? 0 : 1;
+      if (d > 0) for (let b = 1; b <= DIST_SQ_RELEASE; b++) {
+        if (j - b >= 0 && D.wRank[j - b] <= DIST_SQ_RANK) return { rgb: RGB_SIGMA_EXTREME[side], k: 1 };
+      }
+      if (d > DIST_SQ_CHANGE) return { rgb: RGB_SIGMA_BASE[side], k: 0.25 + 0.75 * Math.min(1, d / DIST_SQ_FAST) };
+      if (d < -DIST_SQ_CHANGE) return { rgb: RGB_DIST_COIL, k: 0.25 + 0.5 * Math.min(1, -d / DIST_SQ_FAST) };
+      return { rgb: RGB_DIST_GREY, k: 0.2 };
+    }), false);
+
+    if (mode === 'dtouch') {
+      const RGB = { sup: RGB_SIGMA_BASE[0], res: RGB_SIGMA_BASE[1], up: RGB_SIGMA_EXTREME[0], dn: RGB_SIGMA_EXTREME[1] };
+      const toneOf = tc => (!tc ? null : !tc.kind ? { rgb: RGB_DIST_GREY, k: 0 }
+        : { rgb: RGB[tc.kind], k: 1 - 0.45 * ((tc.rank ?? 1) - 1) / 4 });
+      return dual(i => toneOf(fd.tW[i - a]), i => toneOf(fd.tF[i - a]), false);
+    }
+
+    if (mode === 'ddense') {
+      const lvl = s => ({ rgb: s >= 0.5 ? RGB_VOLUME_ARR : RGB_LVN_ARR, k: CANDLE_SPLIT_ALPHA_MIN + (1 - CANDLE_SPLIT_ALPHA_MIN) * Math.min(1, Math.abs(s - 0.5) * 2) });
+      if (this._candleSliced) return dual(...per((D, i, p) => { const d = D.density(i, p); return d == null ? null : lvl(d); }), true);
+      return dual(...per((D, i) => { const s = D.dRank[i - a]; return Number.isNaN(s) ? null : lvl(s); }), false);
+    }
+
+    if (mode === 'dsplit') {
+      const meds = i => (W.has(i) && F.has(i) ? [W.quantile(i, 0.5), F.quantile(i, 0.5)] : null);
+      const body = (i, p) => {
+        const m = meds(i);
+        if (!m) return null;
+        const hi = Math.max(...m), lo = Math.min(...m), sd = F.spread(i, DIST_SD_FLOOR_ATR);
+        if (p > hi) return { rgb: RGB_SIGMA_BASE[0], k: 0.3 + 0.7 * Math.min(1, (p - hi) / (DIST_SPLIT_FULL * sd)) };
+        if (p < lo) return { rgb: RGB_SIGMA_BASE[1], k: 0.3 + 0.7 * Math.min(1, (lo - p) / (DIST_SPLIT_FULL * sd)) };
+        const atr = atrA[i] > 0 ? atrA[i] : sd;
+        return { rgb: RGB_DIST_SPLIT, k: 0.3 + 0.7 * Math.min(1, (hi - lo) / (DIST_SPLIT_FULL * atr)) };
+      };
+      const edge = i => {
+        const m = meds(i);
+        if (!m) return null;
+        const atr = atrA[i] > 0 ? atrA[i] : F.spread(i, DIST_SD_FLOOR_ATR);
+        return { rgb: RGB_SIGMA_BASE[m[0] >= m[1] ? 0 : 1], k: Math.min(1, Math.abs(m[0] - m[1]) / (DIST_SPLIT_FULL * atr)) };
+      };
+      return dual(body, edge, true);
+    }
+    return null;
+  }
+
+  /** Shift+N: the full distribution's median (dashed grey) with its 10th /
+   * 90th percentiles (dotted), and the weighted one's median (dashed, the
+   * measure's color); in 'dsqueeze' the weighted core's edges instead of the
+   * percentiles; in 'dtouch' the top lines by the measure as of top. */
+  _revealDistOverlay() {
+    const D = this._dist;
+    const lines = this._distLines ??= {};
+    const drop = key => { if (lines[key]) { try { this._chart.removeSeries(lines[key]); } catch (_) {} delete lines[key]; } };
+    if (!D) { for (const k of Object.keys(lines)) drop(k); return; }
+    const fd = D.fd, m = fd._m;
+    const mRgb = DIST_MEASURE_RGB[m] ?? [200, 200, 200];
+    const mColor = al => `rgba(${mRgb.join(',')},${al})`;
+    const mLabel = `${fd.avg ? 'avg ' : ''}${DIST_MEASURE_LABEL[m] ?? m}${fd.srView ? ' S/R' : ''}${D.following ? '' : ' (default)'}`;
+    const mk = (key, color, style, title = '') => {
+      const s = lines[key] ??= this._chart.addSeries(LightweightCharts.LineSeries, {
+        lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false,
+      });
+      s.applyOptions({ color, lineStyle: style, title, lastValueVisible: !!title });
+      return s;
+    };
+    const timeOf = i => (this._bars[i].Date || this._bars[i].date || '').slice(0, 10);
+    const sq = D.mode === 'dsqueeze';
+    const specs = [
+      ['fq50', i => fd.full.quantile(i, 0.5), C_DIST_MEDIAN, 2, 'full'],
+      ['wq50', i => fd.wtd.quantile(i, 0.5), mColor(0.85), 2, mLabel],
+      ...(sq
+        ? [['clo', i => fd.wtd.coreLo[i - D.a], C_DIST_CORE, 1], ['chi', i => fd.wtd.coreHi[i - D.a], C_DIST_CORE, 1]]
+        : [['fq10', i => fd.full.quantile(i, 0.1), C_DIST_BAND, 1], ['fq90', i => fd.full.quantile(i, 0.9), C_DIST_BAND, 1]]),
+    ];
+    for (const k of sq ? ['fq10', 'fq90'] : ['clo', 'chi']) drop(k);
+    for (const [key, at, color, style, title] of specs) {
+      const data = [];
+      for (let i = D.a; i <= D.top; i++) {
+        const v = at(i);
+        if (Number.isFinite(v)) data.push({ time: timeOf(i), value: v });
+      }
+      mk(key, color, style, title).setData(data);
+    }
+    const strong = D.mode === 'dtouch' ? (fd.tW[D.top - D.a]?.strong ?? []) : [];
+    for (let r = 0; r < 5; r++) {
+      const key = `s${r}`;
+      if (r >= strong.length) { drop(key); continue; }
+      const c = strong[r], data = [];
+      for (let i = c; i <= D.top; i++) {
+        const v = fd.lineAt(c, i);
+        if (v != null) data.push({ time: timeOf(i), value: v });
+      }
+      mk(key, mColor((0.7 - 0.08 * r).toFixed(2)), 0).setData(data);
+    }
+  }
+
   /** computeLambdaRatio from anchor a, cached per load / anchor / side (it
    * runs over the whole history — every bar as-of — so replay just slices). */
   _lambdaFor(a) {
@@ -1516,7 +1768,9 @@ export class ChartManager {
     if (!this._engine) return null;
     const barIdx = this.barIndexAtX(x);
     if (barIdx == null) return null;
-    return this._engine.createManualFan(barIdx, this._curN, null, kind);
+    const r = this._engine.createManualFan(barIdx, this._curN, null, kind);
+    this._refreshCandleTint();
+    return r;
   }
 
   /** ',' then the fan key — the same fan across [startIdx, candle under x], each line stopping at the range's end. */
@@ -1525,14 +1779,18 @@ export class ChartManager {
     const barIdx = this.barIndexAtX(x);
     if (barIdx == null) return null;
     const lo = Math.min(startIdx, barIdx), hi = Math.max(startIdx, barIdx);
-    return this._engine.createManualFan(lo, hi, hi, kind);
+    const r = this._engine.createManualFan(lo, hi, hi, kind);
+    this._refreshCandleTint();
+    return r;
   }
 
   /** A repeat Alt+. / Ctrl+. over a fan's first anchor (or a ranged fan's end) cycles its coloring instead of making another fan. Returns true if one was cycled. */
   cycleFanAtX(x, kind) {
     if (!this._engine) return false;
     const barIdx = this.barIndexAtX(x);
-    return barIdx != null && this._engine.cycleFanAt(barIdx, kind);
+    const r = barIdx != null && this._engine.cycleFanAt(barIdx, kind);
+    if (r) this._refreshCandleTint();
+    return r;
   }
 
   /** Show/hide the volume pane. */

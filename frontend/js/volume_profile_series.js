@@ -9,7 +9,10 @@
  * lvnPoc, vah, val, hvn, lvn, showHistogram, directionalColor, barStyle,
  * heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality,
  * nodeWindow, histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha, diffBins, diffPosRgb,
- * diffNegRgb, diffColors, diffAlpha, diffNegAlpha, diffAlphas, pocRgb (overrides the POC line's color) } at the
+ * diffNegRgb, diffColors, diffAlpha, diffNegAlpha, diffAlphas, pocRgb (overrides the POC line's color),
+ * vaHide / pocBand / pocBandRgb / pocBandAlpha (heatmap style: drop the bands outside vah/val instead of
+ * dimming them, no VAH/VAL lines; the band holding price pocBand in pocBandRgb at pocBandAlpha),
+ * dualHideLvn (dual heatmap: the indigo, below-midpoint side not drawn) } at the
  * anchor's start and end bar, same
  * start/end convention as the other zone series.
  * lo/bs are the histogram's price origin and bin size, bins the per-bin
@@ -107,6 +110,7 @@ export class VolumeProfileRenderer {
       heatmapEmphasis, heatmapOpacity, heatmapContrast, heatmapLocality, nodeWindow,
       histogramGrayscale, wickUpper, wickLower, wickRgb, wickAlpha,
       diffBins, diffPosRgb, diffNegRgb, diffColors, diffAlpha, diffNegAlpha, diffAlphas, pocRgb,
+      vaHide, pocBand, pocBandRgb, pocBandAlpha, dualHideLvn,
     } = first.originalData;
     if (lo == null || bs == null || !bins || !bins.length) return;
 
@@ -206,13 +210,18 @@ export class VolumeProfileRenderer {
           // further from that midpoint.
           forEachBin((v, top, bottom, inVA, i) => {
             const t = intensityOf(v, i, false);
+            if (dualHideLvn && t < 0.5) return;   // the indigo side dropped
             const c = t >= 0.5 ? (histogramGrayscale ? RGB_GRAYSCALE : RGB_DEFAULT) : RGB_LVN_DEFAULT;
             ctx.fillStyle = `rgba(${c},${Math.abs(t - 0.5) * 2 * heatCeiling})`;
             ctx.fillRect(x0, top, x1 - x0, Math.max(bottom - top, vr));
           }, true);
         } else forEachBin((v, top, bottom, inVA, i) => {
-          const opacity = intensityOf(v, i) * heatCeiling * vaFactorOf(inVA);
-          ctx.fillStyle = `rgba(${histRgb},${opacity})`;
+          // vaHide: bands outside the value area dropped instead of dimmed;
+          // pocBand: the band holding that price in pocBandRgb.
+          if (vaHide && !inVA) return;
+          const isPocBand = pocBand != null && pocBandRgb && i === Math.floor((pocBand - lo) / bs);
+          const opacity = isPocBand ? (pocBandAlpha ?? heatCeiling) : intensityOf(v, i) * heatCeiling * (vaHide ? 1 : vaFactorOf(inVA));
+          ctx.fillStyle = `rgba(${isPocBand ? pocBandRgb : histRgb},${opacity})`;
           ctx.fillRect(x0, top, x1 - x0, Math.max(bottom - top, vr));
         }, lvnEmphasis);
       } else if (dualHistogram) {
@@ -331,7 +340,7 @@ export class VolumeProfileRenderer {
     // Value-area bounds (VAL/VAH) — thin dashed lines across the profile's
     // full anchor-to-end span, marking the band holding value_area_pct of
     // its volume.
-    if (hasValueArea) {
+    if (hasValueArea && !vaHide) {
       ctx.save();
       ctx.strokeStyle = `rgba(${rgb},0.55)`;
       ctx.lineWidth = Math.max(1, Math.round(vr));
