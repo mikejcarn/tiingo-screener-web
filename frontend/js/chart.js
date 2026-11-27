@@ -739,6 +739,9 @@ export class ChartManager {
     // Candles with per-bar color overrides
     const bodyTint = this._candleBodyTint(n);   // null in 'standard'
     const sliced = this._candleSliced && this._candleSlice != null;   // Shift+J slices (set by _candleBodyTint)
+    // '.' / Shift+. anchors (any step of the cycle): their candle solid yellow.
+    const sigAnchors = this._engine?.dotAnchors?.() ?? new Set();
+    this._sigAnchorKey = [...sigAnchors].sort((a, b) => a - b).join(',');
     const candles = slice.map((b, i) => {
       const time  = (b.Date || b.date || '').slice(0, 10);
       const entry = {
@@ -798,6 +801,9 @@ export class ChartManager {
         entry.color       = entry.close >= entry.open ? tint : 'rgba(0,0,0,0)';
         entry.borderColor = tint;
         entry.wickColor   = tint;
+      }
+      if (sigAnchors.has(i)) {
+        entry.color = entry.borderColor = entry.wickColor = C_CANDLE_POC;
       }
       return entry;
     });
@@ -1312,7 +1318,11 @@ export class ChartManager {
   /** The 'sigma' reference depends on manual anchors — redraw after they change. */
   _refreshCandleTint() {
     // The Shift+N weighted distribution follows the newest Ctrl+. fan too.
-    if ((this._candleMode === 'sigma' || DIST_MODES.includes(this._candleMode)) && this._candleMode !== 'standard' && this._curN >= 0) this.reveal(this._curN);
+    if ((this._candleMode === 'sigma' || DIST_MODES.includes(this._candleMode)) && this._candleMode !== 'standard' && this._curN >= 0) { this.reveal(this._curN); return; }
+    // The yellow '.' / Shift+. anchor candles changed (one placed or removed).
+    const sig = this._engine?.dotAnchors?.();
+    const key = sig ? [...sig].sort((a, b) => a - b).join(',') : '';
+    if (key !== (this._sigAnchorKey ?? '') && this._curN >= 0) this.reveal(this._curN);
   }
 
   /** Per-bar body color function for the current candle mode, or null

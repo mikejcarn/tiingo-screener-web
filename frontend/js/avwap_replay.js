@@ -156,12 +156,15 @@ const SIGPROF_HEAT_ALPHA  = 0.5;
 // PROFILE_CLICK_LINE_PX for which one a click picks) keeps only the bands inside the profile's value area
 // (MANUAL_VP_VALUE_AREA_PCT of its volume, grown out from the POC bin toward
 // the busier neighbor, as the price profiles) — the rest are dropped, no
-// boundary lines — and draws the POC bin's band in SIGPROF_POC_RGB at
-// SIGPROF_POC_ALPHA instead of orange: a band like the others, not a line,
-// so it doesn't compete with the aVWAP. Click again to go back to every
-// band. Per anchor, off by default.
+// boundary lines. Click again to go back to every band. Per anchor, off by
+// default. The POC bin is highlighted either way (SIGPROF_POC_ALPHA).
 const SIGPROF_POC_RGB     = '255,214,0';   // C_PROFILE_LINE_POC's yellow
 const SIGPROF_POC_ALPHA   = 0.45;
+// Every σ-space step (volume, liquidity vs volume, wick map, rejection vs
+// acceptance) always marks its POC bin (sigmaPocBin): its band in
+// SIGPROF_POC_RGB at SIGPROF_POC_ALPHA, no edge lines. Every '.' / Shift+.
+// anchor, at any step of its cycle, has its candle drawn solid yellow
+// (chart.js reveal, dotAnchors) so its origin is easy to find.
 const SIGPROF_WARMUP      = 5;
 const SIGPROF_SD_FLOOR_ATR = 0.5;
 const SIGPROF_ATR         = 14;
@@ -173,6 +176,25 @@ const SIGPROF_ATR         = 14;
 // that distance from the line), yellow where only liquidity does, faded
 // grey where only volume does. Same bands and histogram, colored by class,
 // opacity / length by the bin's score.
+// Sixth press: the σ-space wick map — the '<' profile's wick map (WICK_*) on
+// the same σ bins: each bar's upper wick, lower wick and body converted to σ
+// around that bar's line separately, the wicks carrying the bar's volume ×
+// their share of its range (the body nothing). Off-white bands, opacity by
+// the bin's wick weight — as the Ctrl+, heatmap's wick mode.
+// Split in two colors by which wick dominates the bin: its upper-wick share
+// u (upper ÷ all wick weight there) shades from SIGWICK_LOWER_RGB (teal, u = 0:
+// lower wicks only — buyers defending that distance from the line) through
+// WICK_RGB (off-white, balanced) to SIGWICK_UPPER_RGB (red, u = 1: upper wicks
+// only — sellers rejecting it); fully colored from SIGWICK_FULL away from ½.
+// Upper wicks piling up below the line read as resistance under fair value,
+// lower wicks above it as support over it. Opacity is still the total.
+// Seventh press: the σ-space rejection vs acceptance — the '<' profile's
+// rejection vs acceptance (DIFF_*) on those σ bins: D = the bin's share of
+// all wick weight − its share of all volume, cut to the rejection area
+// (filterRejectionArea). Only rejection (D > 0) is drawn, off-white by D,
+// the bins at or under DIFF_MIN_LENGTH of the largest faded to
+// DIFF_FADED_ALPHA — as the Ctrl+, heatmap's rejection mode.
+// entry.sigMode: 'vol' | 'liq' | 'wick' | 'diff' — which σ-space step.
 // aVWAP fan — an aVWAP anchored at every candle across a span (hovered
 // candle → current bar, or a ','-marked range), each line growing to "now" or
 // stopping at the range's end. Every candle is classified by SIGNIFICANCE:
@@ -840,6 +862,30 @@ class FanShapePrimitive {
   }
 }
 
+const SIGWICK_UPPER_RGB = [239, 83, 80];
+const SIGWICK_LOWER_RGB = [38, 166, 154];
+const SIGWICK_FULL      = 0.35;
+/** The σ-space wick map's color for an upper-wick share u (see SIGWICK_*). */
+function sigWickRgb(u) {
+  const mid = WICK_RGB.split(',').map(Number);
+  const t = Math.min(1, Math.abs(u - 0.5) / SIGWICK_FULL), to = u >= 0.5 ? SIGWICK_UPPER_RGB : SIGWICK_LOWER_RGB;
+  return mid.map((c, q) => Math.round(c + (to[q] - c) * t)).join(',');
+}
+
+/** The POC bin of a σ-space profile step (see SIGPROF_POC_ALPHA), or -1:
+ * the busiest bin for 'vol'; the liquidity vs volume POC (the strongest
+ * liquidity-only bin, as the '<' profile's) for 'liq', else its largest |D|;
+ * the heaviest wick bin for 'wick'; the strongest rejection bin for 'diff'. */
+function sigmaPocBin(mode, sp) {
+  if (mode === 'vol') return sp.va ? sp.va.poc : -1;
+  if (mode === 'liq' && sp.lv?.pocK >= 0) return sp.lv.pocK;
+  const v = mode === 'liq' ? sp.lv?.D.map(Math.abs) : mode === 'wick' ? sp.wick : mode === 'diff' ? sp.D : null;
+  if (!v) return -1;
+  let best = -1;
+  for (let k = 0; k < v.length; k++) if (v[k] > 0 && (best < 0 || v[k] > v[best])) best = k;
+  return best;
+}
+
 // The σ-space volume profile of a '.' / Shift+. anchor (see SIGPROF_*):
 // entry._sigProf = { bins, zMin, step, max } and entry._sigma (the line's
 // per-bar mean / σ), up to entry._toIdx; under the candles.
@@ -881,10 +927,14 @@ class SigmaProfilePrimitive {
     if (!this._chart || !this._series || !sp || !sg || !(sp.max > 0) || e._toIdx == null) return;
     // Per bin: value (0 … 1 of the largest) and rgb + opacity scale — volume
     // orange for the plain profile; the class colors for liquidity vs volume.
-    const lv = sp.lv;
-    const valOf = k => (lv ? Math.abs(lv.D[k]) : sp.bins[k]) / sp.max;
-    const rgbOf = k => (lv ? LDIV_CLASS_RGB[lv.cls[k]] : VP_RGB_DEFAULT);
+    // Off-white by wick weight for the wick map; off-white by D, rejection
+    // only, short bins faded, for rejection vs acceptance.
+    const lv = sp.lv, wk = sp.wick, rd = sp.D;
+    const valOf = k => (lv ? Math.abs(lv.D[k]) : wk ? wk[k] : rd ? Math.max(0, rd[k]) : sp.bins[k]) / sp.max;
+    const rgbOf = k => (lv ? LDIV_CLASS_RGB[lv.cls[k]] : wk ? sigWickRgb(sp.upShare[k]) : rd ? WICK_RGB : VP_RGB_DEFAULT);
     const dimOf = k => (lv && lv.cls[k] === LDIV_VOL ? LDIV_DIM_ALPHA / LDIV_ALPHA : 1);
+    const alphaOf = k => (rd && rd[k] <= DIFF_MIN_LENGTH * sp.max ? DIFF_FADED_ALPHA
+      : valOf(k) * SIGPROF_HEAT_ALPHA * dimOf(k));
     const ts = this._chart.timeScale(), range = ts.getVisibleLogicalRange();
     if (!range) return;
     const from = Math.max(e.anchorIdx, Math.floor(range.from) - 1), to = Math.min(e._toIdx, Math.ceil(range.to) + 1);
@@ -903,7 +953,9 @@ class SigmaProfilePrimitive {
     this._halfBar = ts.options().barSpacing / 2;
     this._cols = cols;
     // Value-area view (see SIGPROF_POC_RGB): volume step, clicked.
-    const va = !lv && e.sigVaShown ? sp.va : null;
+    const va = e.sigMode === 'vol' && e.sigVaShown ? sp.va : null;
+    // The step's POC bin, always highlighted (see SIGPROF_POC_ALPHA).
+    const poc = sigmaPocBin(e.sigMode, sp);
     target.useMediaCoordinateSpace(({ context: ctx }) => {
       // Heatmap cloud: one band per bin, following the line.
       if (cols.length >= 2) {
@@ -916,8 +968,8 @@ class SigmaProfilePrimitive {
           cols.forEach(([x, m, d], j) => (j ? path.lineTo(x, toY(m + z1 * d)) : path.moveTo(x, toY(m + z1 * d))));
           for (let j = cols.length - 1; j >= 0; j--) { const [x, m, d] = cols[j]; path.lineTo(x, toY(m + z0 * d)); }
           path.closePath();
-          ctx.fillStyle = va && k === va.poc ? `rgba(${SIGPROF_POC_RGB},${SIGPROF_POC_ALPHA})`
-            : `rgba(${rgb},${(v * SIGPROF_HEAT_ALPHA * dimOf(k)).toFixed(3)})`;
+          ctx.fillStyle = k === poc ? `rgba(${SIGPROF_POC_RGB},${SIGPROF_POC_ALPHA})`
+            : `rgba(${rgb},${alphaOf(k).toFixed(3)})`;
           ctx.fill(path);
         }
       }
@@ -1755,8 +1807,9 @@ export class DynamicVWAPEngine {
     // last mode removes it — as Shift+K / Shift+J cycle the candle coloring
     // back to standard. The next press starts the cycle over.
     // '.' cycles plain → + stdev bands → fan shape by σ zone → σ-space
-    // volume profile → σ-space liquidity vs volume → max-volume / max-wick
-    // aVWAPs (raw → share) → removed.
+    // volume profile → σ-space liquidity vs volume → σ-space wick map →
+    // σ-space rejection vs acceptance → max-volume / max-wick aVWAPs
+    // (raw → share) → removed.
     if (kind === 'plain') {
       const entry = this._manualEntryAt(anchorIdx, 'plain') ?? this._manualEntryAt(anchorIdx, 'stdev');
       if (entry?.maxVol?.metric === 'vol') { this._maxVolToFrac(entry); return 'cycled'; }
@@ -1764,19 +1817,20 @@ export class DynamicVWAPEngine {
       if (entry?.kind === 'plain') { this._addStdevBands(entry); return 'cycled'; }
       if (entry && !entry.shape && !entry.sigProf) { this._showFanShape(entry); return 'cycled'; }
       if (entry && !entry.sigProf) { this._showSigmaProfile(entry); return 'cycled'; }
-      if (entry && !entry.sigLiq) { this._showSigmaLiq(entry); return 'cycled'; }
+      if (entry && this._nextSigmaMode(entry)) return 'cycled';
       if (entry) { this._showMaxVol(entry); return 'cycled'; }
     } else if (kind === 'avg') {
       // Shift+. cycles average aVWAP → + its stdev bands → fan shape by σ
       // zone → σ-space volume profile → σ-space liquidity vs volume →
-      // max-volume / max-wick average aVWAPs (raw → share) → removed.
+      // σ-space wick map → σ-space rejection vs acceptance → max-volume /
+      // max-wick average aVWAPs (raw → share) → removed.
       const entry = this._manualEntryAt(anchorIdx, kind);
       if (entry?.maxVol?.metric === 'vol') { this._maxVolToFrac(entry); return 'cycled'; }
       if (entry?.maxVol) { this._dropManualEntry(entry); return false; }
       if (entry && !entry.bands.length && !entry.shape && !entry.sigProf) { this._addStdevBands(entry); return 'cycled'; }
       if (entry && !entry.shape && !entry.sigProf) { this._showFanShape(entry); return 'cycled'; }
       if (entry && !entry.sigProf) { this._showSigmaProfile(entry); return 'cycled'; }
-      if (entry && !entry.sigLiq) { this._showSigmaLiq(entry); return 'cycled'; }
+      if (entry && this._nextSigmaMode(entry)) return 'cycled';
       if (entry) { this._showMaxVol(entry); return 'cycled'; }
     } else {
       const entry = this._manualEntryAt(anchorIdx, kind);
@@ -1807,14 +1861,14 @@ export class DynamicVWAPEngine {
     return true;
   }
 
-  /** Sixth '.' / Shift+.: drop the σ-space profile, keep the line as the
+  /** Eighth '.' / Shift+.: drop the σ-space profile, keep the line as the
    * main aVWAP (its candle marked) and add the max-volume and max-wick lines
    * (see C_MAXVOL) — 'vol' metric; the next press switches them to 'frac'. */
   _showMaxVol(entry) {
     if (entry.sigPrim) { try { entry.vwap.detachPrimitive(entry.sigPrim); } catch (_) {} }
     entry.sigPrim = null;
     entry.sigProf = false;
-    entry.sigLiq = false;
+    entry.sigMode = null;
     entry.vwap.applyOptions({ color: entry.avgOnly ? C_AVG_ANCHOR : C_MANUAL });
     entry.maxVol = { metric: 'vol', _key: null, result: null };
     entry.mainMarkers = LightweightCharts.createSeriesMarkers(entry.vwap, []);
@@ -1826,7 +1880,7 @@ export class DynamicVWAPEngine {
     this._renderManualEntry(entry.anchorIdx, entry);
   }
 
-  /** Seventh '.' / Shift+.: the max-volume / max-wick lines by share instead of raw. */
+  /** Ninth '.' / Shift+.: the max-volume / max-wick lines by share instead of raw. */
   _maxVolToFrac(entry) {
     entry.maxVol.metric = 'frac';
     entry.maxVol._key = null;
@@ -2142,6 +2196,7 @@ export class DynamicVWAPEngine {
     entry.shapePrim = null;
     entry.shape = false;
     entry.sigProf = true;
+    entry.sigMode = 'vol';
     entry.vwap.applyOptions({ color: entry.avgOnly ? C_AVG_ANCHOR : C_MANUAL });
     entry.sigPrim = new SigmaProfilePrimitive(entry);
     entry.vwap.attachPrimitive(entry.sigPrim);
@@ -2157,8 +2212,9 @@ export class DynamicVWAPEngine {
     this._manualOrder.forEach((id, order) => {
       const entry = typeof id === 'string' ? this._manualSeries[id] : null;
       if (!entry) return;
-      if (entry.sigPrim && !entry.sigLiq) {
-        const h = entry.sigPrim.probe(x, y);
+      if (entry.sigPrim) {
+        // Only the volume step has a value area to toggle.
+        const h = entry.sigMode === 'vol' ? entry.sigPrim.probe(x, y) : null;
         if (h) hits.push({ entry, order, ...h });
         return;
       }
@@ -2196,7 +2252,7 @@ export class DynamicVWAPEngine {
       : hits.filter(h => h.strength > 0).reduce((p, q) => (!p || q.strength > p.strength || (q.strength === p.strength && q.order > p.order) ? q : p), null);
     if (!pick) return false;
     const entry = pick.entry;
-    if (entry.sigPrim && !entry.sigLiq) {
+    if (entry.sigPrim) {
       entry.sigVaShown = !entry.sigVaShown;
       entry.sigPrim.update();
     } else if (entry._vpHit?.both) {
@@ -2209,28 +2265,64 @@ export class DynamicVWAPEngine {
     return true;
   }
 
-  /** Fifth '.' / Shift+.: the σ-space liquidity vs volume profile. */
-  _showSigmaLiq(entry) {
-    entry.sigLiq = true;
+  /** Anchor bar indices of every '.' / Shift+. anchor, at any step of its
+   * cycle — their candles drawn yellow (see chart.js reveal). */
+  dotAnchors() {
+    const out = new Set();
+    for (const e of Object.values(this._manualSeries)) {
+      if (e && (e.kind === 'plain' || e.kind === 'stdev' || e.kind === 'avg')) out.add(e.anchorIdx);
+    }
+    return out;
+  }
+
+  /** Fifth to seventh '.' / Shift+.: step the σ-space profile vol → liquidity
+   * vs volume → wick map → rejection vs acceptance. False past the last. */
+  _nextSigmaMode(entry) {
+    const next = { vol: 'liq', liq: 'wick', wick: 'diff' }[entry.sigMode];
+    if (!next) return false;
+    entry.sigMode = next;
     this._renderManualEntry(entry.anchorIdx, entry);
+    return true;
   }
 
   /** The σ-space volume profile of [anchorIdx, toIdx] around entry._sigma
    * (see SIGPROF_*): { bins, zMin, step, max, va } — va the POC bin and the
    * value area's bins, { poc, lo, hi } (null without volume); with
-   * entry.sigLiq also lv ({ D, cls } liquidity vs volume per bin) and max
-   * the largest |D|. */
+   * sigMode 'liq' also lv ({ D, cls } liquidity vs volume per bin) and max
+   * the largest |D|; 'wick' wick (wick weight per bin) and max its largest;
+   * 'diff' D (rejection vs acceptance per bin) and max its largest. */
   _sigmaProfile(entry, anchorIdx, toIdx) {
     const nb = Math.round(2 * SIGPROF_Z / SIGPROF_STEP), zMin = -SIGPROF_Z;
     const bins = new Float64Array(nb), atr = this._getAtr(SIGPROF_ATR), sg = entry._sigma;
-    const liq = !!entry.sigLiq, lNum = new Float64Array(nb), lDen = new Float64Array(nb);
+    const liq = entry.sigMode === 'liq', lNum = new Float64Array(nb), lDen = new Float64Array(nb);
     let lSum = 0, lW = 0;
+    // Wick map: upper / lower wicks and body, each in σ on its own.
+    const wk = entry.sigMode === 'wick' || entry.sigMode === 'diff';
+    const wickW = new Float64Array(nb), bodyW = new Float64Array(nb), upW = new Float64Array(nb);
+    const addZ = (arr, a, b, w) => {
+      if (!(b > a) || !(w > 0)) return;
+      const k0 = Math.max(0, Math.floor((a - zMin) / SIGPROF_STEP)), k1 = Math.min(nb - 1, Math.floor((b - zMin) / SIGPROF_STEP));
+      for (let k = k0; k <= k1; k++) {
+        const lo = zMin + k * SIGPROF_STEP, ov = Math.min(lo + SIGPROF_STEP, b) - Math.max(lo, a);
+        if (ov > 0) arr[k] += w * ov / (b - a);
+      }
+    };
     for (let i = anchorIdx + SIGPROF_WARMUP; i <= toIdx; i++) {
       const v = this._volumes[i], m = sg.mean(i);
       let d = sg.sd(i);
       if (!(v > 0) || Number.isNaN(m) || Number.isNaN(d)) continue;
       if (!Number.isNaN(atr[i])) d = Math.max(d, SIGPROF_SD_FLOOR_ATR * atr[i]);
       if (!(d > 0)) continue;
+      if (wk) {
+        const h = this._highs[i], l = this._lows[i], r = h - l;
+        if (r > 0) {
+          const top = Math.max(this._opens[i], this._closes[i]), bot = Math.min(this._opens[i], this._closes[i]);
+          addZ(wickW, (top - m) / d, (h - m) / d, v * (h - top) / r);
+          addZ(upW, (top - m) / d, (h - m) / d, v * (h - top) / r);
+          addZ(wickW, (l - m) / d, (bot - m) / d, v * (bot - l) / r);
+          addZ(bodyW, (bot - m) / d, (top - m) / d, v * (top - bot) / r);
+        }
+      }
       let za = (this._lows[i] - m) / d, zb = (this._highs[i] - m) / d;
       // Ranges floored at one bin (dojis), centered — as the price profiles.
       if (zb - za < SIGPROF_STEP) { const c = (za + zb) / 2; za = c - SIGPROF_STEP / 2; zb = c + SIGPROF_STEP / 2; }
@@ -2251,6 +2343,22 @@ export class DynamicVWAPEngine {
     // binSize 1), so its prices are bin edges.
     const pv = max > 0 ? this._vpPocValueArea(0, 1, bins, MANUAL_VP_VALUE_AREA_PCT) : null;
     const va = pv ? { poc: Math.floor(pv.poc), lo: Math.round(pv.val), hi: Math.round(pv.vah) - 1 } : null;
+    if (entry.sigMode === 'wick') {
+      let wmax = 0;
+      for (const w of wickW) if (w > wmax) wmax = w;
+      // Upper-wick share per bin, for the two-color split (see SIGWICK_*).
+      const upShare = Array.from(wickW, (w, k) => (w > 0 ? upW[k] / w : 0.5));
+      return { bins, zMin, step: SIGPROF_STEP, max: wmax, wick: wickW, upShare, va };
+    }
+    if (entry.sigMode === 'diff') {
+      // As _rejectionBins: total from the same split, so D sums to 0 before the cut.
+      let W = 0, V = 0;
+      for (let k = 0; k < nb; k++) { W += wickW[k]; V += wickW[k] + bodyW[k]; }
+      const D = filterRejectionArea(Array.from(wickW, (w, k) => (W > 0 ? w / W : 0) - (V > 0 ? (w + bodyW[k]) / V : 0)));
+      let dmax = 0;
+      for (const x of D) if (x > dmax) dmax = x;
+      return { bins, zMin, step: SIGPROF_STEP, max: dmax, D, va };
+    }
     if (!liq) return { bins, zMin, step: SIGPROF_STEP, max, va };
     const mean = lW > 0 ? lSum / lW : 0, prior = LIQ_PRIOR_VISITS * SIGPROF_STEP;
     const L = Array.from(lNum, (x, k) => (lDen[k] > 0 ? (x + prior * mean) / (lDen[k] + prior) : 0));
